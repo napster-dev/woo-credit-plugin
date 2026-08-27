@@ -97,8 +97,21 @@ $initial = strtoupper( substr( $display_name, 0, 1 ) );
 			</div>
 		</div>
 		<div class="cwd-v2-card-footer">
-			<!-- Link to edit-account where password can be changed -->
-			<a href="<?php echo esc_url( wc_get_endpoint_url( 'edit-account' ) ); ?>"><?php _e( 'Change Password', 'custom-woo-dashboard' ); ?></a>
+			<a href="<?php echo esc_url( wc_get_endpoint_url( 'lost-password' ) ); ?>"><?php _e( 'Change Password', 'custom-woo-dashboard' ); ?></a>
+		</div>
+	</div>
+
+	<!-- Tracking Card -->
+	<div class="cwd-v2-card">
+		<div class="cwd-v2-card-content">
+			<div class="cwd-v2-icon cwd-v2-icon-tracking">📍</div>
+			<div class="cwd-v2-card-text">
+				<h3><?php _e( 'Tracking', 'custom-woo-dashboard' ); ?></h3>
+				<p><?php _e( 'Track the status of your shipments.', 'custom-woo-dashboard' ); ?></p>
+			</div>
+		</div>
+		<div class="cwd-v2-card-footer">
+			<a href="<?php echo esc_url( wc_get_endpoint_url( 'ts-shipment-tracking' ) ); ?>"><?php _e( 'Track Shipments', 'custom-woo-dashboard' ); ?></a>
 		</div>
 	</div>
 

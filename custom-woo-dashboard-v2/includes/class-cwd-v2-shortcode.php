@@ -52,7 +52,9 @@ class CWD_V2_Shortcode {
 			'invoices',
 			'returns',
 			'credit',
-			'view-order'
+			'view-order',
+			'ts-shipment-tracking',
+			'lost-password'
 		);
 
 		foreach ( $endpoints as $endpoint ) {
@@ -89,15 +91,11 @@ class CWD_V2_Shortcode {
 	}
 
 	public static function invoices_content() {
-		echo '<h3>' . __( 'Invoices', 'custom-woo-dashboard' ) . '</h3>';
-		echo '<p>' . __( 'View your synced invoices here.', 'custom-woo-dashboard' ) . '</p>';
-		// Placeholder for Xero/Odoo iframe or list
+		include CWD_V2_PLUGIN_DIR . 'templates/invoices.php';
 	}
 
 	public static function returns_content() {
-		echo '<h3>' . __( 'Returns', 'custom-woo-dashboard' ) . '</h3>';
-		echo '<p>' . __( 'View, track, and initiate returns.', 'custom-woo-dashboard' ) . '</p>';
-		// Placeholder for Returns integration
+		include CWD_V2_PLUGIN_DIR . 'templates/returns.php';
 	}
 
 	public static function credit_content() {
