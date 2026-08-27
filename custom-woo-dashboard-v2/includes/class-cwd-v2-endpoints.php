@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-class CWD_Endpoints {
+class CWD_V2_Endpoints {
 
 	public static function init() {
 		add_action( 'init', array( __CLASS__, 'add_endpoints' ) );

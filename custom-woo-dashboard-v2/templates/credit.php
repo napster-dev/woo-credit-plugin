@@ -15,10 +15,10 @@ $credit_balance = (float) get_user_meta( $user_id, '_credit_balance', true ); //
 $due_date = get_user_meta( $user_id, '_credit_due_date', true );
 $available_credit = max( 0, $credit_limit - $credit_balance );
 
-// Fetch credit purchase history (orders made with cwd_credit_account gateway)
+// Fetch credit purchase history (orders made with cwd_v2_credit_account gateway)
 $args = array(
 	'customer_id' => $user_id,
-	'payment_method' => 'cwd_credit_account',
+	'payment_method' => 'cwd_v2_credit_account',
 	'limit' => 10,
 );
 $credit_orders = wc_get_orders( $args );
@@ -27,60 +27,60 @@ $credit_orders = wc_get_orders( $args );
 wc_print_notices();
 ?>
 
-<div class="cwd-credit-dashboard">
+<div class="cwd-v2-credit-dashboard">
 	<h3><?php _e( 'Credit Overview', 'custom-woo-dashboard' ); ?></h3>
 
-	<div class="cwd-credit-summary" style="display: flex; gap: 20px; margin-bottom: 30px;">
-		<div class="cwd-summary-box" style="background: #f9f9f9; padding: 20px; border-radius: 8px; flex: 1;">
+	<div class="cwd-v2-credit-summary" style="display: flex; gap: 20px; margin-bottom: 30px;">
+		<div class="cwd-v2-summary-box" style="background: #f9f9f9; padding: 20px; border-radius: 8px; flex: 1;">
 			<h4><?php _e( 'Credit Limit', 'custom-woo-dashboard' ); ?></h4>
 			<p style="font-size: 24px; font-weight: bold;"><?php echo wc_price( $credit_limit ); ?></p>
 		</div>
-		<div class="cwd-summary-box" style="background: #f9f9f9; padding: 20px; border-radius: 8px; flex: 1;">
+		<div class="cwd-v2-summary-box" style="background: #f9f9f9; padding: 20px; border-radius: 8px; flex: 1;">
 			<h4><?php _e( 'Current Balance (Owed)', 'custom-woo-dashboard' ); ?></h4>
 			<p style="font-size: 24px; font-weight: bold; color: #d9534f;"><?php echo wc_price( $credit_balance ); ?></p>
 		</div>
-		<div class="cwd-summary-box" style="background: #f9f9f9; padding: 20px; border-radius: 8px; flex: 1;">
+		<div class="cwd-v2-summary-box" style="background: #f9f9f9; padding: 20px; border-radius: 8px; flex: 1;">
 			<h4><?php _e( 'Available Credit', 'custom-woo-dashboard' ); ?></h4>
 			<p style="font-size: 24px; font-weight: bold; color: #5cb85c;"><?php echo wc_price( $available_credit ); ?></p>
 		</div>
-		<div class="cwd-summary-box" style="background: #f9f9f9; padding: 20px; border-radius: 8px; flex: 1;">
+		<div class="cwd-v2-summary-box" style="background: #f9f9f9; padding: 20px; border-radius: 8px; flex: 1;">
 			<h4><?php _e( 'Next Due Date', 'custom-woo-dashboard' ); ?></h4>
 			<p style="font-size: 20px; font-weight: bold;"><?php echo $due_date ? esc_html( $due_date ) : __( 'N/A', 'custom-woo-dashboard' ); ?></p>
 		</div>
 	</div>
 
 	<!-- Pay Off Balance -->
-	<div class="cwd-pay-balance" style="margin-bottom: 40px; padding: 20px; border: 1px solid #eaeaea; border-radius: 8px;">
+	<div class="cwd-v2-pay-balance" style="margin-bottom: 40px; padding: 20px; border: 1px solid #eaeaea; border-radius: 8px;">
 		<h3><?php _e( 'Pay Balance Before Due Date', 'custom-woo-dashboard' ); ?></h3>
 		<form method="post" action="">
-			<?php wp_nonce_field( 'cwd_pay_credit_action', 'cwd_pay_credit_nonce' ); ?>
+			<?php wp_nonce_field( 'cwd_v2_pay_credit_action', 'cwd_v2_pay_credit_nonce' ); ?>
 			<p>
-				<label for="cwd_pay_amount"><?php _e( 'Amount to Pay', 'custom-woo-dashboard' ); ?></label><br/>
-				<input type="number" step="0.01" min="0.01" max="<?php echo esc_attr( $credit_balance ); ?>" name="cwd_pay_amount" id="cwd_pay_amount" value="<?php echo esc_attr( $credit_balance ); ?>" required />
+				<label for="cwd_v2_pay_amount"><?php _e( 'Amount to Pay', 'custom-woo-dashboard' ); ?></label><br/>
+				<input type="number" step="0.01" min="0.01" max="<?php echo esc_attr( $credit_balance ); ?>" name="cwd_v2_pay_amount" id="cwd_v2_pay_amount" value="<?php echo esc_attr( $credit_balance ); ?>" required />
 			</p>
-			<button type="submit" name="cwd_pay_credit_balance" class="button button-primary"><?php _e( 'Proceed to Checkout', 'custom-woo-dashboard' ); ?></button>
+			<button type="submit" name="cwd_v2_pay_credit_balance" class="button button-primary"><?php _e( 'Proceed to Checkout', 'custom-woo-dashboard' ); ?></button>
 		</form>
 	</div>
 
 	<!-- Request Limit Increase -->
-	<div class="cwd-request-increase" style="margin-bottom: 40px; padding: 20px; border: 1px solid #eaeaea; border-radius: 8px;">
+	<div class="cwd-v2-request-increase" style="margin-bottom: 40px; padding: 20px; border: 1px solid #eaeaea; border-radius: 8px;">
 		<h3><?php _e( 'Request Credit Limit Increase', 'custom-woo-dashboard' ); ?></h3>
 		<form method="post" action="">
-			<?php wp_nonce_field( 'cwd_request_increase_action', 'cwd_request_increase_nonce' ); ?>
+			<?php wp_nonce_field( 'cwd_v2_request_increase_action', 'cwd_v2_request_increase_nonce' ); ?>
 			<p>
-				<label for="cwd_requested_amount"><?php _e( 'Requested New Limit', 'custom-woo-dashboard' ); ?></label><br/>
-				<input type="text" name="cwd_requested_amount" id="cwd_requested_amount" required />
+				<label for="cwd_v2_requested_amount"><?php _e( 'Requested New Limit', 'custom-woo-dashboard' ); ?></label><br/>
+				<input type="text" name="cwd_v2_requested_amount" id="cwd_v2_requested_amount" required />
 			</p>
 			<p>
-				<label for="cwd_request_reason"><?php _e( 'Reason for Request', 'custom-woo-dashboard' ); ?></label><br/>
-				<textarea name="cwd_request_reason" id="cwd_request_reason" rows="3" style="width: 100%;" required></textarea>
+				<label for="cwd_v2_request_reason"><?php _e( 'Reason for Request', 'custom-woo-dashboard' ); ?></label><br/>
+				<textarea name="cwd_v2_request_reason" id="cwd_v2_request_reason" rows="3" style="width: 100%;" required></textarea>
 			</p>
-			<button type="submit" name="cwd_request_increase" class="button"><?php _e( 'Submit Request', 'custom-woo-dashboard' ); ?></button>
+			<button type="submit" name="cwd_v2_request_increase" class="button"><?php _e( 'Submit Request', 'custom-woo-dashboard' ); ?></button>
 		</form>
 	</div>
 
 	<!-- Credit History -->
-	<div class="cwd-credit-history">
+	<div class="cwd-v2-credit-history">
 		<h3><?php _e( 'Credit Purchase History', 'custom-woo-dashboard' ); ?></h3>
 		<?php if ( ! empty( $credit_orders ) ) : ?>
 			<table class="woocommerce-orders-table woocommerce-MyAccount-orders shop_table shop_table_responsive my_account_orders account-orders-table">

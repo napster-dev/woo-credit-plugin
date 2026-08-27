@@ -7,10 +7,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-class WC_Gateway_Credit_Account extends WC_Payment_Gateway {
+class WC_Gateway_Credit_Account_V2 extends WC_Payment_Gateway {
 
 	public function __construct() {
-		$this->id                 = 'cwd_credit_account';
+		$this->id                 = 'cwd_v2_credit_account';
 		$this->icon               = '';
 		$this->has_fields         = false;
 		$this->method_title       = __( 'Pay on Credit Account', 'custom-woo-dashboard' );
@@ -97,9 +97,9 @@ class WC_Gateway_Credit_Account extends WC_Payment_Gateway {
 
 		// Check if they are paying off their credit balance instead of making a new purchase.
 		// If the cart contains the 'Credit Account Payment' product, we shouldn't increase their balance.
-		// That logic is handled in CWD_Credit_Logic, so here we must check for it.
+		// That logic is handled in CWD_V2_Credit_Logic, so here we must check for it.
 		$is_credit_payment_order = false;
-		$credit_product_id = (int) get_option( 'cwd_credit_payment_product_id' );
+		$credit_product_id = (int) get_option( 'cwd_v2_credit_payment_product_id' );
 		foreach ( $order->get_items() as $item ) {
 			if ( $item->get_product_id() === $credit_product_id ) {
 				$is_credit_payment_order = true;

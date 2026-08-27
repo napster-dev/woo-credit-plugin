@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-class CWD_Credit_Logic {
+class CWD_V2_Credit_Logic {
 
 	public static function init() {
 		// Handle pay balance submission
@@ -26,19 +26,19 @@ class CWD_Credit_Logic {
 	}
 
 	public static function handle_pay_balance() {
-		if ( isset( $_POST['cwd_pay_credit_balance'] ) && isset( $_POST['cwd_pay_amount'] ) && is_user_logged_in() ) {
-			if ( ! wp_verify_nonce( $_POST['cwd_pay_credit_nonce'], 'cwd_pay_credit_action' ) ) {
+		if ( isset( $_POST['cwd_v2_pay_credit_balance'] ) && isset( $_POST['cwd_v2_pay_amount'] ) && is_user_logged_in() ) {
+			if ( ! wp_verify_nonce( $_POST['cwd_v2_pay_credit_nonce'], 'cwd_v2_pay_credit_action' ) ) {
 				wc_add_notice( __( 'Security check failed.', 'custom-woo-dashboard' ), 'error' );
 				return;
 			}
 
-			$amount = floatval( $_POST['cwd_pay_amount'] );
+			$amount = floatval( $_POST['cwd_v2_pay_amount'] );
 			if ( $amount <= 0 ) {
 				wc_add_notice( __( 'Please enter a valid amount.', 'custom-woo-dashboard' ), 'error' );
 				return;
 			}
 
-			$product_id = (int) get_option( 'cwd_credit_payment_product_id' );
+			$product_id = (int) get_option( 'cwd_v2_credit_payment_product_id' );
 			if ( ! $product_id ) {
 				wc_add_notice( __( 'Credit payment product not configured.', 'custom-woo-dashboard' ), 'error' );
 				return;
@@ -48,7 +48,7 @@ class CWD_Credit_Logic {
 			WC()->cart->empty_cart();
 
 			// Add product to cart with custom price data
-			WC()->cart->add_to_cart( $product_id, 1, 0, array(), array( 'cwd_custom_price' => $amount ) );
+			WC()->cart->add_to_cart( $product_id, 1, 0, array(), array( 'cwd_v2_custom_price' => $amount ) );
 
 			// Redirect to checkout
 			wp_safe_redirect( wc_get_checkout_url() );
@@ -62,8 +62,8 @@ class CWD_Credit_Logic {
 		}
 
 		foreach ( $cart_obj->get_cart() as $key => $value ) {
-			if ( isset( $value['cwd_custom_price'] ) ) {
-				$value['data']->set_price( $value['cwd_custom_price'] );
+			if ( isset( $value['cwd_v2_custom_price'] ) ) {
+				$value['data']->set_price( $value['cwd_v2_custom_price'] );
 			}
 		}
 	}
@@ -73,11 +73,11 @@ class CWD_Credit_Logic {
 		if ( ! $order ) return;
 
 		// Check if already processed to avoid double reduction
-		if ( $order->get_meta( '_cwd_credit_payment_processed' ) ) {
+		if ( $order->get_meta( '_cwd_v2_credit_payment_processed' ) ) {
 			return;
 		}
 
-		$product_id = (int) get_option( 'cwd_credit_payment_product_id' );
+		$product_id = (int) get_option( 'cwd_v2_credit_payment_product_id' );
 		$is_credit_payment = false;
 		$payment_amount = 0;
 
@@ -96,22 +96,22 @@ class CWD_Credit_Logic {
 				update_user_meta( $user_id, '_credit_balance', $new_balance );
 
 				// Mark as processed
-				$order->update_meta_data( '_cwd_credit_payment_processed', 'yes' );
+				$order->update_meta_data( '_cwd_v2_credit_payment_processed', 'yes' );
 				$order->save();
 			}
 		}
 	}
 
 	public static function handle_credit_increase_request() {
-		if ( isset( $_POST['cwd_request_increase'] ) && is_user_logged_in() ) {
-			if ( ! wp_verify_nonce( $_POST['cwd_request_increase_nonce'], 'cwd_request_increase_action' ) ) {
+		if ( isset( $_POST['cwd_v2_request_increase'] ) && is_user_logged_in() ) {
+			if ( ! wp_verify_nonce( $_POST['cwd_v2_request_increase_nonce'], 'cwd_v2_request_increase_action' ) ) {
 				wc_add_notice( __( 'Security check failed.', 'custom-woo-dashboard' ), 'error' );
 				return;
 			}
 
 			$current_user = wp_get_current_user();
-			$requested_amount = sanitize_text_field( $_POST['cwd_requested_amount'] );
-			$reason = sanitize_textarea_field( $_POST['cwd_request_reason'] );
+			$requested_amount = sanitize_text_field( $_POST['cwd_v2_requested_amount'] );
+			$reason = sanitize_textarea_field( $_POST['cwd_v2_request_reason'] );
 
 			$admin_email = get_option( 'admin_email' );
 			$subject = sprintf( __( 'Credit Limit Increase Request from %s', 'custom-woo-dashboard' ), $current_user->display_name );

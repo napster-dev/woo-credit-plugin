@@ -7,10 +7,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-class CWD_Shortcode {
+class CWD_V2_Shortcode {
 
 	public static function init() {
-		add_shortcode( 'custom_woo_dashboard', array( __CLASS__, 'render' ) );
+		add_shortcode( 'custom_woo_dashboard_v2', array( __CLASS__, 'render' ) );
 		// Need to filter woo commerce endpoints content if we are on the dashboard
 		add_action( 'woocommerce_account_invoices_endpoint', array( __CLASS__, 'invoices_content' ) );
 		add_action( 'woocommerce_account_returns_endpoint', array( __CLASS__, 'returns_content' ) );
@@ -21,7 +21,7 @@ class CWD_Shortcode {
 		if ( ! is_user_logged_in() ) {
 			// Show WooCommerce login form
 			ob_start();
-			echo '<div class="cwd-login-wrapper">';
+			echo '<div class="cwd-v2-login-wrapper">';
 			woocommerce_login_form();
 			echo '</div>';
 			return ob_get_clean();
@@ -63,16 +63,16 @@ class CWD_Shortcode {
 			}
 		}
 
-		echo '<div class="cwd-dashboard-container">';
+		echo '<div class="cwd-v2-dashboard-container">';
 
 		// Enqueue styles
-		wp_enqueue_style( 'cwd-dashboard-style', CWD_PLUGIN_URL . 'assets/css/style.css', array(), '1.0.0' );
+		wp_enqueue_style( 'cwd-v2-dashboard-style', CWD_V2_PLUGIN_URL . 'assets/css/style.css', array(), '1.0.0' );
 
 		if ( $is_endpoint ) {
 			// We are on an endpoint page (e.g., Orders, Account Details)
 			// Add a back button
-			echo '<a href="' . esc_url( wc_get_page_permalink( 'myaccount' ) ) . '" class="cwd-back-button">&larr; ' . __( 'Back to Dashboard', 'custom-woo-dashboard' ) . '</a>';
-			echo '<div class="cwd-endpoint-content">';
+			echo '<a href="' . esc_url( wc_get_page_permalink( 'myaccount' ) ) . '" class="cwd-v2-back-button">&larr; ' . __( 'Back to Dashboard', 'custom-woo-dashboard' ) . '</a>';
+			echo '<div class="cwd-v2-endpoint-content">';
 
 			// Let WooCommerce handle standard endpoints, or we handle custom ones
 			do_action( 'woocommerce_account_' . $current_endpoint . '_endpoint', $wp->query_vars[ $current_endpoint ] );
@@ -80,7 +80,7 @@ class CWD_Shortcode {
 			echo '</div>';
 		} else {
 			// Main Dashboard View
-			include CWD_PLUGIN_DIR . 'templates/dashboard.php';
+			include CWD_V2_PLUGIN_DIR . 'templates/dashboard.php';
 		}
 
 		echo '</div>';
@@ -102,6 +102,6 @@ class CWD_Shortcode {
 
 	public static function credit_content() {
 		// Loaded via credit logic class template inclusion
-		include CWD_PLUGIN_DIR . 'templates/credit.php';
+		include CWD_V2_PLUGIN_DIR . 'templates/credit.php';
 	}
 }
