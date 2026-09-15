@@ -27,14 +27,25 @@ $initial = strtoupper( substr( $display_name, 0, 1 ) );
 			</div>
 		</div>
 		<div class="cwd-v2-card-footer">
-			<a href="<?php echo esc_url( wc_get_endpoint_url( 'edit-account' ) ); ?>"><?php _e( 'Edit Profile', 'custom-woo-dashboard' ); ?></a>
+			<a href="<?php echo esc_url( wc_get_endpoint_url( 'edit-account' ) ); ?>" class="cwd-v2-profile-action cwd-v2-profile-action-primary">
+				<svg class="cwd-v2-action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg>
+				<?php _e( 'Edit Profile', 'custom-woo-dashboard' ); ?>
+			</a>
+			<a href="<?php echo esc_url( wc_get_endpoint_url( 'edit-account' ) ); ?>" class="cwd-v2-profile-action">
+				<svg class="cwd-v2-action-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
+				<?php _e( 'Account Details', 'custom-woo-dashboard' ); ?>
+			</a>
+			<a href="<?php echo esc_url( wc_get_endpoint_url( 'lost-password' ) ); ?>" class="cwd-v2-profile-action">
+				<svg class="cwd-v2-action-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+				<?php _e( 'Change Password', 'custom-woo-dashboard' ); ?>
+			</a>
 		</div>
 	</div>
 
 	<!-- Orders Card -->
 	<div class="cwd-v2-card">
 		<div class="cwd-v2-card-content">
-			<div class="cwd-v2-icon cwd-v2-icon-orders">🚚</div>
+			<div class="cwd-v2-icon cwd-v2-icon-orders"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h11v11H3z"/><path d="M14 10h4l3 3v4h-7z"/><circle cx="7" cy="19" r="2"/><circle cx="18" cy="19" r="2"/></svg></div>
 			<div class="cwd-v2-card-text">
 				<h3><?php _e( 'Orders', 'custom-woo-dashboard' ); ?></h3>
 				<p><?php _e( 'Create, place or check the status of orders.', 'custom-woo-dashboard' ); ?></p>
@@ -48,7 +59,7 @@ $initial = strtoupper( substr( $display_name, 0, 1 ) );
 	<!-- Invoices Card -->
 	<div class="cwd-v2-card">
 		<div class="cwd-v2-card-content">
-			<div class="cwd-v2-icon cwd-v2-icon-invoices">💷</div>
+			<div class="cwd-v2-icon cwd-v2-icon-invoices"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6M9 16h3"/></svg></div>
 			<div class="cwd-v2-card-text">
 				<h3><?php _e( 'Invoices', 'custom-woo-dashboard' ); ?></h3>
 				<p><?php _e( 'View invoices for your account.', 'custom-woo-dashboard' ); ?></p>
@@ -62,7 +73,7 @@ $initial = strtoupper( substr( $display_name, 0, 1 ) );
 	<!-- Returns Card -->
 	<div class="cwd-v2-card">
 		<div class="cwd-v2-card-content">
-			<div class="cwd-v2-icon cwd-v2-icon-returns">↩️</div>
+			<div class="cwd-v2-icon cwd-v2-icon-returns"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 7 4 12l5 5"/><path d="M4 12h10a6 6 0 0 1 6 6"/></svg></div>
 			<div class="cwd-v2-card-text">
 				<h3><?php _e( 'Returns', 'custom-woo-dashboard' ); ?></h3>
 				<p><?php _e( 'View, track and initiate returns.', 'custom-woo-dashboard' ); ?></p>
@@ -73,38 +84,10 @@ $initial = strtoupper( substr( $display_name, 0, 1 ) );
 		</div>
 	</div>
 
-	<!-- Account Details Card -->
-	<div class="cwd-v2-card">
-		<div class="cwd-v2-card-content">
-			<div class="cwd-v2-icon cwd-v2-icon-account">📋</div>
-			<div class="cwd-v2-card-text">
-				<h3><?php _e( 'Account Details', 'custom-woo-dashboard' ); ?></h3>
-				<p><?php _e( 'View your account information.', 'custom-woo-dashboard' ); ?></p>
-			</div>
-		</div>
-		<div class="cwd-v2-card-footer">
-			<a href="<?php echo esc_url( wc_get_endpoint_url( 'edit-account' ) ); ?>"><?php _e( 'View Account Details', 'custom-woo-dashboard' ); ?></a>
-		</div>
-	</div>
-
-	<!-- Change Password Card -->
-	<div class="cwd-v2-card">
-		<div class="cwd-v2-card-content">
-			<div class="cwd-v2-icon cwd-v2-icon-password">🔐</div>
-			<div class="cwd-v2-card-text">
-				<h3><?php _e( 'Change Your Password', 'custom-woo-dashboard' ); ?></h3>
-				<p><?php _e( 'Keep your account secure.', 'custom-woo-dashboard' ); ?></p>
-			</div>
-		</div>
-		<div class="cwd-v2-card-footer">
-			<a href="<?php echo esc_url( wc_get_endpoint_url( 'lost-password' ) ); ?>"><?php _e( 'Change Password', 'custom-woo-dashboard' ); ?></a>
-		</div>
-	</div>
-
 	<!-- Tracking Card -->
 	<div class="cwd-v2-card">
 		<div class="cwd-v2-card-content">
-			<div class="cwd-v2-icon cwd-v2-icon-tracking">📍</div>
+			<div class="cwd-v2-icon cwd-v2-icon-tracking"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 4V2M20 12h2M12 20v2M4 12H2"/></svg></div>
 			<div class="cwd-v2-card-text">
 				<h3><?php _e( 'Tracking', 'custom-woo-dashboard' ); ?></h3>
 				<p><?php _e( 'Track the status of your shipments.', 'custom-woo-dashboard' ); ?></p>
@@ -118,7 +101,7 @@ $initial = strtoupper( substr( $display_name, 0, 1 ) );
 	<!-- Products Card -->
 	<div class="cwd-v2-card">
 		<div class="cwd-v2-card-content">
-			<div class="cwd-v2-icon cwd-v2-icon-products">📦</div>
+			<div class="cwd-v2-icon cwd-v2-icon-products"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 8 4.5v9L12 21l-8-4.5v-9z"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9"/></svg></div>
 			<div class="cwd-v2-card-text">
 				<h3><?php _e( 'Products', 'custom-woo-dashboard' ); ?></h3>
 				<p><?php _e( 'Search our list of products.', 'custom-woo-dashboard' ); ?></p>
@@ -134,7 +117,7 @@ $initial = strtoupper( substr( $display_name, 0, 1 ) );
 	<!-- Credit Dashboard Card -->
 	<div class="cwd-v2-card cwd-v2-credit-card">
 		<div class="cwd-v2-card-content">
-			<div class="cwd-v2-icon cwd-v2-icon-credit">💳</div>
+			<div class="cwd-v2-icon cwd-v2-icon-credit"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M7 15h4"/></svg></div>
 			<div class="cwd-v2-card-text">
 				<h3><?php _e( 'Credit Dashboard', 'custom-woo-dashboard' ); ?></h3>
 				<p><?php _e( 'View credit limit, balance, and pay off your account.', 'custom-woo-dashboard' ); ?></p>
