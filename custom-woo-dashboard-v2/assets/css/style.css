@@ -1,18 +1,8 @@
 /* Custom WooCommerce Dashboard Styles */
 
-:root {
-    --cwd-v2-blue: #67b5df;
-    --cwd-v2-blue-dark: #347da8;
-    --cwd-v2-blue-soft: #edf8fd;
-    --cwd-v2-ink: #354b59;
-    --cwd-v2-muted: #6d7e88;
-    --cwd-v2-border: #d8eaf3;
-    --cwd-v2-surface: #f7fcfe;
-}
-
 .cwd-v2-dashboard-container {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    color: var(--cwd-v2-ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #333;
 }
 
 .cwd-v2-grid {
@@ -24,9 +14,9 @@
 
 .cwd-v2-card {
     background: #fff;
-    border: 1px solid var(--cwd-v2-border);
-    border-radius: 6px;
-    box-shadow: 0 3px 10px rgba(52, 125, 168, 0.08);
+    border: 1px solid #eaeaea;
+    border-radius: 8px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -34,7 +24,7 @@
 }
 
 .cwd-v2-card:hover {
-    box-shadow: 0 6px 16px rgba(52, 125, 168, 0.15);
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.1);
     transform: translateY(-2px);
 }
 
@@ -50,7 +40,7 @@
 }
 
 .cwd-v2-avatar {
-    background-color: var(--cwd-v2-blue);
+    background-color: #5d7d5d;
     color: #fff;
     width: 60px;
     height: 60px;
@@ -73,12 +63,12 @@
 .cwd-v2-profile-info p {
     margin: 0;
     font-size: 14px;
-    color: var(--cwd-v2-muted);
+    color: #666;
 }
 
 .cwd-v2-badge {
-    background-color: var(--cwd-v2-blue-soft);
-    color: var(--cwd-v2-blue-dark);
+    background-color: #eee;
+    color: #555;
     font-size: 10px;
     padding: 2px 6px;
     border-radius: 4px;
@@ -92,32 +82,11 @@
 }
 
 .cwd-v2-icon {
+    font-size: 40px;
     margin-right: 20px;
     width: 60px;
-    height: 60px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--cwd-v2-blue-soft);
-    border-radius: 6px;
     text-align: center;
     flex-shrink: 0;
-}
-
-.cwd-v2-icon svg,
-.cwd-v2-action-icon {
-    width: 30px;
-    height: 30px;
-    fill: none;
-    stroke: var(--cwd-v2-blue-dark);
-    stroke-width: 1.8;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-}
-
-.cwd-v2-icon svg {
-    width: 32px;
-    height: 32px;
 }
 
 .cwd-v2-card-text h3 {
@@ -129,52 +98,34 @@
 .cwd-v2-card-text p {
     margin: 0;
     font-size: 14px;
-    color: var(--cwd-v2-muted);
+    color: #666;
     line-height: 1.4;
 }
 
 .cwd-v2-card-footer {
-    border-top: 1px solid var(--cwd-v2-border);
+    border-top: 1px solid #eaeaea;
     padding: 15px 20px;
-    background-color: var(--cwd-v2-surface);
-}
-
-.cwd-v2-profile-card .cwd-v2-card-footer {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px 18px;
+    background-color: #fcfcfc;
 }
 
 .cwd-v2-card-footer a {
-    color: var(--cwd-v2-blue-dark);
+    color: #800080; /* Purple color matching screenshot */
     text-decoration: none;
     font-weight: 600;
     font-size: 14px;
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
+    display: block;
 }
 
 .cwd-v2-card-footer a:hover {
-    color: var(--cwd-v2-blue-dark);
+    color: #5c005c;
     text-decoration: underline;
-}
-
-.cwd-v2-profile-action-primary {
-    color: var(--cwd-v2-blue-dark) !important;
-}
-
-.cwd-v2-action-icon {
-    width: 17px;
-    height: 17px;
-    stroke-width: 2;
 }
 
 /* Endpoint Styles */
 .cwd-v2-back-button {
     display: inline-block;
     margin-bottom: 20px;
-    color: var(--cwd-v2-blue-dark);
+    color: #800080;
     text-decoration: none;
     font-weight: 600;
 }
@@ -186,6 +137,6 @@
 .cwd-v2-endpoint-content {
     background: #fff;
     padding: 20px;
-    border: 1px solid var(--cwd-v2-border);
-    border-radius: 6px;
+    border: 1px solid #eaeaea;
+    border-radius: 8px;
 }
