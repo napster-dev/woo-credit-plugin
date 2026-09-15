@@ -27,10 +27,6 @@ $initial = strtoupper( substr( $display_name, 0, 1 ) );
 			</div>
 		</div>
 		<div class="cwd-v2-card-footer">
-			<a href="<?php echo esc_url( wc_get_endpoint_url( 'edit-account' ) ); ?>" class="cwd-v2-profile-action cwd-v2-profile-action-primary">
-				<svg class="cwd-v2-action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg>
-				<?php _e( 'Edit Profile', 'custom-woo-dashboard' ); ?>
-			</a>
 			<a href="<?php echo esc_url( wc_get_endpoint_url( 'edit-account' ) ); ?>" class="cwd-v2-profile-action">
 				<svg class="cwd-v2-action-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
 				<?php _e( 'Account Details', 'custom-woo-dashboard' ); ?>

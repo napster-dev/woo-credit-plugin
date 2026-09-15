@@ -5,7 +5,7 @@
     --cwd-v2-blue-dark: #347da8;
     --cwd-v2-blue-soft: #edf8fd;
     --cwd-v2-ink: #354b59;
-    --cwd-v2-muted: #6d7e88;
+    --cwd-v2-muted: #5f707a;
     --cwd-v2-border: #d8eaf3;
     --cwd-v2-surface: #f7fcfe;
 }
@@ -50,7 +50,7 @@
 }
 
 .cwd-v2-avatar {
-    background-color: var(--cwd-v2-blue);
+    background-color: var(--cwd-v2-ink);
     color: #fff;
     width: 60px;
     height: 60px;
@@ -78,7 +78,7 @@
 
 .cwd-v2-badge {
     background-color: var(--cwd-v2-blue-soft);
-    color: var(--cwd-v2-blue-dark);
+    color: var(--cwd-v2-ink);
     font-size: 10px;
     padding: 2px 6px;
     border-radius: 4px;
@@ -158,10 +158,6 @@
 .cwd-v2-card-footer a:hover {
     color: var(--cwd-v2-blue-dark);
     text-decoration: underline;
-}
-
-.cwd-v2-profile-action-primary {
-    color: var(--cwd-v2-blue-dark) !important;
 }
 
 .cwd-v2-action-icon {
