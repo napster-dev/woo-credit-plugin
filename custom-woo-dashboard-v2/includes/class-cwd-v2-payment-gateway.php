@@ -82,25 +82,19 @@ class WC_Gateway_Credit_Account_V2 extends WC_Payment_Gateway {
 	}
 
 	public function process_payment( $order_id ) {
-		global $wpdb;
-
 		$order = wc_get_order( $order_id );
-		if ( ! $order ) {
-			wc_add_notice( __( 'Unable to process this order.', 'custom-woo-dashboard' ), 'error' );
-			return;
-		}
-
-		$current_user = wp_get_current_user();
-		$roles = (array) $current_user->roles;
-		$has_credit_access = in_array( 'credit_account', $roles, true ) || current_user_can( 'manage_options' );
-		if ( ! is_user_logged_in() || ! $has_credit_access || (int) $order->get_user_id() !== (int) $current_user->ID ) {
-			wc_add_notice( __( 'You are not allowed to use the credit account for this order.', 'custom-woo-dashboard' ), 'error' );
-			return;
-		}
-
 		$user_id = $order->get_user_id();
 
+		if ( ! $user_id ) {
+			wc_add_notice( __( 'You must be logged in to use this payment method.', 'custom-woo-dashboard' ), 'error' );
+			return;
+		}
+
 		$order_total = $order->get_total();
+		$credit_limit = (float) get_user_meta( $user_id, '_credit_limit', true );
+		$credit_balance = (float) get_user_meta( $user_id, '_credit_balance', true );
+		$available_credit = $credit_limit - $credit_balance;
+
 		// Check if they are paying off their credit balance instead of making a new purchase.
 		// If the cart contains the 'Credit Account Payment' product, we shouldn't increase their balance.
 		// That logic is handled in CWD_V2_Credit_Logic, so here we must check for it.
@@ -118,36 +112,14 @@ class WC_Gateway_Credit_Account_V2 extends WC_Payment_Gateway {
 			return;
 		}
 
-		$wpdb->query( 'START TRANSACTION' );
-		$wpdb->get_var( $wpdb->prepare( "SELECT ID FROM {$wpdb->users} WHERE ID = %d FOR UPDATE", $user_id ) );
-		$order = wc_get_order( $order_id );
-		if ( ! $order ) {
-			$wpdb->query( 'ROLLBACK' );
-			wc_add_notice( __( 'Unable to process this order.', 'custom-woo-dashboard' ), 'error' );
-			return;
-		}
-
-		if ( $order->get_meta( '_cwd_v2_credit_balance_charged' ) ) {
-			$wpdb->query( 'COMMIT' );
-			return array(
-				'result'   => 'success',
-				'redirect' => $this->get_return_url( $order ),
-			);
-		}
-
-		$credit_limit = (float) get_user_meta( $user_id, '_credit_limit', true );
-		$credit_balance = (float) get_user_meta( $user_id, '_credit_balance', true );
-		$available_credit = $credit_limit - $credit_balance;
 		if ( $order_total > $available_credit ) {
-			$wpdb->query( 'ROLLBACK' );
 			wc_add_notice( sprintf( __( 'Insufficient available credit. Your available credit is %s.', 'custom-woo-dashboard' ), wc_price( $available_credit ) ), 'error' );
 			return;
 		}
 
-		update_user_meta( $user_id, '_credit_balance', $credit_balance + $order_total );
-		$order->update_meta_data( '_cwd_v2_credit_balance_charged', 'yes' );
-		$order->save();
-		$wpdb->query( 'COMMIT' );
+		// Increase the user's credit balance
+		$new_balance = $credit_balance + $order_total;
+		update_user_meta( $user_id, '_credit_balance', $new_balance );
 
 		// Mark as on-hold (or processing, depending on your flow)
 		$order->update_status( 'processing', __( 'Payment made via Credit Account.', 'custom-woo-dashboard' ) );

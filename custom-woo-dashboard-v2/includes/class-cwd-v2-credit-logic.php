@@ -27,21 +27,13 @@ class CWD_V2_Credit_Logic {
 
 	public static function handle_pay_balance() {
 		if ( isset( $_POST['cwd_v2_pay_credit_balance'] ) && isset( $_POST['cwd_v2_pay_amount'] ) && is_user_logged_in() ) {
-			if ( ! isset( $_POST['cwd_v2_pay_credit_nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['cwd_v2_pay_credit_nonce'] ) ), 'cwd_v2_pay_credit_action' ) ) {
+			if ( ! wp_verify_nonce( $_POST['cwd_v2_pay_credit_nonce'], 'cwd_v2_pay_credit_action' ) ) {
 				wc_add_notice( __( 'Security check failed.', 'custom-woo-dashboard' ), 'error' );
 				return;
 			}
 
-			$current_user = wp_get_current_user();
-			$roles = (array) $current_user->roles;
-			if ( ! in_array( 'credit_account', $roles, true ) && ! current_user_can( 'manage_options' ) ) {
-				wc_add_notice( __( 'You are not allowed to make a credit payment.', 'custom-woo-dashboard' ), 'error' );
-				return;
-			}
-
-			$amount = (float) wc_format_decimal( wp_unslash( $_POST['cwd_v2_pay_amount'] ) );
-			$credit_balance = (float) get_user_meta( $current_user->ID, '_credit_balance', true );
-			if ( $amount <= 0 || $amount > $credit_balance ) {
+			$amount = floatval( $_POST['cwd_v2_pay_amount'] );
+			if ( $amount <= 0 ) {
 				wc_add_notice( __( 'Please enter a valid amount.', 'custom-woo-dashboard' ), 'error' );
 				return;
 			}
@@ -52,19 +44,11 @@ class CWD_V2_Credit_Logic {
 				return;
 			}
 
-			if ( ! WC()->cart ) {
-				wc_add_notice( __( 'The credit payment could not be started.', 'custom-woo-dashboard' ), 'error' );
-				return;
-			}
-
-			// Empty cart to ensure only this payment is processed.
+			// Empty cart to ensure only this payment is processed? Optional, but cleaner.
 			WC()->cart->empty_cart();
 
 			// Add product to cart with custom price data
-			if ( ! WC()->cart || ! WC()->cart->add_to_cart( $product_id, 1, 0, array(), array( 'cwd_v2_custom_price' => $amount ) ) ) {
-				wc_add_notice( __( 'The credit payment could not be started.', 'custom-woo-dashboard' ), 'error' );
-				return;
-			}
+			WC()->cart->add_to_cart( $product_id, 1, 0, array(), array( 'cwd_v2_custom_price' => $amount ) );
 
 			// Redirect to checkout
 			wp_safe_redirect( wc_get_checkout_url() );
@@ -85,8 +69,6 @@ class CWD_V2_Credit_Logic {
 	}
 
 	public static function reduce_credit_balance_on_payment( $order_id ) {
-		global $wpdb;
-
 		$order = wc_get_order( $order_id );
 		if ( ! $order ) return;
 
@@ -109,14 +91,6 @@ class CWD_V2_Credit_Logic {
 		if ( $is_credit_payment ) {
 			$user_id = $order->get_user_id();
 			if ( $user_id ) {
-				$wpdb->query( 'START TRANSACTION' );
-				$wpdb->get_var( $wpdb->prepare( "SELECT ID FROM {$wpdb->users} WHERE ID = %d FOR UPDATE", $user_id ) );
-				$order = wc_get_order( $order_id );
-				if ( ! $order || $order->get_meta( '_cwd_v2_credit_payment_processed' ) ) {
-					$wpdb->query( 'COMMIT' );
-					return;
-				}
-
 				$current_balance = (float) get_user_meta( $user_id, '_credit_balance', true );
 				$new_balance = max( 0, $current_balance - $payment_amount );
 				update_user_meta( $user_id, '_credit_balance', $new_balance );
@@ -124,31 +98,20 @@ class CWD_V2_Credit_Logic {
 				// Mark as processed
 				$order->update_meta_data( '_cwd_v2_credit_payment_processed', 'yes' );
 				$order->save();
-				$wpdb->query( 'COMMIT' );
 			}
 		}
 	}
 
 	public static function handle_credit_increase_request() {
 		if ( isset( $_POST['cwd_v2_request_increase'] ) && is_user_logged_in() ) {
-			if ( ! isset( $_POST['cwd_v2_request_increase_nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['cwd_v2_request_increase_nonce'] ) ), 'cwd_v2_request_increase_action' ) ) {
+			if ( ! wp_verify_nonce( $_POST['cwd_v2_request_increase_nonce'], 'cwd_v2_request_increase_action' ) ) {
 				wc_add_notice( __( 'Security check failed.', 'custom-woo-dashboard' ), 'error' );
 				return;
 			}
 
 			$current_user = wp_get_current_user();
-			$roles = (array) $current_user->roles;
-			if ( ! in_array( 'credit_account', $roles, true ) && ! current_user_can( 'manage_options' ) ) {
-				wc_add_notice( __( 'You are not allowed to request a credit limit increase.', 'custom-woo-dashboard' ), 'error' );
-				return;
-			}
-
-			$requested_amount = isset( $_POST['cwd_v2_requested_amount'] ) ? sanitize_text_field( wp_unslash( $_POST['cwd_v2_requested_amount'] ) ) : '';
-			$reason = isset( $_POST['cwd_v2_request_reason'] ) ? sanitize_textarea_field( wp_unslash( $_POST['cwd_v2_request_reason'] ) ) : '';
-			if ( '' === $requested_amount || ! is_numeric( $requested_amount ) || (float) $requested_amount <= 0 || '' === $reason ) {
-				wc_add_notice( __( 'Please provide a valid requested limit and a reason.', 'custom-woo-dashboard' ), 'error' );
-				return;
-			}
+			$requested_amount = sanitize_text_field( $_POST['cwd_v2_requested_amount'] );
+			$reason = sanitize_textarea_field( $_POST['cwd_v2_request_reason'] );
 
 			$admin_email = get_option( 'admin_email' );
 			$subject = sprintf( __( 'Credit Limit Increase Request from %s', 'custom-woo-dashboard' ), $current_user->display_name );

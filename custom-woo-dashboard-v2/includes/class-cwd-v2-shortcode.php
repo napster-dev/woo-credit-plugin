@@ -102,13 +102,6 @@ class CWD_V2_Shortcode {
 	}
 
 	public static function credit_content() {
-		$current_user = wp_get_current_user();
-		$roles = (array) $current_user->roles;
-		if ( ! in_array( 'credit_account', $roles, true ) && ! current_user_can( 'manage_options' ) ) {
-			echo '<p>' . esc_html__( 'You do not have permission to view this dashboard.', 'custom-woo-dashboard' ) . '</p>';
-			return;
-		}
-
 		include CWD_V2_PLUGIN_DIR . 'templates/credit.php';
 	}
 
