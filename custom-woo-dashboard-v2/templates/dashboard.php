@@ -67,9 +67,17 @@ $initial = strtoupper( substr( $display_name, 0, 1 ) );
             </div>
         </div>
 
-        <div class="cwd-v2-card-footer">
+        <div class="cwd-v2-card-footer cwd-v2-orders-actions">
             <a href="<?php echo esc_url( wc_get_endpoint_url( 'orders' ) ); ?>">
                 <?php _e( 'Manage Orders', 'custom-woo-dashboard' ); ?>
+            </a>
+            <a href="<?php echo esc_url( wc_get_endpoint_url( 'ts-shipment-tracking' ) ); ?>">
+                <svg class="cwd-v2-action-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="12" cy="12" r="8"/>
+                    <circle cx="12" cy="12" r="3"/>
+                    <path d="M12 4V2M20 12h2M12 20v2M4 12H2"/>
+                </svg>
+                <?php _e( 'Track Shipments', 'custom-woo-dashboard' ); ?>
             </a>
         </div>
     </div>
@@ -116,53 +124,6 @@ $initial = strtoupper( substr( $display_name, 0, 1 ) );
         <div class="cwd-v2-card-footer">
             <a href="<?php echo esc_url( wc_get_endpoint_url( 'returns' ) ); ?>">
                 <?php _e( 'Manage Returns', 'custom-woo-dashboard' ); ?>
-            </a>
-        </div>
-    </div>
-
-    <!-- Tracking Card -->
-    <div class="cwd-v2-card">
-        <div class="cwd-v2-card-content">
-            <div class="cwd-v2-icon cwd-v2-icon-tracking">
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <circle cx="12" cy="12" r="8"/>
-                    <circle cx="12" cy="12" r="3"/>
-                    <path d="M12 4V2M20 12h2M12 20v2M4 12H2"/>
-                </svg>
-            </div>
-
-            <div class="cwd-v2-card-text">
-                <h3><?php _e( 'Tracking', 'custom-woo-dashboard' ); ?></h3>
-                <p><?php _e( 'Track the status of your shipments.', 'custom-woo-dashboard' ); ?></p>
-            </div>
-        </div>
-
-        <div class="cwd-v2-card-footer">
-            <a href="<?php echo esc_url( wc_get_endpoint_url( 'ts-shipment-tracking' ) ); ?>">
-                <?php _e( 'Track Shipments', 'custom-woo-dashboard' ); ?>
-            </a>
-        </div>
-    </div>
-
-    <!-- Products Card -->
-    <div class="cwd-v2-card">
-        <div class="cwd-v2-card-content">
-            <div class="cwd-v2-icon cwd-v2-icon-products">
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="m12 3 8 4.5v9L12 21l-8-4.5v-9z"/>
-                    <path d="m4 7.5 8 4.5 8-4.5M12 12v9"/>
-                </svg>
-            </div>
-
-            <div class="cwd-v2-card-text">
-                <h3><?php _e( 'Products', 'custom-woo-dashboard' ); ?></h3>
-                <p><?php _e( 'Search our list of products.', 'custom-woo-dashboard' ); ?></p>
-            </div>
-        </div>
-
-        <div class="cwd-v2-card-footer">
-            <a href="<?php echo esc_url( get_permalink( wc_get_page_id( 'shop' ) ) ); ?>">
-                <?php _e( 'View Products', 'custom-woo-dashboard' ); ?>
             </a>
         </div>
     </div>
