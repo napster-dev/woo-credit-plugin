@@ -88,6 +88,9 @@ $initial = strtoupper( substr( $display_name, 0, 1 ) );
 	</div>
 
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 0458b070d3e48565f7b421adc59bd8464dcd27f3
 	<!-- Account Details Card -->
 	<div class="cwd-v2-card">
 		<div class="cwd-v2-card-content">
@@ -101,6 +104,7 @@ $initial = strtoupper( substr( $display_name, 0, 1 ) );
 			<a href="<?php echo esc_url( wc_get_endpoint_url( 'edit-account' ) ); ?>"><?php _e( 'View Account Details', 'custom-woo-dashboard' ); ?></a>
 		</div>
 	</div>
+<<<<<<< HEAD
 =======
         <div class="cwd-v2-card-footer cwd-v2-orders-actions">
             <a href="<?php echo esc_url( wc_get_endpoint_url( 'orders' ) ); ?>">
@@ -117,6 +121,8 @@ $initial = strtoupper( substr( $display_name, 0, 1 ) );
         </div>
     </div>
 >>>>>>> 34c32cf19737fe821542af2c76012445a3cd9f88
+=======
+>>>>>>> 0458b070d3e48565f7b421adc59bd8464dcd27f3
 
 	<!-- Change Password Card -->
 	<div class="cwd-v2-card">
@@ -148,6 +154,7 @@ $initial = strtoupper( substr( $display_name, 0, 1 ) );
 	</div>
 	<?php endif; ?>
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 =======
         <div class="cwd-v2-card-footer">
@@ -205,4 +212,6 @@ $initial = strtoupper( substr( $display_name, 0, 1 ) );
         </div>
     <?php endif; ?>
 >>>>>>> 34c32cf19737fe821542af2c76012445a3cd9f88
+=======
+>>>>>>> 0458b070d3e48565f7b421adc59bd8464dcd27f3
 </div>
