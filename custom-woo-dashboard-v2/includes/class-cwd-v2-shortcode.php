@@ -141,7 +141,7 @@ class CWD_V2_Shortcode {
 			wc_add_notice( __( 'Your new password must be different from your current password.', 'custom-woo-dashboard' ), 'error' );
 		} else {
 			wp_set_password( $new_password, $user->ID );
-			wp_set_auth_cookie( $user->ID, true );
+			wp_set_auth_cookie( $user->ID, false );
 			wc_add_notice( __( 'Your password has been changed successfully.', 'custom-woo-dashboard' ), 'success' );
 		}
 

@@ -32,6 +32,14 @@ if ( ! function_exists( 'cwd_v2_init_plugin' ) ) {
 			CWD_V2_Endpoints::init();
 			CWD_V2_Credit_Logic::init();
 
+			// Refresh rewrite rules once when endpoint definitions change.
+			$rewrite_version = '2';
+			if ( get_option( 'cwd_v2_rewrite_version' ) !== $rewrite_version ) {
+				CWD_V2_Endpoints::add_endpoints();
+				flush_rewrite_rules();
+				update_option( 'cwd_v2_rewrite_version', $rewrite_version );
+			}
+
 			// Add custom payment gateway
 			add_filter( 'woocommerce_payment_gateways', 'cwd_v2_add_payment_gateway' );
 		}

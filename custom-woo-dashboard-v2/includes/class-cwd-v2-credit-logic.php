@@ -85,6 +85,8 @@ class CWD_V2_Credit_Logic {
 	}
 
 	public static function reduce_credit_balance_on_payment( $order_id ) {
+		global $wpdb;
+
 		$order = wc_get_order( $order_id );
 		if ( ! $order ) return;
 
@@ -107,6 +109,14 @@ class CWD_V2_Credit_Logic {
 		if ( $is_credit_payment ) {
 			$user_id = $order->get_user_id();
 			if ( $user_id ) {
+				$wpdb->query( 'START TRANSACTION' );
+				$wpdb->get_var( $wpdb->prepare( "SELECT ID FROM {$wpdb->users} WHERE ID = %d FOR UPDATE", $user_id ) );
+				$order = wc_get_order( $order_id );
+				if ( ! $order || $order->get_meta( '_cwd_v2_credit_payment_processed' ) ) {
+					$wpdb->query( 'COMMIT' );
+					return;
+				}
+
 				$current_balance = (float) get_user_meta( $user_id, '_credit_balance', true );
 				$new_balance = max( 0, $current_balance - $payment_amount );
 				update_user_meta( $user_id, '_credit_balance', $new_balance );
@@ -114,6 +124,7 @@ class CWD_V2_Credit_Logic {
 				// Mark as processed
 				$order->update_meta_data( '_cwd_v2_credit_payment_processed', 'yes' );
 				$order->save();
+				$wpdb->query( 'COMMIT' );
 			}
 		}
 	}
@@ -126,10 +137,16 @@ class CWD_V2_Credit_Logic {
 			}
 
 			$current_user = wp_get_current_user();
+			$roles = (array) $current_user->roles;
+			if ( ! in_array( 'credit_account', $roles, true ) && ! current_user_can( 'manage_options' ) ) {
+				wc_add_notice( __( 'You are not allowed to request a credit limit increase.', 'custom-woo-dashboard' ), 'error' );
+				return;
+			}
+
 			$requested_amount = isset( $_POST['cwd_v2_requested_amount'] ) ? sanitize_text_field( wp_unslash( $_POST['cwd_v2_requested_amount'] ) ) : '';
 			$reason = isset( $_POST['cwd_v2_request_reason'] ) ? sanitize_textarea_field( wp_unslash( $_POST['cwd_v2_request_reason'] ) ) : '';
-			if ( '' === $requested_amount || '' === $reason ) {
-				wc_add_notice( __( 'Please provide the requested limit and a reason.', 'custom-woo-dashboard' ), 'error' );
+			if ( '' === $requested_amount || ! is_numeric( $requested_amount ) || (float) $requested_amount <= 0 || '' === $reason ) {
+				wc_add_notice( __( 'Please provide a valid requested limit and a reason.', 'custom-woo-dashboard' ), 'error' );
 				return;
 			}
 
