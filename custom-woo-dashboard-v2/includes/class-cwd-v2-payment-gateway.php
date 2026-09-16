@@ -83,12 +83,27 @@ class WC_Gateway_Credit_Account_V2 extends WC_Payment_Gateway {
 
 	public function process_payment( $order_id ) {
 		$order = wc_get_order( $order_id );
-		$user_id = $order->get_user_id();
-
-		if ( ! $user_id ) {
-			wc_add_notice( __( 'You must be logged in to use this payment method.', 'custom-woo-dashboard' ), 'error' );
+		if ( ! $order ) {
+			wc_add_notice( __( 'Unable to process this order.', 'custom-woo-dashboard' ), 'error' );
 			return;
 		}
+
+		$current_user = wp_get_current_user();
+		$roles = (array) $current_user->roles;
+		$has_credit_access = in_array( 'credit_account', $roles, true ) || current_user_can( 'manage_options' );
+		if ( ! is_user_logged_in() || ! $has_credit_access || (int) $order->get_user_id() !== (int) $current_user->ID ) {
+			wc_add_notice( __( 'You are not allowed to use the credit account for this order.', 'custom-woo-dashboard' ), 'error' );
+			return;
+		}
+
+		if ( $order->get_meta( '_cwd_v2_credit_balance_charged' ) ) {
+			return array(
+				'result'   => 'success',
+				'redirect' => $this->get_return_url( $order ),
+			);
+		}
+
+		$user_id = $order->get_user_id();
 
 		$order_total = $order->get_total();
 		$credit_limit = (float) get_user_meta( $user_id, '_credit_limit', true );
@@ -120,6 +135,7 @@ class WC_Gateway_Credit_Account_V2 extends WC_Payment_Gateway {
 		// Increase the user's credit balance
 		$new_balance = $credit_balance + $order_total;
 		update_user_meta( $user_id, '_credit_balance', $new_balance );
+		$order->update_meta_data( '_cwd_v2_credit_balance_charged', 'yes' );
 
 		// Mark as on-hold (or processing, depending on your flow)
 		$order->update_status( 'processing', __( 'Payment made via Credit Account.', 'custom-woo-dashboard' ) );

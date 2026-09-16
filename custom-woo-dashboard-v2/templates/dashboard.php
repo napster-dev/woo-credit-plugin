@@ -39,7 +39,7 @@ $initial = strtoupper( substr( $display_name, 0, 1 ) );
                 <?php _e( 'Account Details', 'custom-woo-dashboard' ); ?>
             </a>
 
-            <a href="<?php echo esc_url( wc_get_endpoint_url( 'lost-password' ) ); ?>" class="cwd-v2-profile-action">
+            <a href="<?php echo esc_url( wc_get_endpoint_url( 'change-password' ) ); ?>" class="cwd-v2-profile-action">
                 <svg class="cwd-v2-action-icon" viewBox="0 0 24 24" aria-hidden="true">
                     <rect x="3" y="11" width="18" height="10" rx="2"/>
                     <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
