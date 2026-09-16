@@ -87,6 +87,7 @@ $initial = strtoupper( substr( $display_name, 0, 1 ) );
 		</div>
 	</div>
 
+<<<<<<< HEAD
 	<!-- Account Details Card -->
 	<div class="cwd-v2-card">
 		<div class="cwd-v2-card-content">
@@ -100,6 +101,22 @@ $initial = strtoupper( substr( $display_name, 0, 1 ) );
 			<a href="<?php echo esc_url( wc_get_endpoint_url( 'edit-account' ) ); ?>"><?php _e( 'View Account Details', 'custom-woo-dashboard' ); ?></a>
 		</div>
 	</div>
+=======
+        <div class="cwd-v2-card-footer cwd-v2-orders-actions">
+            <a href="<?php echo esc_url( wc_get_endpoint_url( 'orders' ) ); ?>">
+                <?php _e( 'Manage Orders', 'custom-woo-dashboard' ); ?>
+            </a>
+            <a href="<?php echo esc_url( wc_get_endpoint_url( 'ts-shipment-tracking' ) ); ?>">
+                <svg class="cwd-v2-action-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="12" cy="12" r="8"/>
+                    <circle cx="12" cy="12" r="3"/>
+                    <path d="M12 4V2M20 12h2M12 20v2M4 12H2"/>
+                </svg>
+                <?php _e( 'Track Shipments', 'custom-woo-dashboard' ); ?>
+            </a>
+        </div>
+    </div>
+>>>>>>> 34c32cf19737fe821542af2c76012445a3cd9f88
 
 	<!-- Change Password Card -->
 	<div class="cwd-v2-card">
@@ -131,4 +148,61 @@ $initial = strtoupper( substr( $display_name, 0, 1 ) );
 	</div>
 	<?php endif; ?>
 
+<<<<<<< HEAD
+=======
+        <div class="cwd-v2-card-footer">
+            <a href="<?php echo esc_url( wc_get_endpoint_url( 'invoices' ) ); ?>">
+                <?php _e( 'View Invoices', 'custom-woo-dashboard' ); ?>
+            </a>
+        </div>
+    </div>
+
+    <!-- Returns Card -->
+    <div class="cwd-v2-card">
+        <div class="cwd-v2-card-content">
+            <div class="cwd-v2-icon cwd-v2-icon-returns">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M9 7 4 12l5 5"/>
+                    <path d="M4 12h10a6 6 0 0 1 6 6"/>
+                </svg>
+            </div>
+
+            <div class="cwd-v2-card-text">
+                <h3><?php _e( 'Returns', 'custom-woo-dashboard' ); ?></h3>
+                <p><?php _e( 'View, track and initiate returns.', 'custom-woo-dashboard' ); ?></p>
+            </div>
+        </div>
+
+        <div class="cwd-v2-card-footer">
+            <a href="<?php echo esc_url( wc_get_endpoint_url( 'returns' ) ); ?>">
+                <?php _e( 'Manage Returns', 'custom-woo-dashboard' ); ?>
+            </a>
+        </div>
+    </div>
+
+    <?php if ( $is_credit_account ) : ?>
+        <!-- Credit Dashboard Card -->
+        <div class="cwd-v2-card cwd-v2-credit-card">
+            <div class="cwd-v2-card-content">
+                <div class="cwd-v2-icon cwd-v2-icon-credit">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <rect x="3" y="5" width="18" height="14" rx="2"/>
+                        <path d="M3 10h18M7 15h4"/>
+                    </svg>
+                </div>
+
+                <div class="cwd-v2-card-text">
+                    <h3><?php _e( 'Credit Dashboard', 'custom-woo-dashboard' ); ?></h3>
+                    <p><?php _e( 'View credit limit, balance, and pay off your account.', 'custom-woo-dashboard' ); ?></p>
+                </div>
+            </div>
+
+            <div class="cwd-v2-card-footer">
+                <a href="<?php echo esc_url( wc_get_endpoint_url( 'credit' ) ); ?>">
+                    <?php _e( 'Manage Credit', 'custom-woo-dashboard' ); ?>
+                </a>
+            </div>
+        </div>
+    <?php endif; ?>
+>>>>>>> 34c32cf19737fe821542af2c76012445a3cd9f88
 </div>
