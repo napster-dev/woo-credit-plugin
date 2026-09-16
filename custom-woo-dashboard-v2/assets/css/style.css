@@ -145,6 +145,12 @@
     gap: 10px 18px;
 }
 
+.cwd-v2-orders-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 18px;
+}
+
 .cwd-v2-card-footer a {
     color: var(--cwd-v2-blue-dark);
     text-decoration: none;
