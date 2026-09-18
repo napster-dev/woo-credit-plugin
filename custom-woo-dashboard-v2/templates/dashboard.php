@@ -67,7 +67,7 @@ $initial = strtoupper(substr($display_name, 0, 1));
 			<div class="cwd-v2-icon cwd-v2-icon-invoices">💷</div>
 			<div class="cwd-v2-card-text">
 				<h3><?php _e( 'Invoices', 'custom-woo-dashboard' ); ?></h3>
-				<p><?php _e( 'View invoices for your account.', 'custom-woo-dashboard' ); ?></p>
+				<p><?php _e( 'View, print, and pay outstanding invoices.', 'custom-woo-dashboard' ); ?></p>
 			</div>
 		</div>
 		<div class="cwd-v2-card-footer">

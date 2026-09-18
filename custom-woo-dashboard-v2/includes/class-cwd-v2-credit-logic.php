@@ -47,11 +47,28 @@ class CWD_V2_Credit_Logic {
 				return;
 			}
 
+			$cart_item_data = array( 'cwd_v2_custom_price' => $amount );
+
+			// If this payment was triggered from a specific invoice's "Pay This Invoice"
+			// form, carry the invoice ID through so it can be marked paid once the
+			// resulting order completes.
+			if ( ! empty( $_POST['cwd_v2_pay_invoice_id'] ) ) {
+				$invoice_id = absint( $_POST['cwd_v2_pay_invoice_id'] );
+				$invoice    = CWD_V2_Invoices::get_invoice( $invoice_id, get_current_user_id() );
+
+				if ( ! $invoice || CWD_V2_Invoices::STATUS_UNPAID !== $invoice->status ) {
+					wc_add_notice( __( 'This invoice is no longer available to pay.', 'custom-woo-dashboard' ), 'error' );
+					return;
+				}
+
+				$cart_item_data['cwd_v2_invoice_id'] = $invoice_id;
+			}
+
 			// Empty cart to ensure only this payment is processed? Optional, but cleaner.
 			WC()->cart->empty_cart();
 
 			// Add product to cart with custom price data
-			WC()->cart->add_to_cart( $product_id, 1, 0, array(), array( 'cwd_v2_custom_price' => $amount ) );
+			WC()->cart->add_to_cart( $product_id, 1, 0, array(), $cart_item_data );
 
 			// Redirect to checkout
 			wp_safe_redirect( wc_get_checkout_url() );
@@ -84,10 +101,17 @@ class CWD_V2_Credit_Logic {
 		$is_credit_payment = false;
 		$payment_amount = 0;
 
+		$invoice_id = 0;
+
 		foreach ( $order->get_items() as $item ) {
 			if ( $item->get_product_id() === $product_id ) {
 				$is_credit_payment = true;
 				$payment_amount += $item->get_total();
+
+				$item_invoice_id = $item->get_meta( 'cwd_v2_invoice_id' );
+				if ( $item_invoice_id ) {
+					$invoice_id = absint( $item_invoice_id );
+				}
 			}
 		}
 
@@ -98,14 +122,27 @@ class CWD_V2_Credit_Logic {
 				$new_balance = max( 0, $current_balance - $payment_amount );
 				update_user_meta( $user_id, '_credit_balance', $new_balance );
 
-				CWD_V2_Account_Ledger::record(
-					$user_id,
-					CWD_V2_Account_Ledger::TYPE_PAYMENT,
-					$payment_amount,
-					'order',
-					$order_id,
-					sprintf( __( 'Payment made via order #%d', 'custom-woo-dashboard' ), $order_id )
-				);
+				if ( $invoice_id ) {
+					CWD_V2_Invoices::mark_invoice_paid( $invoice_id );
+
+					CWD_V2_Account_Ledger::record(
+						$user_id,
+						CWD_V2_Account_Ledger::TYPE_PAYMENT,
+						$payment_amount,
+						'invoice',
+						$invoice_id,
+						sprintf( __( 'Payment for invoice #%d', 'custom-woo-dashboard' ), $invoice_id )
+					);
+				} else {
+					CWD_V2_Account_Ledger::record(
+						$user_id,
+						CWD_V2_Account_Ledger::TYPE_PAYMENT,
+						$payment_amount,
+						'order',
+						$order_id,
+						sprintf( __( 'Payment made via order #%d', 'custom-woo-dashboard' ), $order_id )
+					);
+				}
 
 				// Mark as processed
 				$order->update_meta_data( '_cwd_v2_credit_payment_processed', 'yes' );

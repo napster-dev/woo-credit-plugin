@@ -16,6 +16,7 @@ class CWD_V2_Shortcode
 		add_shortcode('custom_woo_dashboard_v2', array(__CLASS__, 'render'));
 		// Need to filter woo commerce endpoints content if we are on the dashboard
 		add_action('woocommerce_account_invoices_endpoint', array(__CLASS__, 'invoices_content'));
+		add_action('woocommerce_account_view-invoice_endpoint', array(__CLASS__, 'view_invoice_content'));
 		add_action('woocommerce_account_returns_endpoint', array(__CLASS__, 'returns_content'));
 		add_action('woocommerce_account_credit_endpoint', array(__CLASS__, 'credit_content'));
 		add_action('woocommerce_account_change-password_endpoint', array(__CLASS__, 'change_password_content'));
@@ -60,6 +61,7 @@ class CWD_V2_Shortcode
 			'edit-account',
 			'payment-methods',
 			'invoices',
+			'view-invoice',
 			'returns',
 			'credit',
 			'change-password',
@@ -108,6 +110,11 @@ class CWD_V2_Shortcode
 	public static function invoices_content()
 	{
 		include CWD_V2_PLUGIN_DIR . 'templates/invoices.php';
+	}
+
+	public static function view_invoice_content()
+	{
+		include CWD_V2_PLUGIN_DIR . 'templates/view-invoice.php';
 	}
 
 	public static function returns_content()
