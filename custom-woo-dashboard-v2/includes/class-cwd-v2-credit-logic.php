@@ -23,6 +23,9 @@ class CWD_V2_Credit_Logic {
 		add_action( 'woocommerce_payment_complete', array( __CLASS__, 'reduce_credit_balance_on_payment' ) );
 		add_action( 'woocommerce_order_status_processing', array( __CLASS__, 'reduce_credit_balance_on_payment' ) );
 		add_action( 'woocommerce_order_status_completed', array( __CLASS__, 'reduce_credit_balance_on_payment' ) );
+
+		// Hook into refunds on credit-paid orders to decrease the outstanding balance.
+		add_action( 'woocommerce_order_refunded', array( __CLASS__, 'handle_credit_order_refund' ), 10, 2 );
 	}
 
 	public static function handle_pay_balance() {
@@ -95,6 +98,15 @@ class CWD_V2_Credit_Logic {
 				$new_balance = max( 0, $current_balance - $payment_amount );
 				update_user_meta( $user_id, '_credit_balance', $new_balance );
 
+				CWD_V2_Account_Ledger::record(
+					$user_id,
+					CWD_V2_Account_Ledger::TYPE_PAYMENT,
+					$payment_amount,
+					'order',
+					$order_id,
+					sprintf( __( 'Payment made via order #%d', 'custom-woo-dashboard' ), $order_id )
+				);
+
 				// Mark as processed
 				$order->update_meta_data( '_cwd_v2_credit_payment_processed', 'yes' );
 				$order->save();
@@ -124,5 +136,47 @@ class CWD_V2_Credit_Logic {
 
 			wc_add_notice( __( 'Your request for a credit limit increase has been sent to the administrator.', 'custom-woo-dashboard' ), 'success' );
 		}
+	}
+
+	/**
+	 * When a credit-paid order is refunded, reduce the customer's outstanding
+	 * credit balance by the refunded amount and record the ledger entry.
+	 *
+	 * @param int $order_id
+	 * @param int $refund_id
+	 */
+	public static function handle_credit_order_refund( $order_id, $refund_id ) {
+		$order = wc_get_order( $order_id );
+		if ( ! $order || 'cwd_v2_credit_account' !== $order->get_payment_method() ) {
+			return;
+		}
+
+		$refund = wc_get_order( $refund_id );
+		if ( ! $refund ) {
+			return;
+		}
+
+		$refund_amount = abs( (float) $refund->get_total() );
+		if ( $refund_amount <= 0 ) {
+			return;
+		}
+
+		$user_id = $order->get_user_id();
+		if ( ! $user_id ) {
+			return;
+		}
+
+		$current_balance = (float) get_user_meta( $user_id, '_credit_balance', true );
+		$new_balance     = max( 0, $current_balance - $refund_amount );
+		update_user_meta( $user_id, '_credit_balance', $new_balance );
+
+		CWD_V2_Account_Ledger::record(
+			$user_id,
+			CWD_V2_Account_Ledger::TYPE_REFUND,
+			$refund_amount,
+			'order',
+			$order_id,
+			sprintf( __( 'Refund for order #%d', 'custom-woo-dashboard' ), $order_id )
+		);
 	}
 }

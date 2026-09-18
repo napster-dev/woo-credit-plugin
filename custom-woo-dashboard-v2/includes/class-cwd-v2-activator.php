@@ -10,6 +10,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 class CWD_V2_Activator {
 
 	public static function activate() {
+		self::create_tables();
+
 		// Ensure WooCommerce is active. We check for a function that exists if Woo is loaded,
 		// but since activation happens before plugins_loaded in some contexts, we just try our best.
 		// We'll create the product using WP core functions if WC classes aren't available, or WC functions if they are.
@@ -59,5 +61,52 @@ class CWD_V2_Activator {
 		}
 
 		flush_rewrite_rules();
+	}
+
+	private static function create_tables() {
+		global $wpdb;
+
+		require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+
+		$charset_collate = $wpdb->get_charset_collate();
+
+		$invoices_table = $wpdb->prefix . 'cwd_v2_invoices';
+		$sql_invoices = "CREATE TABLE {$invoices_table} (
+			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+			order_id BIGINT UNSIGNED NOT NULL,
+			user_id BIGINT UNSIGNED NOT NULL,
+			invoice_number VARCHAR(50) NOT NULL,
+			source VARCHAR(20) NOT NULL DEFAULT 'website',
+			odoo_invoice_id VARCHAR(100) NULL DEFAULT NULL,
+			invoice_date DATETIME NOT NULL,
+			due_date DATETIME NOT NULL,
+			status VARCHAR(20) NOT NULL DEFAULT 'unpaid',
+			amount_total DECIMAL(18,2) NOT NULL DEFAULT 0,
+			amount_paid DECIMAL(18,2) NOT NULL DEFAULT 0,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			PRIMARY KEY  (id),
+			UNIQUE KEY order_id (order_id),
+			KEY user_id (user_id),
+			KEY status (status)
+		) {$charset_collate};";
+		dbDelta( $sql_invoices );
+
+		$transactions_table = $wpdb->prefix . 'cwd_v2_account_transactions';
+		$sql_transactions = "CREATE TABLE {$transactions_table} (
+			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+			user_id BIGINT UNSIGNED NOT NULL,
+			type VARCHAR(20) NOT NULL,
+			amount DECIMAL(18,2) NOT NULL,
+			balance_after DECIMAL(18,2) NOT NULL,
+			reference_type VARCHAR(20) NULL DEFAULT NULL,
+			reference_id BIGINT UNSIGNED NULL DEFAULT NULL,
+			note VARCHAR(255) NULL DEFAULT NULL,
+			created_at DATETIME NOT NULL,
+			PRIMARY KEY  (id),
+			KEY user_id (user_id),
+			KEY created_at (created_at)
+		) {$charset_collate};";
+		dbDelta( $sql_transactions );
 	}
 }
