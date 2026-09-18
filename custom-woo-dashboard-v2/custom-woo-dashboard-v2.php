@@ -29,10 +29,13 @@ if (! function_exists('cwd_v2_init_plugin')) {
 			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-endpoints.php';
 			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-payment-gateway.php';
 			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-credit-logic.php';
+			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-invoices.php';
+			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-account-ledger.php';
 
 			CWD_V2_Shortcode::init();
 			CWD_V2_Endpoints::init();
 			CWD_V2_Credit_Logic::init();
+			CWD_V2_Invoices::init();
 
 			// Refresh rewrite rules once when endpoint definitions change.
 			$rewrite_version = '3';
@@ -40,6 +43,13 @@ if (! function_exists('cwd_v2_init_plugin')) {
 				CWD_V2_Endpoints::add_endpoints();
 				flush_rewrite_rules();
 				update_option('cwd_v2_rewrite_version', $rewrite_version);
+			}
+
+			// Create the invoices/ledger tables for sites where the plugin was
+			// already active before this feature was added.
+			if (! get_option('cwd_v2_tables_version')) {
+				CWD_V2_Activator::activate();
+				update_option('cwd_v2_tables_version', '1');
 			}
 
 			// Add custom payment gateway

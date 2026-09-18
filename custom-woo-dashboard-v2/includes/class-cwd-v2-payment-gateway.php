@@ -121,6 +121,15 @@ class WC_Gateway_Credit_Account_V2 extends WC_Payment_Gateway {
 		$new_balance = $credit_balance + $order_total;
 		update_user_meta( $user_id, '_credit_balance', $new_balance );
 
+		CWD_V2_Account_Ledger::record(
+			$user_id,
+			CWD_V2_Account_Ledger::TYPE_CHARGE,
+			$order_total,
+			'order',
+			$order_id,
+			sprintf( __( 'Order #%d placed on credit account', 'custom-woo-dashboard' ), $order_id )
+		);
+
 		// Mark as on-hold (or processing, depending on your flow)
 		$order->update_status( 'processing', __( 'Payment made via Credit Account.', 'custom-woo-dashboard' ) );
 
