@@ -277,3 +277,72 @@
         text-align: left;
     }
 }
+
+/* Invoices */
+
+.cwd-v2-status-badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+
+.cwd-v2-status-unpaid {
+    background: var(--cwd-v2-blue-soft);
+    color: var(--cwd-v2-blue-dark);
+}
+
+.cwd-v2-status-paid {
+    background: #e6f4ea;
+    color: #1e7e34;
+}
+
+.cwd-v2-status-overdue {
+    background: #fdecea;
+    color: #c62828;
+}
+
+.cwd-v2-status-void {
+    background: #eceff1;
+    color: #607d8b;
+}
+
+.cwd-v2-invoice-meta p {
+    margin: 0 0 6px;
+}
+
+.cwd-v2-invoice-items tfoot th,
+.cwd-v2-invoice-items tfoot td {
+    font-weight: 700;
+}
+
+.cwd-v2-print-button {
+    background: var(--cwd-v2-blue-dark);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 10px 16px;
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+.cwd-v2-print-button:hover {
+    background: var(--cwd-v2-ink);
+}
+
+@media print {
+    .cwd-v2-no-print,
+    .cwd-v2-back-button,
+    .cwd-v2-dashboard-container > a {
+        display: none !important;
+    }
+
+    .cwd-v2-endpoint-content {
+        border: none;
+        padding: 0;
+    }
+}

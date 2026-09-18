@@ -246,4 +246,19 @@ class CWD_V2_Invoices {
 			array( '%d' )
 		);
 	}
+
+	/**
+	 * Whether an invoice should be displayed as overdue. This never changes
+	 * the stored 'status' column — it is purely a display-time calculation.
+	 *
+	 * @param object $invoice A row object as returned by get_invoice() / get_invoices_for_user().
+	 * @return bool
+	 */
+	public static function is_overdue( $invoice ) {
+		if ( ! $invoice || self::STATUS_UNPAID !== $invoice->status ) {
+			return false;
+		}
+
+		return strtotime( $invoice->due_date ) < current_time( 'timestamp' );
+	}
 }

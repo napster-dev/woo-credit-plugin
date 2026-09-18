@@ -8,50 +8,79 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 $current_user = wp_get_current_user();
-$user_id = $current_user->ID;
+$user_id      = (int) $current_user->ID;
+$view         = ( isset( $_GET['cwd_status'] ) && 'all' === $_GET['cwd_status'] ) ? 'all' : 'open';
 
-// Fetch all orders for the user as a stand-in for invoices
-$args = array(
-	'customer_id' => $user_id,
-	'limit' => 20,
-);
-$orders = wc_get_orders( $args );
+if ( 'all' === $view ) {
+	$invoices = CWD_V2_Invoices::get_invoices_for_user(
+		$user_id,
+		array(
+			'orderby' => 'invoice_date',
+			'order'   => 'DESC',
+			'limit'   => 100,
+		)
+	);
+} else {
+	$invoices = CWD_V2_Invoices::get_outstanding_invoices_for_user( $user_id, 100 );
+}
 
+$open_url = esc_url( wc_get_endpoint_url( 'invoices' ) );
+$all_url  = esc_url( add_query_arg( 'cwd_status', 'all', wc_get_endpoint_url( 'invoices' ) ) );
 ?>
 <div class="cwd-v2-invoices-dashboard">
-	<h3><?php _e( 'Invoices', 'custom-woo-dashboard' ); ?></h3>
-	<p><?php _e( 'View and download invoices for your past orders. These are synced from your accounting system.', 'custom-woo-dashboard' ); ?></p>
+	<div class="cwd-v2-section-heading">
+		<div>
+			<h3><?php _e( 'Invoices', 'custom-woo-dashboard' ); ?></h3>
+			<p><?php _e( 'View your invoices, check what is still owed, and pay off individual invoices.', 'custom-woo-dashboard' ); ?></p>
+		</div>
+		<nav class="cwd-v2-section-links" aria-label="<?php esc_attr_e( 'Invoice views', 'custom-woo-dashboard' ); ?>">
+			<a href="<?php echo $open_url; ?>"><?php esc_html_e( 'Open', 'custom-woo-dashboard' ); ?></a>
+			<a href="<?php echo $all_url; ?>"><?php esc_html_e( 'All', 'custom-woo-dashboard' ); ?></a>
+		</nav>
+	</div>
 
-	<?php if ( ! empty( $orders ) ) : ?>
+	<?php if ( ! empty( $invoices ) ) : ?>
 		<table class="woocommerce-orders-table woocommerce-MyAccount-orders shop_table shop_table_responsive my_account_orders account-orders-table">
 			<thead>
 				<tr>
-					<th class="woocommerce-orders-table__header woocommerce-orders-table__header-order-number"><span class="nobr"><?php _e( 'Invoice / Order', 'woocommerce' ); ?></span></th>
-					<th class="woocommerce-orders-table__header woocommerce-orders-table__header-order-date"><span class="nobr"><?php _e( 'Date', 'woocommerce' ); ?></span></th>
-					<th class="woocommerce-orders-table__header woocommerce-orders-table__header-order-status"><span class="nobr"><?php _e( 'Status', 'woocommerce' ); ?></span></th>
-					<th class="woocommerce-orders-table__header woocommerce-orders-table__header-order-total"><span class="nobr"><?php _e( 'Total', 'woocommerce' ); ?></span></th>
-					<th class="woocommerce-orders-table__header woocommerce-orders-table__header-order-actions"><span class="nobr">&nbsp;</span></th>
+					<th><?php esc_html_e( 'Invoice #', 'custom-woo-dashboard' ); ?></th>
+					<th><?php esc_html_e( 'Date', 'custom-woo-dashboard' ); ?></th>
+					<th><?php esc_html_e( 'Due Date', 'custom-woo-dashboard' ); ?></th>
+					<th><?php esc_html_e( 'Total', 'woocommerce' ); ?></th>
+					<th><?php esc_html_e( 'Status', 'woocommerce' ); ?></th>
+					<th><?php esc_html_e( 'Actions', 'woocommerce' ); ?></th>
 				</tr>
 			</thead>
 			<tbody>
-				<?php foreach ( $orders as $order ) : ?>
-					<tr class="woocommerce-orders-table__row woocommerce-orders-table__row--status-<?php echo esc_attr( $order->get_status() ); ?> order">
-						<td class="woocommerce-orders-table__cell woocommerce-orders-table__cell-order-number" data-title="<?php esc_attr_e( 'Invoice / Order', 'woocommerce' ); ?>">
-							<a href="<?php echo esc_url( $order->get_view_order_url() ); ?>">
-								#<?php echo esc_html( $order->get_order_number() ); ?>
-							</a>
+				<?php foreach ( $invoices as $invoice ) : ?>
+					<?php
+					$is_overdue    = CWD_V2_Invoices::is_overdue( $invoice );
+					$status_label  = ucfirst( $invoice->status );
+					$status_class  = 'cwd-v2-status-' . esc_attr( $invoice->status );
+					if ( $is_overdue ) {
+						$status_label = __( 'Overdue', 'custom-woo-dashboard' );
+						$status_class = 'cwd-v2-status-overdue';
+					}
+					$view_url = esc_url( wc_get_endpoint_url( 'view-invoice', $invoice->id ) );
+					?>
+					<tr>
+						<td data-title="<?php esc_attr_e( 'Invoice #', 'custom-woo-dashboard' ); ?>">
+							<a href="<?php echo $view_url; ?>"><?php echo esc_html( $invoice->invoice_number ); ?></a>
 						</td>
-						<td class="woocommerce-orders-table__cell woocommerce-orders-table__cell-order-date" data-title="<?php esc_attr_e( 'Date', 'woocommerce' ); ?>">
-							<time datetime="<?php echo esc_attr( $order->get_date_created()->date( 'c' ) ); ?>"><?php echo esc_html( wc_format_datetime( $order->get_date_created() ) ); ?></time>
+						<td data-title="<?php esc_attr_e( 'Date', 'custom-woo-dashboard' ); ?>">
+							<?php echo esc_html( date_i18n( wc_date_format(), strtotime( $invoice->invoice_date ) ) ); ?>
 						</td>
-						<td class="woocommerce-orders-table__cell woocommerce-orders-table__cell-order-status" data-title="<?php esc_attr_e( 'Status', 'woocommerce' ); ?>">
-							<?php echo esc_html( wc_get_order_status_name( $order->get_status() ) ); ?>
+						<td data-title="<?php esc_attr_e( 'Due Date', 'custom-woo-dashboard' ); ?>">
+							<?php echo esc_html( date_i18n( wc_date_format(), strtotime( $invoice->due_date ) ) ); ?>
 						</td>
-						<td class="woocommerce-orders-table__cell woocommerce-orders-table__cell-order-total" data-title="<?php esc_attr_e( 'Total', 'woocommerce' ); ?>">
-							<?php echo wp_kses_post( sprintf( _x( '%1$s for %2$s item(s)', 'Order total formatted with items', 'woocommerce' ), $order->get_formatted_order_total(), $order->get_item_count() ) ); ?>
+						<td data-title="<?php esc_attr_e( 'Total', 'woocommerce' ); ?>">
+							<?php echo wp_kses_post( wc_price( $invoice->amount_total ) ); ?>
 						</td>
-						<td class="woocommerce-orders-table__cell woocommerce-orders-table__cell-order-actions" data-title="<?php esc_attr_e( 'Actions', 'woocommerce' ); ?>">
-							<a href="<?php echo esc_url( $order->get_view_order_url() ); ?>" class="woocommerce-button button view"><?php _e( 'View Details', 'woocommerce' ); ?></a>
+						<td data-title="<?php esc_attr_e( 'Status', 'woocommerce' ); ?>">
+							<span class="cwd-v2-status-badge <?php echo $status_class; ?>"><?php echo esc_html( $status_label ); ?></span>
+						</td>
+						<td data-title="<?php esc_attr_e( 'Actions', 'woocommerce' ); ?>">
+							<a href="<?php echo $view_url; ?>" class="woocommerce-button button view"><?php esc_html_e( 'View', 'woocommerce' ); ?></a>
 						</td>
 					</tr>
 				<?php endforeach; ?>
@@ -59,7 +88,11 @@ $orders = wc_get_orders( $args );
 		</table>
 	<?php else : ?>
 		<div class="woocommerce-message woocommerce-message--info woocommerce-Message woocommerce-Message--info woocommerce-info">
-			<?php esc_html_e( 'No invoices found.', 'custom-woo-dashboard' ); ?>
+			<?php if ( 'open' === $view ) : ?>
+				<?php esc_html_e( 'You have no open invoices.', 'custom-woo-dashboard' ); ?>
+			<?php else : ?>
+				<?php esc_html_e( 'No invoices found.', 'custom-woo-dashboard' ); ?>
+			<?php endif; ?>
 		</div>
 	<?php endif; ?>
 </div>

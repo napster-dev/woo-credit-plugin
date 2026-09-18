@@ -38,7 +38,7 @@ if (! function_exists('cwd_v2_init_plugin')) {
 			CWD_V2_Invoices::init();
 
 			// Refresh rewrite rules once when endpoint definitions change.
-			$rewrite_version = '3';
+			$rewrite_version = '4';
 			if (get_option('cwd_v2_rewrite_version') !== $rewrite_version) {
 				CWD_V2_Endpoints::add_endpoints();
 				flush_rewrite_rules();
