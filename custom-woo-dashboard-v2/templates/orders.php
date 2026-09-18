@@ -40,14 +40,14 @@ foreach ($orders as $order) {
     } elseif ('order-history' === $view) {
         $include = in_array($status, array('completed', 'cancelled', 'refunded', 'failed'), true);
     } else {
-        $include = in_array($status, array('pending', 'processing', 'on-hold'), true);
-            if ($include) {
-                foreach ($order->get_items() as $item) {
-                    $product = $item->get_product();
-                    if ($product && $product->is_on_backorder($item->get_quantity())) {
-                        $include = true;
-                        break;
-                    }
+        $include = false;
+        if (in_array($status, array('pending', 'processing', 'on-hold'), true)) {
+            foreach ($order->get_items() as $item) {
+                $product = $item->get_product();
+                if ($product && $product->is_on_backorder($item->get_quantity())) {
+                    $include = true;
+                    break;
+                }
             }
         }
     }
