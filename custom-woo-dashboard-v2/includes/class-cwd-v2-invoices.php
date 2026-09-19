@@ -1,13 +1,15 @@
 <?php
+
 /**
  * Invoice data access and automatic invoice generation.
  */
 
-if ( ! defined( 'ABSPATH' ) ) {
+if (! defined('ABSPATH')) {
 	exit;
 }
 
-class CWD_V2_Invoices {
+class CWD_V2_Invoices
+{
 
 	const STATUS_UNPAID  = 'unpaid';
 	const STATUS_PAID    = 'paid';
@@ -17,19 +19,21 @@ class CWD_V2_Invoices {
 	const SOURCE_WEBSITE = 'website';
 	const SOURCE_ODOO    = 'odoo';
 
-	public static function init() {
-		add_action( 'woocommerce_payment_complete', array( __CLASS__, 'generate_invoice_for_order' ) );
-		add_action( 'woocommerce_order_status_processing', array( __CLASS__, 'generate_invoice_for_order' ) );
-		add_action( 'woocommerce_order_status_completed', array( __CLASS__, 'generate_invoice_for_order' ) );
-		add_action( 'woocommerce_order_status_cancelled', array( __CLASS__, 'void_invoice_for_order' ) );
-		add_action( 'woocommerce_order_status_refunded', array( __CLASS__, 'void_invoice_for_order' ) );
-		add_action( 'cwd_v2_sync_odoo_invoices', array( __CLASS__, 'sync_odoo_invoices' ) );
+	public static function init()
+	{
+		add_action('woocommerce_payment_complete', array(__CLASS__, 'generate_invoice_for_order'));
+		add_action('woocommerce_order_status_processing', array(__CLASS__, 'generate_invoice_for_order'));
+		add_action('woocommerce_order_status_completed', array(__CLASS__, 'generate_invoice_for_order'));
+		add_action('woocommerce_order_status_cancelled', array(__CLASS__, 'void_invoice_for_order'));
+		add_action('woocommerce_order_status_refunded', array(__CLASS__, 'void_invoice_for_order'));
+		add_action('cwd_v2_sync_odoo_invoices', array(__CLASS__, 'sync_odoo_invoices'));
 	}
 
 	/**
 	 * @return string The fully-prefixed invoices table name.
 	 */
-	public static function table_name() {
+	public static function table_name()
+	{
 		global $wpdb;
 		return $wpdb->prefix . 'cwd_v2_invoices';
 	}
@@ -40,18 +44,19 @@ class CWD_V2_Invoices {
 	 *
 	 * @param int $order_id
 	 */
-	public static function generate_invoice_for_order( $order_id ) {
-		$order = wc_get_order( $order_id );
-		if ( ! $order ) {
+	public static function generate_invoice_for_order($order_id)
+	{
+		$order = wc_get_order($order_id);
+		if (! $order) {
 			return;
 		}
 
-		if ( $order->get_meta( '_cwd_v2_invoice_generated' ) ) {
+		if ($order->get_meta('_cwd_v2_invoice_generated')) {
 			return;
 		}
 
 		$user_id = $order->get_user_id();
-		if ( ! $user_id ) {
+		if (! $user_id) {
 			return;
 		}
 
@@ -61,18 +66,18 @@ class CWD_V2_Invoices {
 		// Belt-and-braces duplicate check in case the meta flag write below
 		// didn't persist for some reason (e.g. two hooks firing in the same
 		// request before either save() call completes).
-		$existing = $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$table} WHERE order_id = %d", $order_id ) );
-		if ( $existing ) {
-			$order->update_meta_data( '_cwd_v2_invoice_generated', 'yes' );
+		$existing = $wpdb->get_var($wpdb->prepare("SELECT id FROM {$table} WHERE order_id = %d", $order_id));
+		if ($existing) {
+			$order->update_meta_data('_cwd_v2_invoice_generated', 'yes');
 			$order->save();
 			return;
 		}
 
-		$is_credit_order = ( 'cwd_v2_credit_account' === $order->get_payment_method() );
+		$is_credit_order = ('cwd_v2_credit_account' === $order->get_payment_method());
 		$due_days        = self::get_due_days();
-		$invoice_date    = current_time( 'mysql' );
+		$invoice_date    = current_time('mysql');
 		$due_date        = $is_credit_order
-			? gmdate( 'Y-m-d H:i:s', strtotime( $invoice_date . ' + ' . $due_days . ' days' ) )
+			? gmdate('Y-m-d H:i:s', strtotime($invoice_date . ' + ' . $due_days . ' days'))
 			: $invoice_date;
 		$status          = $is_credit_order ? self::STATUS_UNPAID : self::STATUS_PAID;
 		$amount_total    = (float) $order->get_total();
@@ -83,7 +88,7 @@ class CWD_V2_Invoices {
 			array(
 				'order_id'        => $order_id,
 				'user_id'         => $user_id,
-				'invoice_number'  => self::build_invoice_number( $order_id ),
+				'invoice_number'  => self::build_invoice_number($order_id),
 				'source'          => self::SOURCE_WEBSITE,
 				'odoo_invoice_id' => null,
 				'invoice_date'    => $invoice_date,
@@ -91,13 +96,13 @@ class CWD_V2_Invoices {
 				'status'          => $status,
 				'amount_total'    => $amount_total,
 				'amount_paid'     => $amount_paid,
-				'created_at'      => current_time( 'mysql' ),
-				'updated_at'      => current_time( 'mysql' ),
+				'created_at'      => current_time('mysql'),
+				'updated_at'      => current_time('mysql'),
 			),
-			array( '%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%f', '%f', '%s', '%s' )
+			array('%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%f', '%f', '%s', '%s')
 		);
 
-		$order->update_meta_data( '_cwd_v2_invoice_generated', 'yes' );
+		$order->update_meta_data('_cwd_v2_invoice_generated', 'yes');
 		$order->save();
 	}
 
@@ -107,7 +112,8 @@ class CWD_V2_Invoices {
 	 *
 	 * @param int $order_id
 	 */
-	public static function void_invoice_for_order( $order_id ) {
+	public static function void_invoice_for_order($order_id)
+	{
 		global $wpdb;
 		$table = self::table_name();
 
@@ -115,11 +121,11 @@ class CWD_V2_Invoices {
 			$table,
 			array(
 				'status'     => self::STATUS_VOID,
-				'updated_at' => current_time( 'mysql' ),
+				'updated_at' => current_time('mysql'),
 			),
-			array( 'order_id' => $order_id ),
-			array( '%s', '%s' ),
-			array( '%d' )
+			array('order_id' => $order_id),
+			array('%s', '%s'),
+			array('%d')
 		);
 	}
 
@@ -127,8 +133,9 @@ class CWD_V2_Invoices {
 	 * @param int $order_id
 	 * @return string The invoice number, e.g. INV-000042.
 	 */
-	public static function build_invoice_number( $order_id ) {
-		return 'INV-' . str_pad( (string) $order_id, 6, '0', STR_PAD_LEFT );
+	public static function build_invoice_number($order_id)
+	{
+		return 'INV-' . str_pad((string) $order_id, 6, '0', STR_PAD_LEFT);
 	}
 
 	/**
@@ -140,9 +147,10 @@ class CWD_V2_Invoices {
 	 *
 	 * @return int
 	 */
-	public static function get_due_days() {
-		$days = get_option( 'cwd_v2_invoice_due_days', 30 );
-		return absint( $days ) > 0 ? absint( $days ) : 30;
+	public static function get_due_days()
+	{
+		$days = get_option('cwd_v2_invoice_due_days', 30);
+		return absint($days) > 0 ? absint($days) : 30;
 	}
 
 	/**
@@ -155,8 +163,9 @@ class CWD_V2_Invoices {
 	 * }
 	 * @return object[] Array of raw row objects from the invoices table.
 	 */
-	public static function get_invoices_for_user( $user_id, $args = array() ) {
-		self::sync_odoo_invoices( $user_id );
+	public static function get_invoices_for_user($user_id, $args = array())
+	{
+		self::sync_odoo_invoices($user_id);
 		global $wpdb;
 		$table = self::table_name();
 
@@ -166,13 +175,13 @@ class CWD_V2_Invoices {
 			'order'   => 'DESC',
 			'limit'   => 50,
 		);
-		$args = wp_parse_args( $args, $defaults );
+		$args = wp_parse_args($args, $defaults);
 
-		$allowed_orderby = array( 'invoice_date', 'due_date', 'amount_total', 'status' );
-		$orderby         = in_array( $args['orderby'], $allowed_orderby, true ) ? $args['orderby'] : 'invoice_date';
-		$order_dir       = 'ASC' === strtoupper( $args['order'] ) ? 'ASC' : 'DESC';
+		$allowed_orderby = array('invoice_date', 'due_date', 'amount_total', 'status');
+		$orderby         = in_array($args['orderby'], $allowed_orderby, true) ? $args['orderby'] : 'invoice_date';
+		$order_dir       = 'ASC' === strtoupper($args['order']) ? 'ASC' : 'DESC';
 
-		if ( ! empty( $args['status'] ) ) {
+		if (! empty($args['status'])) {
 			$sql = $wpdb->prepare(
 				"SELECT * FROM {$table} WHERE user_id = %d AND status = %s ORDER BY {$orderby} {$order_dir} LIMIT %d",
 				$user_id,
@@ -187,7 +196,7 @@ class CWD_V2_Invoices {
 			);
 		}
 
-		return $wpdb->get_results( $sql );
+		return $wpdb->get_results($sql);
 	}
 
 	/**
@@ -202,49 +211,50 @@ class CWD_V2_Invoices {
 	 * @param int $user_id
 	 * @return int Number of rows inserted or updated.
 	 */
-	public static function sync_odoo_invoices( $user_id = 0 ) {
-		if ( ! $user_id ) {
+	public static function sync_odoo_invoices($user_id = 0)
+	{
+		if (! $user_id) {
 			return 0;
 		}
 
-		$rows = apply_filters( 'cwd_v2_odoo_invoices', array(), (int) $user_id );
-		if ( ! is_array( $rows ) ) {
+		$rows = apply_filters('cwd_v2_odoo_invoices', array(), (int) $user_id);
+		if (! is_array($rows)) {
 			return 0;
 		}
 
 		global $wpdb;
 		$table = self::table_name();
 		$count = 0;
-		foreach ( $rows as $row ) {
-			$odoo_id = isset( $row['odoo_invoice_id'] ) ? sanitize_text_field( $row['odoo_invoice_id'] ) : '';
-			if ( '' === $odoo_id ) {
+		foreach ($rows as $row) {
+			$odoo_id = isset($row['odoo_invoice_id']) ? sanitize_text_field($row['odoo_invoice_id']) : '';
+			if ('' === $odoo_id) {
 				continue;
 			}
 
-			$total = isset( $row['amount_total'] ) ? (float) $row['amount_total'] : 0.0;
-			$paid  = min( $total, max( 0.0, isset( $row['amount_paid'] ) ? (float) $row['amount_paid'] : 0.0 ) );
-			$status = isset( $row['status'] ) ? sanitize_key( $row['status'] ) : self::STATUS_UNPAID;
-			$status = in_array( $status, array( self::STATUS_UNPAID, self::STATUS_PAID, self::STATUS_VOID ), true ) ? $status : self::STATUS_UNPAID;
-			$now = current_time( 'mysql' );
+			$total = isset($row['amount_total']) ? (float) $row['amount_total'] : 0.0;
+			$paid  = min($total, max(0.0, isset($row['amount_paid']) ? (float) $row['amount_paid'] : 0.0));
+			$status = isset($row['status']) ? sanitize_key($row['status']) : self::STATUS_UNPAID;
+			$status = in_array($status, array(self::STATUS_UNPAID, self::STATUS_PAID, self::STATUS_VOID), true) ? $status : self::STATUS_UNPAID;
+			$now = current_time('mysql');
 			$data = array(
 				'user_id'         => (int) $user_id,
-				'invoice_number'  => sanitize_text_field( $row['invoice_number'] ?? $odoo_id ),
+				'invoice_number'  => sanitize_text_field($row['invoice_number'] ?? $odoo_id),
 				'source'          => self::SOURCE_ODOO,
-				'invoice_date'    => sanitize_text_field( $row['invoice_date'] ?? $now ),
-				'due_date'        => sanitize_text_field( $row['due_date'] ?? $now ),
+				'invoice_date'    => sanitize_text_field($row['invoice_date'] ?? $now),
+				'due_date'        => sanitize_text_field($row['due_date'] ?? $now),
 				'status'          => $paid >= $total ? self::STATUS_PAID : $status,
 				'amount_total'    => $total,
 				'amount_paid'     => $paid,
 				'updated_at'      => $now,
 			);
-			$existing = $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$table} WHERE odoo_invoice_id = %s", $odoo_id ) );
-			if ( $existing ) {
-				$wpdb->update( $table, $data, array( 'id' => (int) $existing ), array( '%d', '%s', '%s', '%s', '%s', '%s', '%f', '%f', '%s' ), array( '%d' ) );
+			$existing = $wpdb->get_var($wpdb->prepare("SELECT id FROM {$table} WHERE odoo_invoice_id = %s", $odoo_id));
+			if ($existing) {
+				$wpdb->update($table, $data, array('id' => (int) $existing), array('%d', '%s', '%s', '%s', '%s', '%s', '%f', '%f', '%s'), array('%d'));
 			} else {
 				$data['order_id']        = null;
 				$data['odoo_invoice_id'] = $odoo_id;
 				$data['created_at']      = $now;
-				$wpdb->insert( $table, $data, array( '%d', '%s', '%s', '%s', '%s', '%s', '%f', '%f', '%s', '%d', '%s', '%s' ) );
+				$wpdb->insert($table, $data, array('%d', '%s', '%s', '%s', '%s', '%s', '%f', '%f', '%s', '%d', '%s', '%s'));
 			}
 			$count++;
 		}
@@ -257,15 +267,16 @@ class CWD_V2_Invoices {
 	 * @param int $user_id Optional. If provided, only returns the invoice if it belongs to this user.
 	 * @return object|null
 	 */
-	public static function get_invoice( $invoice_id, $user_id = 0 ) {
+	public static function get_invoice($invoice_id, $user_id = 0)
+	{
 		global $wpdb;
 		$table = self::table_name();
 
-		if ( $user_id ) {
-			return $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE id = %d AND user_id = %d", $invoice_id, $user_id ) );
+		if ($user_id) {
+			return $wpdb->get_row($wpdb->prepare("SELECT * FROM {$table} WHERE id = %d AND user_id = %d", $invoice_id, $user_id));
 		}
 
-		return $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE id = %d", $invoice_id ) );
+		return $wpdb->get_row($wpdb->prepare("SELECT * FROM {$table} WHERE id = %d", $invoice_id));
 	}
 
 	/**
@@ -273,7 +284,8 @@ class CWD_V2_Invoices {
 	 * @param int $limit
 	 * @return object[] Unpaid invoices for the user, soonest due date first.
 	 */
-	public static function get_outstanding_invoices_for_user( $user_id, $limit = 50 ) {
+	public static function get_outstanding_invoices_for_user($user_id, $limit = 50)
+	{
 		return self::get_invoices_for_user(
 			$user_id,
 			array(
@@ -289,12 +301,13 @@ class CWD_V2_Invoices {
 	 * @param int $invoice_id
 	 * @return bool|int False on failure, number of rows updated on success.
 	 */
-	public static function mark_invoice_paid( $invoice_id ) {
+	public static function mark_invoice_paid($invoice_id)
+	{
 		global $wpdb;
 		$table = self::table_name();
 
-		$invoice = self::get_invoice( $invoice_id );
-		if ( ! $invoice ) {
+		$invoice = self::get_invoice($invoice_id);
+		if (! $invoice) {
 			return false;
 		}
 
@@ -303,11 +316,11 @@ class CWD_V2_Invoices {
 			array(
 				'status'      => self::STATUS_PAID,
 				'amount_paid' => $invoice->amount_total,
-				'updated_at'  => current_time( 'mysql' ),
+				'updated_at'  => current_time('mysql'),
 			),
-			array( 'id' => $invoice_id ),
-			array( '%s', '%f', '%s' ),
-			array( '%d' )
+			array('id' => $invoice_id),
+			array('%s', '%f', '%s'),
+			array('%d')
 		);
 	}
 
@@ -318,11 +331,12 @@ class CWD_V2_Invoices {
 	 * @param object $invoice A row object as returned by get_invoice() / get_invoices_for_user().
 	 * @return bool
 	 */
-	public static function is_overdue( $invoice ) {
-		if ( ! $invoice || self::STATUS_UNPAID !== $invoice->status ) {
+	public static function is_overdue($invoice)
+	{
+		if (! $invoice || self::STATUS_UNPAID !== $invoice->status) {
 			return false;
 		}
 
-		return strtotime( $invoice->due_date ) < current_time( 'timestamp' );
+		return strtotime($invoice->due_date) < current_time('timestamp');
 	}
 }

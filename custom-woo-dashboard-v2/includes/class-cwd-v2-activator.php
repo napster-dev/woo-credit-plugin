@@ -1,25 +1,28 @@
 <?php
+
 /**
  * Fired during plugin activation
  */
 
-if ( ! defined( 'ABSPATH' ) ) {
+if (! defined('ABSPATH')) {
 	exit;
 }
 
-class CWD_V2_Activator {
+class CWD_V2_Activator
+{
 
-	public static function activate() {
+	public static function activate()
+	{
 		self::create_tables();
 
 		// Ensure WooCommerce is active. We check for a function that exists if Woo is loaded,
 		// but since activation happens before plugins_loaded in some contexts, we just try our best.
 		// We'll create the product using WP core functions if WC classes aren't available, or WC functions if they are.
 
-		$product_id = get_option( 'cwd_v2_credit_payment_product_id' );
+		$product_id = get_option('cwd_v2_credit_payment_product_id');
 
 		// Check if product exists and is not trashed
-		if ( $product_id && 'publish' === get_post_status( $product_id ) ) {
+		if ($product_id && 'publish' === get_post_status($product_id)) {
 			// Product already exists
 		} else {
 			// Create the hidden "Credit Account Payment" product
@@ -30,40 +33,41 @@ class CWD_V2_Activator {
 				'post_type'    => 'product',
 			);
 
-			$new_product_id = wp_insert_post( $post_data );
+			$new_product_id = wp_insert_post($post_data);
 
-			if ( ! is_wp_error( $new_product_id ) ) {
+			if (! is_wp_error($new_product_id)) {
 				// Set it as a simple product
-				wp_set_object_terms( $new_product_id, 'simple', 'product_type' );
+				wp_set_object_terms($new_product_id, 'simple', 'product_type');
 
 				// Make it hidden from catalog and search
-				update_post_meta( $new_product_id, '_visibility', 'hidden' );
+				update_post_meta($new_product_id, '_visibility', 'hidden');
 				// WC 3.0+ uses product_visibility taxonomy
-				wp_set_object_terms( $new_product_id, 'exclude-from-search', 'product_visibility' );
-				wp_set_object_terms( $new_product_id, 'exclude-from-catalog', 'product_visibility' );
+				wp_set_object_terms($new_product_id, 'exclude-from-search', 'product_visibility');
+				wp_set_object_terms($new_product_id, 'exclude-from-catalog', 'product_visibility');
 
 				// Other meta fields
-				update_post_meta( $new_product_id, '_virtual', 'yes' );
-				update_post_meta( $new_product_id, '_sold_individually', 'yes' );
-				update_post_meta( $new_product_id, '_price', '0' );
-				update_post_meta( $new_product_id, '_regular_price', '0' );
-				update_post_meta( $new_product_id, '_manage_stock', 'no' );
-				update_post_meta( $new_product_id, '_stock_status', 'instock' );
+				update_post_meta($new_product_id, '_virtual', 'yes');
+				update_post_meta($new_product_id, '_sold_individually', 'yes');
+				update_post_meta($new_product_id, '_price', '0');
+				update_post_meta($new_product_id, '_regular_price', '0');
+				update_post_meta($new_product_id, '_manage_stock', 'no');
+				update_post_meta($new_product_id, '_stock_status', 'instock');
 
-				update_option( 'cwd_v2_credit_payment_product_id', $new_product_id );
+				update_option('cwd_v2_credit_payment_product_id', $new_product_id);
 			}
 		}
 
 		// Add rewrite rules and flush
 		// We will call the init function of endpoints to register them before flushing
-		if ( class_exists( 'CWD_V2_Endpoints' ) ) {
+		if (class_exists('CWD_V2_Endpoints')) {
 			CWD_V2_Endpoints::add_endpoints();
 		}
 
 		flush_rewrite_rules();
 	}
 
-	private static function create_tables() {
+	private static function create_tables()
+	{
 		global $wpdb;
 
 		require_once ABSPATH . 'wp-admin/includes/upgrade.php';
@@ -91,7 +95,7 @@ class CWD_V2_Activator {
 			KEY user_id (user_id),
 			KEY status (status)
 		) {$charset_collate};";
-		dbDelta( $sql_invoices );
+		dbDelta($sql_invoices);
 
 		$transactions_table = $wpdb->prefix . 'cwd_v2_account_transactions';
 		$sql_transactions = "CREATE TABLE {$transactions_table} (
@@ -108,6 +112,6 @@ class CWD_V2_Activator {
 			KEY user_id (user_id),
 			KEY created_at (created_at)
 		) {$charset_collate};";
-		dbDelta( $sql_transactions );
+		dbDelta($sql_transactions);
 	}
 }
