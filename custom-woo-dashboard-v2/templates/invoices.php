@@ -44,9 +44,10 @@ $all_url  = esc_url( add_query_arg( 'cwd_status', 'all', wc_get_endpoint_url( 'i
 			<thead>
 				<tr>
 					<th><?php esc_html_e( 'Invoice #', 'custom-woo-dashboard' ); ?></th>
+					<th><?php esc_html_e( 'Source', 'custom-woo-dashboard' ); ?></th>
 					<th><?php esc_html_e( 'Date', 'custom-woo-dashboard' ); ?></th>
 					<th><?php esc_html_e( 'Due Date', 'custom-woo-dashboard' ); ?></th>
-					<th><?php esc_html_e( 'Total', 'woocommerce' ); ?></th>
+					<th><?php esc_html_e( 'Outstanding', 'custom-woo-dashboard' ); ?></th>
 					<th><?php esc_html_e( 'Status', 'woocommerce' ); ?></th>
 					<th><?php esc_html_e( 'Actions', 'woocommerce' ); ?></th>
 				</tr>
@@ -67,14 +68,15 @@ $all_url  = esc_url( add_query_arg( 'cwd_status', 'all', wc_get_endpoint_url( 'i
 						<td data-title="<?php esc_attr_e( 'Invoice #', 'custom-woo-dashboard' ); ?>">
 							<a href="<?php echo $view_url; ?>"><?php echo esc_html( $invoice->invoice_number ); ?></a>
 						</td>
+						<td data-title="<?php esc_attr_e( 'Source', 'custom-woo-dashboard' ); ?>"><?php echo esc_html( CWD_V2_Invoices::SOURCE_ODOO === $invoice->source ? 'Odoo' : 'Website' ); ?></td>
 						<td data-title="<?php esc_attr_e( 'Date', 'custom-woo-dashboard' ); ?>">
 							<?php echo esc_html( date_i18n( wc_date_format(), strtotime( $invoice->invoice_date ) ) ); ?>
 						</td>
 						<td data-title="<?php esc_attr_e( 'Due Date', 'custom-woo-dashboard' ); ?>">
 							<?php echo esc_html( date_i18n( wc_date_format(), strtotime( $invoice->due_date ) ) ); ?>
 						</td>
-						<td data-title="<?php esc_attr_e( 'Total', 'woocommerce' ); ?>">
-							<?php echo wp_kses_post( wc_price( $invoice->amount_total ) ); ?>
+						<td data-title="<?php esc_attr_e( 'Outstanding', 'custom-woo-dashboard' ); ?>">
+							<?php echo wp_kses_post( wc_price( max( 0, (float) $invoice->amount_total - (float) $invoice->amount_paid ) ) ); ?>
 						</td>
 						<td data-title="<?php esc_attr_e( 'Status', 'woocommerce' ); ?>">
 							<span class="cwd-v2-status-badge <?php echo $status_class; ?>"><?php echo esc_html( $status_label ); ?></span>

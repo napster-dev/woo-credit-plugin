@@ -73,7 +73,7 @@ class CWD_V2_Activator {
 		$invoices_table = $wpdb->prefix . 'cwd_v2_invoices';
 		$sql_invoices = "CREATE TABLE {$invoices_table} (
 			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-			order_id BIGINT UNSIGNED NOT NULL,
+			order_id BIGINT UNSIGNED NULL DEFAULT NULL,
 			user_id BIGINT UNSIGNED NOT NULL,
 			invoice_number VARCHAR(50) NOT NULL,
 			source VARCHAR(20) NOT NULL DEFAULT 'website',
@@ -87,6 +87,7 @@ class CWD_V2_Activator {
 			updated_at DATETIME NOT NULL,
 			PRIMARY KEY  (id),
 			UNIQUE KEY order_id (order_id),
+			UNIQUE KEY odoo_invoice_id (odoo_invoice_id),
 			KEY user_id (user_id),
 			KEY status (status)
 		) {$charset_collate};";

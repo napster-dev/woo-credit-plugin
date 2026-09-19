@@ -39,6 +39,7 @@ if ( $is_overdue ) {
 $amount_due  = max( 0, (float) $invoice->amount_total - (float) $invoice->amount_paid );
 $roles       = (array) $current_user->roles;
 $can_pay     = ( CWD_V2_Invoices::STATUS_UNPAID === $invoice->status ) && in_array( 'credit_account', $roles, true );
+$document_url = apply_filters( 'cwd_v2_invoice_document_url', '', $invoice );
 ?>
 <div class="cwd-v2-invoice-view" id="cwd-v2-invoice-print-area">
 	<div class="cwd-v2-section-heading cwd-v2-no-print">
@@ -48,12 +49,14 @@ $can_pay     = ( CWD_V2_Invoices::STATUS_UNPAID === $invoice->status ) && in_arr
 		</div>
 		<nav class="cwd-v2-section-links" aria-label="<?php esc_attr_e( 'Invoice actions', 'custom-woo-dashboard' ); ?>">
 			<button type="button" class="cwd-v2-print-button" onclick="window.print();"><?php esc_html_e( 'Print / Save as PDF', 'custom-woo-dashboard' ); ?></button>
+			<?php if ( $document_url ) : ?><a href="<?php echo esc_url( $document_url ); ?>" target="_blank" rel="noopener"><?php esc_html_e( 'Download Invoice', 'custom-woo-dashboard' ); ?></a><?php endif; ?>
 		</nav>
 	</div>
 
 	<div class="cwd-v2-invoice-meta">
 		<p><strong><?php esc_html_e( 'Invoice Date:', 'custom-woo-dashboard' ); ?></strong> <?php echo esc_html( date_i18n( wc_date_format(), strtotime( $invoice->invoice_date ) ) ); ?></p>
 		<p><strong><?php esc_html_e( 'Due Date:', 'custom-woo-dashboard' ); ?></strong> <?php echo esc_html( date_i18n( wc_date_format(), strtotime( $invoice->due_date ) ) ); ?></p>
+		<p><strong><?php esc_html_e( 'Source:', 'custom-woo-dashboard' ); ?></strong> <?php echo esc_html( CWD_V2_Invoices::SOURCE_ODOO === $invoice->source ? 'Odoo' : 'Website' ); ?></p>
 		<p><strong><?php esc_html_e( 'Billed To:', 'custom-woo-dashboard' ); ?></strong> <?php echo esc_html( $current_user->display_name ); ?> (<?php echo esc_html( $current_user->user_email ); ?>)</p>
 	</div>
 

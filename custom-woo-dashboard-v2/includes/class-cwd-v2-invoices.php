@@ -23,6 +23,7 @@ class CWD_V2_Invoices {
 		add_action( 'woocommerce_order_status_completed', array( __CLASS__, 'generate_invoice_for_order' ) );
 		add_action( 'woocommerce_order_status_cancelled', array( __CLASS__, 'void_invoice_for_order' ) );
 		add_action( 'woocommerce_order_status_refunded', array( __CLASS__, 'void_invoice_for_order' ) );
+		add_action( 'cwd_v2_sync_odoo_invoices', array( __CLASS__, 'sync_odoo_invoices' ) );
 	}
 
 	/**
@@ -155,6 +156,7 @@ class CWD_V2_Invoices {
 	 * @return object[] Array of raw row objects from the invoices table.
 	 */
 	public static function get_invoices_for_user( $user_id, $args = array() ) {
+		self::sync_odoo_invoices( $user_id );
 		global $wpdb;
 		$table = self::table_name();
 
@@ -186,6 +188,68 @@ class CWD_V2_Invoices {
 		}
 
 		return $wpdb->get_results( $sql );
+	}
+
+	/**
+	 * Imports the customer's Odoo invoices through the site's Odoo connector.
+	 * The connector supplies normalized rows through the filter and may run this
+	 * method from a cron job or webhook handler for automatic synchronization.
+	 *
+	 * Each row must contain: odoo_invoice_id, invoice_number, invoice_date,
+	 * due_date, amount_total, amount_paid, and status. Optional document_url
+	 * values are passed through the invoice document URL filter.
+	 *
+	 * @param int $user_id
+	 * @return int Number of rows inserted or updated.
+	 */
+	public static function sync_odoo_invoices( $user_id = 0 ) {
+		if ( ! $user_id ) {
+			return 0;
+		}
+
+		$rows = apply_filters( 'cwd_v2_odoo_invoices', array(), (int) $user_id );
+		if ( ! is_array( $rows ) ) {
+			return 0;
+		}
+
+		global $wpdb;
+		$table = self::table_name();
+		$count = 0;
+		foreach ( $rows as $row ) {
+			$odoo_id = isset( $row['odoo_invoice_id'] ) ? sanitize_text_field( $row['odoo_invoice_id'] ) : '';
+			if ( '' === $odoo_id ) {
+				continue;
+			}
+
+			$total = isset( $row['amount_total'] ) ? (float) $row['amount_total'] : 0.0;
+			$paid  = min( $total, max( 0.0, isset( $row['amount_paid'] ) ? (float) $row['amount_paid'] : 0.0 ) );
+			$status = isset( $row['status'] ) ? sanitize_key( $row['status'] ) : self::STATUS_UNPAID;
+			$status = in_array( $status, array( self::STATUS_UNPAID, self::STATUS_PAID, self::STATUS_VOID ), true ) ? $status : self::STATUS_UNPAID;
+			$now = current_time( 'mysql' );
+			$data = array(
+				'user_id'         => (int) $user_id,
+				'invoice_number'  => sanitize_text_field( $row['invoice_number'] ?? $odoo_id ),
+				'source'          => self::SOURCE_ODOO,
+				'invoice_date'    => sanitize_text_field( $row['invoice_date'] ?? $now ),
+				'due_date'        => sanitize_text_field( $row['due_date'] ?? $now ),
+				'status'          => $paid >= $total ? self::STATUS_PAID : $status,
+				'amount_total'    => $total,
+				'amount_paid'     => $paid,
+				'updated_at'      => $now,
+			);
+			$existing = $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$table} WHERE odoo_invoice_id = %s", $odoo_id ) );
+			if ( $existing ) {
+				$wpdb->update( $table, $data, array( 'id' => (int) $existing ), array( '%d', '%s', '%s', '%s', '%s', '%s', '%f', '%f', '%s' ), array( '%d' ) );
+			} else {
+				$data['order_id']        = null;
+				$data['odoo_invoice_id'] = $odoo_id;
+				$data['created_at']      = $now;
+				$wpdb->insert( $table, $data, array( '%d', '%s', '%s', '%s', '%s', '%s', '%f', '%f', '%s', '%d', '%s', '%s' ) );
+			}
+			$count++;
+		}
+
+		return $count;
 	}
 
 	/**

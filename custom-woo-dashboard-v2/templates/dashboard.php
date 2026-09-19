@@ -1,21 +1,19 @@
 <?php
-
 /**
  * Dashboard template
  */
-if (! defined('ABSPATH')) {
+if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
 $current_user = wp_get_current_user();
 $roles = (array) $current_user->roles;
-$is_credit_account = in_array('credit_account', $roles) || current_user_can('manage_options');
+$is_credit_account = in_array( 'credit_account', $roles ) || current_user_can( 'manage_options' );
 
 $user_email = $current_user->user_email;
 $display_name = $current_user->display_name;
-$company = get_user_meta($current_user->ID, 'billing_company', true);
-$company = $company ? $company : __('your account', 'custom-woo-dashboard');
-$initial = strtoupper(substr($display_name, 0, 1));
+$company = get_user_meta( $current_user->ID, 'billing_company', true );
+$initial = strtoupper( substr( $display_name, 0, 1 ) );
 ?>
 <div class="cwd-v2-grid">
 	<!-- Profile Card -->
