@@ -20,6 +20,7 @@ class CWD_V2_Endpoints
 		add_filter('woocommerce_endpoint_invoices_title', array(__CLASS__, 'invoices_title'));
 		add_filter('woocommerce_endpoint_view-invoice_title', array(__CLASS__, 'view_invoice_title'));
 		add_filter('woocommerce_endpoint_returns_title', array(__CLASS__, 'returns_title'));
+		add_filter('woocommerce_endpoint_statements_title', array(__CLASS__, 'statements_title'));
 		add_filter('woocommerce_endpoint_credit_title', array(__CLASS__, 'credit_title'));
 		add_filter('woocommerce_endpoint_change-password_title', array(__CLASS__, 'change_password_title'));
 		add_filter('woocommerce_endpoint_live-orders_title', array(__CLASS__, 'live_orders_title'));
@@ -33,6 +34,7 @@ class CWD_V2_Endpoints
 		add_rewrite_endpoint('invoices', EP_ROOT | EP_PAGES);
 		add_rewrite_endpoint('view-invoice', EP_ROOT | EP_PAGES);
 		add_rewrite_endpoint('returns', EP_ROOT | EP_PAGES);
+		add_rewrite_endpoint('statements', EP_ROOT | EP_PAGES);
 		add_rewrite_endpoint('credit', EP_ROOT | EP_PAGES);
 		add_rewrite_endpoint('change-password', EP_ROOT | EP_PAGES);
 		add_rewrite_endpoint('live-orders', EP_ROOT | EP_PAGES);
@@ -46,6 +48,7 @@ class CWD_V2_Endpoints
 		$vars[] = 'invoices';
 		$vars[] = 'view-invoice';
 		$vars[] = 'returns';
+		$vars[] = 'statements';
 		$vars[] = 'credit';
 		$vars[] = 'change-password';
 		$vars[] = 'live-orders';
@@ -68,6 +71,11 @@ class CWD_V2_Endpoints
 	public static function returns_title()
 	{
 		return __('Returns', 'custom-woo-dashboard');
+	}
+
+	public static function statements_title()
+	{
+		return __('Account Statements', 'custom-woo-dashboard');
 	}
 
 	public static function credit_title()

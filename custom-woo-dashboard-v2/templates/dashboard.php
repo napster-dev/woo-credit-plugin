@@ -57,7 +57,7 @@ $initial = strtoupper(substr($display_name, 0, 1));
 			</div>
 		</div>
 		<div class="cwd-v2-card-footer">
-			<a href="<?php echo esc_url(wc_get_endpoint_url('ts-shipment-tracking')); ?>"><?php _e('Track Shipments', 'custom-woo-dashboard'); ?></a>
+			<a href="<?php echo esc_url(wc_get_endpoint_url('track-order')); ?>"><?php _e('Track Shipments', 'custom-woo-dashboard'); ?></a>
 		</div>
 	</div>
 
@@ -105,6 +105,7 @@ $initial = strtoupper(substr($display_name, 0, 1));
 		</div>
 		<div class="cwd-v2-card-footer">
 			<a href="<?php echo esc_url(wc_get_endpoint_url('edit-account')); ?>"><?php _e('View Account Details', 'custom-woo-dashboard'); ?></a>
+			<a href="<?php echo esc_url(wc_get_endpoint_url('edit-address')); ?>"><?php _e('Billing & Delivery Details', 'custom-woo-dashboard'); ?></a>
 		</div>
 	</div>
 	<div class="cwd-v2-card-footer cwd-v2-orders-actions">
@@ -137,7 +138,7 @@ $initial = strtoupper(substr($display_name, 0, 1));
 			</div>
 		</div>
 		<div class="cwd-v2-card-footer">
-			<a href="<?php echo esc_url(wc_get_endpoint_url('lost-password')); ?>"><?php _e('Change Password', 'custom-woo-dashboard'); ?></a>
+			<a href="<?php echo esc_url(wc_get_endpoint_url('change-password')); ?>"><?php _e('Change Password', 'custom-woo-dashboard'); ?></a>
 		</div>
 	</div>
 

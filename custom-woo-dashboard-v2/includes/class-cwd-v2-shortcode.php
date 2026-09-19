@@ -18,6 +18,7 @@ class CWD_V2_Shortcode
 		add_action('woocommerce_account_invoices_endpoint', array(__CLASS__, 'invoices_content'));
 		add_action('woocommerce_account_view-invoice_endpoint', array(__CLASS__, 'view_invoice_content'));
 		add_action('woocommerce_account_returns_endpoint', array(__CLASS__, 'returns_content'));
+		add_action('woocommerce_account_statements_endpoint', array(__CLASS__, 'statements_content'));
 		add_action('woocommerce_account_credit_endpoint', array(__CLASS__, 'credit_content'));
 		add_action('woocommerce_account_change-password_endpoint', array(__CLASS__, 'change_password_content'));
 		add_action('woocommerce_account_live-orders_endpoint', array(__CLASS__, 'live_orders_content'));
@@ -63,15 +64,14 @@ class CWD_V2_Shortcode
 			'invoices',
 			'view-invoice',
 			'returns',
+			'statements',
 			'credit',
 			'change-password',
 			'view-order',
 			'live-orders',
 			'back-orders',
 			'order-history',
-			'track-order',
-			'ts-shipment-tracking',
-			'lost-password'
+			'track-order'
 		);
 
 		foreach ($endpoints as $endpoint) {
@@ -120,6 +120,11 @@ class CWD_V2_Shortcode
 	public static function returns_content()
 	{
 		include CWD_V2_PLUGIN_DIR . 'templates/returns.php';
+	}
+
+	public static function statements_content()
+	{
+		include CWD_V2_PLUGIN_DIR . 'templates/statements.php';
 	}
 
 	public static function credit_content()
@@ -178,6 +183,7 @@ class CWD_V2_Shortcode
 			wc_add_notice(__('Your new password must be different from your current password.', 'custom-woo-dashboard'), 'error');
 		} else {
 			wp_set_password($new_password, $user->ID);
+			wp_destroy_other_sessions();
 			wp_set_auth_cookie($user->ID, false);
 			wc_add_notice(__('Your password has been changed successfully.', 'custom-woo-dashboard'), 'success');
 		}

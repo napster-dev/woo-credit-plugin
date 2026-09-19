@@ -81,14 +81,15 @@ class CWD_V2_Invoices
 		}
 
 		$is_credit_order = ('cwd_v2_credit_account' === $order->get_payment_method());
+		$is_paid_order   = method_exists($order, 'is_paid') && $order->is_paid();
 		$due_days        = self::get_due_days();
 		$invoice_date    = current_time('mysql');
-		$due_date        = $is_credit_order
+		$due_date        = $is_credit_order || ! $is_paid_order
 			? gmdate('Y-m-d H:i:s', strtotime($invoice_date . ' + ' . $due_days . ' days'))
 			: $invoice_date;
-		$status          = $is_credit_order ? self::STATUS_UNPAID : self::STATUS_PAID;
+		$status          = $is_credit_order || ! $is_paid_order ? self::STATUS_UNPAID : self::STATUS_PAID;
 		$amount_total    = (float) $order->get_total();
-		$amount_paid     = $is_credit_order ? 0.0 : $amount_total;
+		$amount_paid     = $is_credit_order || ! $is_paid_order ? 0.0 : $amount_total;
 
 		$wpdb->insert(
 			$table,
@@ -301,6 +302,12 @@ class CWD_V2_Invoices
 		}
 
 		return $wpdb->get_row($wpdb->prepare("SELECT * FROM {$table} WHERE id = %d", $invoice_id));
+	}
+
+	public static function get_invoices_for_order($order_id)
+	{
+		global $wpdb;
+		return $wpdb->get_row($wpdb->prepare('SELECT * FROM ' . self::table_name() . ' WHERE order_id = %d LIMIT 1', (int) $order_id));
 	}
 
 	/**

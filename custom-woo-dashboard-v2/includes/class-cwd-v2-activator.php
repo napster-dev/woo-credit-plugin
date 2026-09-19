@@ -114,5 +114,27 @@ class CWD_V2_Activator
 			KEY created_at (created_at)
 		) {$charset_collate};";
 		dbDelta($sql_transactions);
+
+		$returns_table = $wpdb->prefix . 'cwd_v2_returns';
+		$sql_returns = "CREATE TABLE {$returns_table} (
+			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+			user_id BIGINT UNSIGNED NOT NULL,
+			order_id BIGINT UNSIGNED NOT NULL,
+			invoice_id BIGINT UNSIGNED NULL DEFAULT NULL,
+			status VARCHAR(30) NOT NULL DEFAULT 'requested',
+			reason TEXT NOT NULL,
+			items LONGTEXT NOT NULL,
+			refund_status VARCHAR(30) NOT NULL DEFAULT 'pending',
+			refund_amount DECIMAL(18,2) NOT NULL DEFAULT 0,
+			odoo_return_id VARCHAR(100) NULL DEFAULT NULL,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			PRIMARY KEY (id),
+			KEY user_id (user_id),
+			KEY order_id (order_id),
+			KEY status (status),
+			UNIQUE KEY odoo_return_id (odoo_return_id)
+		) {$charset_collate};";
+		dbDelta($sql_returns);
 	}
 }
