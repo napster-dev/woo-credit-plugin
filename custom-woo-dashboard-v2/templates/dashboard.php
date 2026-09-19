@@ -14,6 +14,7 @@ $is_credit_account = in_array('credit_account', $roles) || current_user_can('man
 $user_email = $current_user->user_email;
 $display_name = $current_user->display_name;
 $company = get_user_meta($current_user->ID, 'billing_company', true);
+$company = $company ? $company : __('your account', 'custom-woo-dashboard');
 $initial = strtoupper(substr($display_name, 0, 1));
 ?>
 <div class="cwd-v2-grid">

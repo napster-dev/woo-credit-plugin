@@ -40,7 +40,7 @@ if ($is_overdue) {
 $amount_due  = max(0, (float) $invoice->amount_total - (float) $invoice->amount_paid);
 $roles       = (array) $current_user->roles;
 $can_pay     = (CWD_V2_Invoices::STATUS_UNPAID === $invoice->status) && in_array('credit_account', $roles, true);
-$document_url = apply_filters('cwd_v2_invoice_document_url', '', $invoice);
+$document_url = apply_filters('cwd_v2_invoice_document_url', $invoice->document_url ?? '', $invoice);
 ?>
 <div class="cwd-v2-invoice-view" id="cwd-v2-invoice-print-area">
 	<div class="cwd-v2-section-heading cwd-v2-no-print">

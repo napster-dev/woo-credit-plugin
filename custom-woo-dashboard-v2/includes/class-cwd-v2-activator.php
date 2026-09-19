@@ -82,6 +82,7 @@ class CWD_V2_Activator
 			invoice_number VARCHAR(50) NOT NULL,
 			source VARCHAR(20) NOT NULL DEFAULT 'website',
 			odoo_invoice_id VARCHAR(100) NULL DEFAULT NULL,
+			document_url TEXT NULL,
 			invoice_date DATETIME NOT NULL,
 			due_date DATETIME NOT NULL,
 			status VARCHAR(20) NOT NULL DEFAULT 'unpaid',

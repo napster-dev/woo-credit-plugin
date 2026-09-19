@@ -51,6 +51,13 @@ class CWD_V2_Invoices
 			return;
 		}
 
+		$payment_product_id = (int) get_option('cwd_v2_credit_payment_product_id');
+		foreach ($order->get_items() as $item) {
+			if ($payment_product_id && $item->get_product_id() === $payment_product_id) {
+				return;
+			}
+		}
+
 		if ($order->get_meta('_cwd_v2_invoice_generated')) {
 			return;
 		}
@@ -91,6 +98,7 @@ class CWD_V2_Invoices
 				'invoice_number'  => self::build_invoice_number($order_id),
 				'source'          => self::SOURCE_WEBSITE,
 				'odoo_invoice_id' => null,
+				'document_url'    => null,
 				'invoice_date'    => $invoice_date,
 				'due_date'        => $due_date,
 				'status'          => $status,
@@ -99,7 +107,7 @@ class CWD_V2_Invoices
 				'created_at'      => current_time('mysql'),
 				'updated_at'      => current_time('mysql'),
 			),
-			array('%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%f', '%f', '%s', '%s')
+			array('%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%f', '%f', '%s', '%s')
 		);
 
 		$order->update_meta_data('_cwd_v2_invoice_generated', 'yes');
@@ -245,16 +253,32 @@ class CWD_V2_Invoices
 				'status'          => $paid >= $total ? self::STATUS_PAID : $status,
 				'amount_total'    => $total,
 				'amount_paid'     => $paid,
+				'document_url'    => ! empty($row['document_url']) ? esc_url_raw($row['document_url']) : null,
 				'updated_at'      => $now,
 			);
 			$existing = $wpdb->get_var($wpdb->prepare("SELECT id FROM {$table} WHERE odoo_invoice_id = %s", $odoo_id));
 			if ($existing) {
-				$wpdb->update($table, $data, array('id' => (int) $existing), array('%d', '%s', '%s', '%s', '%s', '%s', '%f', '%f', '%s'), array('%d'));
+				$wpdb->update($table, $data, array('id' => (int) $existing), array('%d', '%s', '%s', '%s', '%s', '%s', '%f', '%f', '%s', '%s'), array('%d'));
 			} else {
-				$data['order_id']        = null;
-				$data['odoo_invoice_id'] = $odoo_id;
-				$data['created_at']      = $now;
-				$wpdb->insert($table, $data, array('%d', '%s', '%s', '%s', '%s', '%s', '%f', '%f', '%s', '%d', '%s', '%s'));
+				$wpdb->insert(
+					$table,
+					array(
+						'user_id'         => (int) $user_id,
+						'invoice_number'  => $data['invoice_number'],
+						'source'          => self::SOURCE_ODOO,
+						'odoo_invoice_id' => $odoo_id,
+						'document_url'    => $data['document_url'],
+						'invoice_date'    => $data['invoice_date'],
+						'due_date'        => $data['due_date'],
+						'status'          => $data['status'],
+						'amount_total'    => $data['amount_total'],
+						'amount_paid'     => $data['amount_paid'],
+						'order_id'        => null,
+						'created_at'      => $now,
+						'updated_at'      => $data['updated_at'],
+					),
+					array('%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%f', '%f', '%d', '%s', '%s')
+				);
 			}
 			$count++;
 		}
@@ -303,25 +327,77 @@ class CWD_V2_Invoices
 	 */
 	public static function mark_invoice_paid($invoice_id)
 	{
-		global $wpdb;
-		$table = self::table_name();
-
 		$invoice = self::get_invoice($invoice_id);
 		if (! $invoice) {
 			return false;
 		}
 
-		return $wpdb->update(
-			$table,
-			array(
-				'status'      => self::STATUS_PAID,
-				'amount_paid' => $invoice->amount_total,
-				'updated_at'  => current_time('mysql'),
-			),
-			array('id' => $invoice_id),
-			array('%s', '%f', '%s'),
-			array('%d')
-		);
+		return self::apply_invoice_payment($invoice_id, (int) $invoice->user_id, (float) $invoice->amount_total - (float) $invoice->amount_paid);
+	}
+
+	/**
+	 * Applies a payment only while the invoice is still unpaid and the amount
+	 * fits within its outstanding balance. The conditional update prevents two
+	 * checkout callbacks from settling the same invoice twice.
+	 */
+	public static function apply_invoice_payment($invoice_id, $user_id, $amount)
+	{
+		global $wpdb;
+		$amount = round((float) $amount, 2);
+		if ($amount <= 0) {
+			return false;
+		}
+
+		$table = self::table_name();
+		$updated = $wpdb->query($wpdb->prepare(
+			"UPDATE {$table}
+			 SET amount_paid = amount_paid + %f,
+			     status = CASE WHEN amount_paid + %f >= amount_total THEN %s ELSE %s END,
+			     updated_at = %s
+			 WHERE id = %d AND user_id = %d AND status = %s
+			   AND amount_paid + %f <= amount_total",
+			$amount,
+			$amount,
+			self::STATUS_PAID,
+			self::STATUS_UNPAID,
+			current_time('mysql'),
+			(int) $invoice_id,
+			(int) $user_id,
+			self::STATUS_UNPAID,
+			$amount
+		));
+
+		return 1 === (int) $updated;
+	}
+
+	/**
+	 * Reverses a previously applied invoice payment, only once and only up to
+	 * the amount currently recorded as paid.
+	 */
+	public static function reverse_invoice_payment($invoice_id, $user_id, $amount)
+	{
+		global $wpdb;
+		$amount = round((float) $amount, 2);
+		if ($amount <= 0) {
+			return false;
+		}
+
+		$table = self::table_name();
+		$updated = $wpdb->query($wpdb->prepare(
+			"UPDATE {$table}
+			 SET amount_paid = amount_paid - %f,
+			     status = %s,
+			     updated_at = %s
+			 WHERE id = %d AND user_id = %d AND amount_paid >= %f",
+			$amount,
+			self::STATUS_UNPAID,
+			current_time('mysql'),
+			(int) $invoice_id,
+			(int) $user_id,
+			$amount
+		));
+
+		return 1 === (int) $updated;
 	}
 
 	/**

@@ -85,7 +85,7 @@ class CWD_V2_Shortcode
 		echo '<div class="cwd-v2-dashboard-container">';
 
 		// Enqueue styles
-		wp_enqueue_style('cwd-v2-dashboard-style', CWD_V2_PLUGIN_URL . 'assets/css/style.css', array(), '1.0.1');
+		wp_enqueue_style('cwd-v2-dashboard-style', CWD_V2_PLUGIN_URL . 'assets/css/style.css', array(), '1.0.2');
 
 		if ($is_endpoint) {
 			// We are on an endpoint page (e.g., Orders, Account Details)

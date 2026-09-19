@@ -23,6 +23,7 @@ class CWD_V2_Credit_Logic {
 		add_action( 'woocommerce_payment_complete', array( __CLASS__, 'reduce_credit_balance_on_payment' ) );
 		add_action( 'woocommerce_order_status_processing', array( __CLASS__, 'reduce_credit_balance_on_payment' ) );
 		add_action( 'woocommerce_order_status_completed', array( __CLASS__, 'reduce_credit_balance_on_payment' ) );
+		add_action( 'woocommerce_checkout_create_order_line_item', array( __CLASS__, 'add_payment_item_metadata' ), 10, 4 );
 
 		// Hook into refunds on credit-paid orders to decrease the outstanding balance.
 		add_action( 'woocommerce_order_refunded', array( __CLASS__, 'handle_credit_order_refund' ), 10, 2 );
@@ -35,7 +36,7 @@ class CWD_V2_Credit_Logic {
 				return;
 			}
 
-			$amount = floatval( $_POST['cwd_v2_pay_amount'] );
+			$amount = round( (float) wc_format_decimal( wp_unslash( $_POST['cwd_v2_pay_amount'] ) ), 2 );
 			if ( $amount <= 0 ) {
 				wc_add_notice( __( 'Please enter a valid amount.', 'custom-woo-dashboard' ), 'error' );
 				return;
@@ -55,13 +56,17 @@ class CWD_V2_Credit_Logic {
 			if ( ! empty( $_POST['cwd_v2_pay_invoice_id'] ) ) {
 				$invoice_id = absint( $_POST['cwd_v2_pay_invoice_id'] );
 				$invoice    = CWD_V2_Invoices::get_invoice( $invoice_id, get_current_user_id() );
+				$amount_due = $invoice ? max( 0, (float) $invoice->amount_total - (float) $invoice->amount_paid ) : 0;
 
-				if ( ! $invoice || CWD_V2_Invoices::STATUS_UNPAID !== $invoice->status ) {
+				if ( ! $invoice || CWD_V2_Invoices::STATUS_UNPAID !== $invoice->status || $amount > round( $amount_due, 2 ) ) {
 					wc_add_notice( __( 'This invoice is no longer available to pay.', 'custom-woo-dashboard' ), 'error' );
 					return;
 				}
 
 				$cart_item_data['cwd_v2_invoice_id'] = $invoice_id;
+			} elseif ( $amount > (float) get_user_meta( get_current_user_id(), '_credit_balance', true ) ) {
+				wc_add_notice( __( 'The payment amount cannot exceed your outstanding balance.', 'custom-woo-dashboard' ), 'error' );
+				return;
 			}
 
 			// Empty cart to ensure only this payment is processed? Optional, but cleaner.
@@ -73,6 +78,16 @@ class CWD_V2_Credit_Logic {
 			// Redirect to checkout
 			wp_safe_redirect( wc_get_checkout_url() );
 			exit;
+		}
+	}
+
+	public static function add_payment_item_metadata( $item, $cart_item_key, $values, $order ) {
+		if ( ! empty( $values['cwd_v2_invoice_id'] ) ) {
+			$item->add_meta_data( 'cwd_v2_invoice_id', absint( $values['cwd_v2_invoice_id'] ), true );
+		}
+
+		if ( isset( $values['cwd_v2_custom_price'] ) ) {
+			$item->add_meta_data( 'cwd_v2_payment_amount', round( (float) $values['cwd_v2_custom_price'], 2 ), true );
 		}
 	}
 
@@ -106,7 +121,7 @@ class CWD_V2_Credit_Logic {
 		foreach ( $order->get_items() as $item ) {
 			if ( $item->get_product_id() === $product_id ) {
 				$is_credit_payment = true;
-				$payment_amount += $item->get_total();
+				$payment_amount += (float) ( $item->get_meta( 'cwd_v2_payment_amount' ) ?: $item->get_total() );
 
 				$item_invoice_id = $item->get_meta( 'cwd_v2_invoice_id' );
 				if ( $item_invoice_id ) {
@@ -118,14 +133,31 @@ class CWD_V2_Credit_Logic {
 		if ( $is_credit_payment ) {
 			$user_id = $order->get_user_id();
 			if ( $user_id ) {
+				global $wpdb;
 				$current_balance = (float) get_user_meta( $user_id, '_credit_balance', true );
+				if ( $payment_amount <= 0 || ( ! $invoice_id && $payment_amount > $current_balance ) ) {
+					return;
+				}
+
+				$wpdb->query( 'START TRANSACTION' );
+				$payment_applied = true;
+				if ( $invoice_id ) {
+					$payment_applied = CWD_V2_Invoices::apply_invoice_payment( $invoice_id, $user_id, $payment_amount );
+				}
+
+				if ( ! $payment_applied ) {
+					$wpdb->query( 'ROLLBACK' );
+					return;
+				}
+
 				$new_balance = max( 0, $current_balance - $payment_amount );
-				update_user_meta( $user_id, '_credit_balance', $new_balance );
+				if ( false === update_user_meta( $user_id, '_credit_balance', $new_balance ) ) {
+					$wpdb->query( 'ROLLBACK' );
+					return;
+				}
 
 				if ( $invoice_id ) {
-					CWD_V2_Invoices::mark_invoice_paid( $invoice_id );
-
-					CWD_V2_Account_Ledger::record(
+					$ledger_result = CWD_V2_Account_Ledger::record(
 						$user_id,
 						CWD_V2_Account_Ledger::TYPE_PAYMENT,
 						$payment_amount,
@@ -134,7 +166,7 @@ class CWD_V2_Credit_Logic {
 						sprintf( __( 'Payment for invoice #%d', 'custom-woo-dashboard' ), $invoice_id )
 					);
 				} else {
-					CWD_V2_Account_Ledger::record(
+					$ledger_result = CWD_V2_Account_Ledger::record(
 						$user_id,
 						CWD_V2_Account_Ledger::TYPE_PAYMENT,
 						$payment_amount,
@@ -143,6 +175,12 @@ class CWD_V2_Credit_Logic {
 						sprintf( __( 'Payment made via order #%d', 'custom-woo-dashboard' ), $order_id )
 					);
 				}
+
+				if ( false === $ledger_result ) {
+					$wpdb->query( 'ROLLBACK' );
+					return;
+				}
+				$wpdb->query( 'COMMIT' );
 
 				// Mark as processed
 				$order->update_meta_data( '_cwd_v2_credit_payment_processed', 'yes' );
@@ -176,24 +214,34 @@ class CWD_V2_Credit_Logic {
 	}
 
 	/**
-	 * When a credit-paid order is refunded, reduce the customer's outstanding
-	 * credit balance by the refunded amount and record the ledger entry.
+	 * Reconcile refunds for both credit orders and invoice-payment orders.
+	 * Invoice payments restore the balance and reopen the invoice; credit-order
+	 * refunds reduce the balance created by the original purchase.
 	 *
 	 * @param int $order_id
 	 * @param int $refund_id
 	 */
 	public static function handle_credit_order_refund( $order_id, $refund_id ) {
 		$order = wc_get_order( $order_id );
-		if ( ! $order || 'cwd_v2_credit_account' !== $order->get_payment_method() ) {
-			return;
-		}
-
 		$refund = wc_get_order( $refund_id );
-		if ( ! $refund ) {
+		if ( ! $order || ! $refund || $refund->get_meta( '_cwd_v2_credit_refund_processed' ) ) {
 			return;
 		}
 
-		$refund_amount = abs( (float) $refund->get_total() );
+		$invoice_id = 0;
+		$product_id = (int) get_option( 'cwd_v2_credit_payment_product_id' );
+		foreach ( $order->get_items() as $item ) {
+			if ( $product_id && $item->get_product_id() === $product_id && $item->get_meta( 'cwd_v2_invoice_id' ) ) {
+				$invoice_id = absint( $item->get_meta( 'cwd_v2_invoice_id' ) );
+				break;
+			}
+		}
+
+		if ( ! $invoice_id && 'cwd_v2_credit_account' !== $order->get_payment_method() ) {
+			return;
+		}
+
+		$refund_amount = method_exists( $refund, 'get_amount' ) ? abs( (float) $refund->get_amount() ) : abs( (float) $refund->get_total() );
 		if ( $refund_amount <= 0 ) {
 			return;
 		}
@@ -203,17 +251,46 @@ class CWD_V2_Credit_Logic {
 			return;
 		}
 
+		global $wpdb;
 		$current_balance = (float) get_user_meta( $user_id, '_credit_balance', true );
-		$new_balance     = max( 0, $current_balance - $refund_amount );
-		update_user_meta( $user_id, '_credit_balance', $new_balance );
+		$wpdb->query( 'START TRANSACTION' );
 
-		CWD_V2_Account_Ledger::record(
+		if ( $invoice_id ) {
+			if ( ! CWD_V2_Invoices::reverse_invoice_payment( $invoice_id, $user_id, $refund_amount ) ) {
+				$wpdb->query( 'ROLLBACK' );
+				return;
+			}
+			$new_balance = $current_balance + $refund_amount;
+			$ledger_type = CWD_V2_Account_Ledger::TYPE_REFUND;
+			$reference_type = 'invoice';
+			$reference_id = $invoice_id;
+		} else {
+			$new_balance = max( 0, $current_balance - $refund_amount );
+			$ledger_type = CWD_V2_Account_Ledger::TYPE_REFUND;
+			$reference_type = 'order';
+			$reference_id = $order_id;
+		}
+
+		if ( false === update_user_meta( $user_id, '_credit_balance', $new_balance ) ) {
+			$wpdb->query( 'ROLLBACK' );
+			return;
+		}
+
+		$ledger_result = CWD_V2_Account_Ledger::record(
 			$user_id,
-			CWD_V2_Account_Ledger::TYPE_REFUND,
+			$ledger_type,
 			$refund_amount,
-			'order',
-			$order_id,
+			$reference_type,
+			$reference_id,
 			sprintf( __( 'Refund for order #%d', 'custom-woo-dashboard' ), $order_id )
 		);
+		if ( false === $ledger_result ) {
+			$wpdb->query( 'ROLLBACK' );
+			return;
+		}
+
+		$wpdb->query( 'COMMIT' );
+		$refund->update_meta_data( '_cwd_v2_credit_refund_processed', 'yes' );
+		$refund->save();
 	}
 }

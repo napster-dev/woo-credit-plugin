@@ -47,9 +47,10 @@ if (! function_exists('cwd_v2_init_plugin')) {
 
 			// Create the invoices/ledger tables for sites where the plugin was
 			// already active before this feature was added.
-			if (! get_option('cwd_v2_tables_version')) {
+			$tables_version = '2';
+			if (get_option('cwd_v2_tables_version') !== $tables_version) {
 				CWD_V2_Activator::activate();
-				update_option('cwd_v2_tables_version', '1');
+				update_option('cwd_v2_tables_version', $tables_version);
 			}
 
 			// Add custom payment gateway
