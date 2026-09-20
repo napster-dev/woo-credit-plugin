@@ -39,13 +39,8 @@ if (! function_exists('cwd_v2_init_plugin')) {
 			CWD_V2_Invoices::init();
 			CWD_V2_Returns::init();
 
-			// Refresh rewrite rules once when endpoint definitions change.
-			$rewrite_version = '5';
-			if (get_option('cwd_v2_rewrite_version') !== $rewrite_version) {
-				CWD_V2_Endpoints::add_endpoints();
-				flush_rewrite_rules();
-				update_option('cwd_v2_rewrite_version', $rewrite_version);
-			}
+			// Refresh rewrite rules after WordPress has initialized its rewrite object.
+			add_action('init', 'cwd_v2_refresh_rewrite_rules', 20);
 
 			// Create the invoices/ledger tables for sites where the plugin was
 			// already active before this feature was added.
@@ -58,6 +53,20 @@ if (! function_exists('cwd_v2_init_plugin')) {
 			// Add custom payment gateway
 			add_filter('woocommerce_payment_gateways', 'cwd_v2_add_payment_gateway');
 		}
+	}
+}
+
+if (! function_exists('cwd_v2_refresh_rewrite_rules')) {
+	function cwd_v2_refresh_rewrite_rules()
+	{
+		$rewrite_version = '5';
+
+		if (get_option('cwd_v2_rewrite_version') === $rewrite_version) {
+			return;
+		}
+
+		flush_rewrite_rules();
+		update_option('cwd_v2_rewrite_version', $rewrite_version);
 	}
 }
 
