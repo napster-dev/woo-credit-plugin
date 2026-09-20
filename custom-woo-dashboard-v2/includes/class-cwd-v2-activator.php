@@ -57,13 +57,9 @@ class CWD_V2_Activator
 			}
 		}
 
-		// Add rewrite rules and flush
-		// We will call the init function of endpoints to register them before flushing
-		if (class_exists('CWD_V2_Endpoints')) {
-			CWD_V2_Endpoints::add_endpoints();
-		}
-
-		flush_rewrite_rules();
+		// Rewrite rules are registered and flushed during the next init action,
+		// after WordPress has initialized its rewrite object.
+		delete_option('cwd_v2_rewrite_version');
 	}
 
 	private static function create_tables()
