@@ -42,11 +42,19 @@ foreach ($orders as $order) {
     } else {
         $include = false;
         if (in_array($status, array('pending', 'processing', 'on-hold'), true)) {
-            foreach ($order->get_items() as $item) {
-                $product = $item->get_product();
-                if ($product && $product->is_on_backorder($item->get_quantity())) {
-                    $include = true;
-                    break;
+            if ($order->get_meta('_has_backorders') === 'yes') {
+                $include = true;
+            } else {
+                foreach ($order->get_items() as $item) {
+                    if ($item->get_meta('_is_backorder') === 'yes') {
+                        $include = true;
+                        break;
+                    }
+                    $product = $item->get_product();
+                    if ($product && $product->is_on_backorder($item->get_quantity())) {
+                        $include = true;
+                        break;
+                    }
                 }
             }
         }
