@@ -41,6 +41,31 @@ class CWD_V2_Backorders
 	}
 
 	/**
+	 * Render 2D SVG icons (no emojis).
+	 */
+	public static function get_svg_icon($icon = 'box', $width = 16, $height = 16, $color = 'currentColor')
+	{
+		$style = sprintf('width: %dpx; height: %dpx; vertical-align: -0.15em; display: inline-block; fill: none; stroke: %s; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; margin-right: 5px;', (int) $width, (int) $height, esc_attr($color));
+
+		switch ($icon) {
+			case 'box':
+			case 'package':
+				return '<svg style="' . $style . '" viewBox="0 0 24 24" aria-hidden="true"><path d="M16.5 9.4 7.55 4.24a1.78 1.78 0 0 0-1.8 0l-3.3 1.9A1.78 1.78 0 0 0 1.5 7.7v8.6a1.78 1.78 0 0 0 .95 1.56l7.5 4.33a1.78 1.78 0 0 0 1.8 0l7.5-4.33a1.78 1.78 0 0 0 .95-1.56V7.7a1.78 1.78 0 0 0-.95-1.56L16.5 9.4z"/><polyline points="3.29 7 12 12 20.71 7"/><line x1="12" y1="22" x2="12" y2="12"/></svg>';
+			case 'clock':
+			case 'waiting':
+				return '<svg style="' . $style . '" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
+			case 'check':
+			case 'fulfilled':
+				return '<svg style="' . $style . '" viewBox="0 0 24 24" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>';
+			case 'truck':
+			case 'delivery':
+				return '<svg style="' . $style . '" viewBox="0 0 24 24" aria-hidden="true"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>';
+			default:
+				return '<svg style="' . $style . '" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>';
+		}
+	}
+
+	/**
 	 * Customize product availability text for backordered items.
 	 */
 	public static function custom_backorder_availability_text($text, $product)
@@ -89,8 +114,9 @@ class CWD_V2_Backorders
 		}
 
 		if ($is_backorder) {
+			$box_icon = self::get_svg_icon('box', 18, 18, '#7f4f00');
 			echo '<div class="cwd-backorder-product-banner" style="margin: 15px 0; padding: 12px 16px; background-color: #fff9db; border-left: 4px solid #f59f00; color: #7f4f00; font-size: 14px; border-radius: 4px; line-height: 1.5;">' .
-				'<strong>📦 ' . esc_html__('Backorder Notice:', 'custom-woo-dashboard') . '</strong> ' .
+				'<strong>' . $box_icon . esc_html__('Backorder Notice:', 'custom-woo-dashboard') . '</strong> ' .
 				esc_html(self::DEFAULT_CUSTOMER_MESSAGE) .
 				'</div>';
 		}
@@ -107,10 +133,11 @@ class CWD_V2_Backorders
 			$cart_qty  = isset($cart_item['quantity']) ? (int) $cart_item['quantity'] : 1;
 
 			if (($product->managing_stock() && $stock_qty !== null && ($stock_qty <= 0 || $cart_qty > $stock_qty)) || $product->get_stock_status() === 'onbackorder') {
+				$clock_icon = self::get_svg_icon('clock', 14, 14, '#d97706');
 				$item_data[] = array(
 					'key'     => __('Status', 'custom-woo-dashboard'),
 					'value'   => __('Backorder (Awaiting Stock)', 'custom-woo-dashboard'),
-					'display' => '<span style="color:#d97706; font-weight:600;">⏳ ' . esc_html__('Backorder - Fulfilled upon restock', 'custom-woo-dashboard') . '</span>',
+					'display' => '<span style="color:#d97706; font-weight:600;">' . $clock_icon . esc_html__('Backorder - Fulfilled upon restock', 'custom-woo-dashboard') . '</span>',
 				);
 			}
 		}
@@ -128,7 +155,8 @@ class CWD_V2_Backorders
 			$cart_qty  = isset($cart_item['quantity']) ? (int) $cart_item['quantity'] : 1;
 
 			if (($product->managing_stock() && $stock_qty !== null && ($stock_qty <= 0 || $cart_qty > $stock_qty)) || $product->get_stock_status() === 'onbackorder') {
-				$product_name .= ' <span class="badge-backorder" style="display:inline-block; padding:2px 8px; font-size:11px; font-weight:600; background:#fef3c7; color:#92400e; border:1px solid #fcd34d; border-radius:4px; vertical-align:middle;">' . esc_html__('Backorder', 'custom-woo-dashboard') . '</span>';
+				$box_icon = self::get_svg_icon('box', 12, 12, '#92400e');
+				$product_name .= ' <span class="badge-backorder" style="display:inline-block; padding:2px 8px; font-size:11px; font-weight:600; background:#fef3c7; color:#92400e; border:1px solid #fcd34d; border-radius:4px; vertical-align:middle;">' . $box_icon . esc_html__('Backorder', 'custom-woo-dashboard') . '</span>';
 			}
 		}
 		return $product_name;
@@ -188,7 +216,10 @@ class CWD_V2_Backorders
 				$color  = ('fulfilled' === $status) ? '#065f46' : (('stock_received' === $status || 'reserved' === $status) ? '#3730a3' : '#92400e');
 				$border = ('fulfilled' === $status) ? '#a7f3d0' : (('stock_received' === $status || 'reserved' === $status) ? '#c7d2fe' : '#fcd34d');
 
-				$item_name .= ' <span style="display:inline-block; padding:2px 8px; font-size:11px; font-weight:600; background:' . esc_attr($bg) . '; color:' . esc_attr($color) . '; border:1px solid ' . esc_attr($border) . '; border-radius:4px; margin-left:6px; vertical-align:middle;">' . esc_html($label) . '</span>';
+				$icon_type = ('fulfilled' === $status) ? 'check' : (('stock_received' === $status || 'reserved' === $status) ? 'truck' : 'clock');
+				$icon_svg  = self::get_svg_icon($icon_type, 12, 12, $color);
+
+				$item_name .= ' <span style="display:inline-block; padding:2px 8px; font-size:11px; font-weight:600; background:' . esc_attr($bg) . '; color:' . esc_attr($color) . '; border:1px solid ' . esc_attr($border) . '; border-radius:4px; margin-left:6px; vertical-align:middle;">' . $icon_svg . esc_html($label) . '</span>';
 			}
 		}
 		return $item_name;
@@ -212,16 +243,19 @@ class CWD_V2_Backorders
 			}
 
 			if ('fulfilled' === $status) {
+				$check_icon = self::get_svg_icon('check', 16, 16, '#065f46');
 				echo '<div style="margin-top:6px; font-size:12px; color:#065f46; background:#ecfdf5; padding:6px 10px; border-left:3px solid #10b981; border-radius:2px;">' .
-					'✅ ' . esc_html__('Stock replenished and order fulfilled.', 'custom-woo-dashboard') .
+					$check_icon . esc_html__('Stock replenished and order fulfilled.', 'custom-woo-dashboard') .
 					'</div>';
 			} elseif ('stock_received' === $status || 'reserved' === $status) {
+				$truck_icon = self::get_svg_icon('truck', 16, 16, '#1e40af');
 				echo '<div style="margin-top:6px; font-size:12px; color:#1e40af; background:#eff6ff; padding:6px 10px; border-left:3px solid #3b82f6; border-radius:2px;">' .
-					'📦 ' . esc_html__('Stock received! Order is now being reserved and prepared for fulfillment.', 'custom-woo-dashboard') .
+					$truck_icon . esc_html__('Stock received! Order is now being reserved and prepared for fulfillment.', 'custom-woo-dashboard') .
 					'</div>';
 			} else {
+				$clock_icon = self::get_svg_icon('clock', 16, 16, '#854d0e');
 				echo '<div style="margin-top:6px; font-size:12px; color:#854d0e; background:#fefce8; padding:6px 10px; border-left:3px solid #eab308; border-radius:2px;">' .
-					'⏳ ' . esc_html($message) .
+					$clock_icon . esc_html($message) .
 					'</div>';
 			}
 		}
@@ -248,8 +282,9 @@ class CWD_V2_Backorders
 			if ($plain_text) {
 				echo "\n" . __('NOTICE: One or more items in your order are currently on backorder and will be dispatched as soon as stock arrives.', 'custom-woo-dashboard') . "\n\n";
 			} else {
+				$box_icon = self::get_svg_icon('box', 18, 18, '#854d0e');
 				echo '<div style="margin: 20px 0; padding: 14px 18px; background-color: #fefce8; border: 1px solid #fef08a; border-left: 4px solid #eab308; border-radius: 4px; color: #713f12; font-family: inherit;">' .
-					'<h4 style="margin: 0 0 6px 0; color: #854d0e; font-size: 15px;">📦 ' . esc_html__('Backorder Notice', 'custom-woo-dashboard') . '</h4>' .
+					'<h4 style="margin: 0 0 6px 0; color: #854d0e; font-size: 15px;">' . $box_icon . esc_html__('Backorder Notice', 'custom-woo-dashboard') . '</h4>' .
 					'<p style="margin: 0; font-size: 13px; line-height: 1.5;">' .
 					esc_html__('One or more items in this order are currently on backorder. Our warehouse will automatically fulfill and dispatch your items as soon as inventory replenishment is received.', 'custom-woo-dashboard') .
 					'</p>' .
