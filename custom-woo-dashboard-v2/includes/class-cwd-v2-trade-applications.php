@@ -115,6 +115,16 @@ class CWD_V2_Trade_Applications
 		$table = self::get_table_name();
 		$now   = current_time('mysql');
 
+		// Deduplication: prevent duplicate pending requests for the same customer
+		$existing_pending = $wpdb->get_var($wpdb->prepare(
+			"SELECT id FROM {$table} WHERE user_id = %d AND status = %s AND forminator_form_id = 0 LIMIT 1",
+			$user_id,
+			self::STATUS_PENDING
+		));
+		if ($existing_pending) {
+			return (int) $existing_pending;
+		}
+
 		$current_limit   = (float) get_user_meta($user_id, '_credit_limit', true);
 		$current_balance = (float) get_user_meta($user_id, '_credit_balance', true);
 		$company_name    = get_user_meta($user_id, 'billing_company', true) ?: (get_user_meta($user_id, 'ews_company_name', true) ?: '');
