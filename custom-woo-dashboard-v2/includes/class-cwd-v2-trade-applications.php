@@ -83,6 +83,77 @@ class CWD_V2_Trade_Applications
 	}
 
 	/**
+	 * Ensure table exists in database before queries.
+	 */
+	public static function ensure_table_exists()
+	{
+		global $wpdb;
+		$table_name = self::get_table_name();
+		if ($wpdb->get_var("SHOW TABLES LIKE '{$table_name}'") !== $table_name) {
+			self::create_table();
+		}
+	}
+
+	/**
+	 * Record a credit limit increase request submitted from the customer credit dashboard.
+	 *
+	 * @param int    $user_id          WordPress user ID
+	 * @param float  $requested_amount Requested new credit limit
+	 * @param string $reason           Justification or reason
+	 * @return int|false
+	 */
+	public static function record_credit_increase_request($user_id, $requested_amount, $reason)
+	{
+		self::ensure_table_exists();
+
+		$user = get_userdata($user_id);
+		if (! $user) {
+			return false;
+		}
+
+		global $wpdb;
+		$table = self::get_table_name();
+		$now   = current_time('mysql');
+
+		$current_limit   = (float) get_user_meta($user_id, '_credit_limit', true);
+		$current_balance = (float) get_user_meta($user_id, '_credit_balance', true);
+		$company_name    = get_user_meta($user_id, 'billing_company', true) ?: (get_user_meta($user_id, 'ews_company_name', true) ?: '');
+		$phone           = get_user_meta($user_id, 'billing_phone', true) ?: '';
+		$applicant_name  = trim($user->first_name . ' ' . $user->last_name);
+		if (empty($applicant_name)) {
+			$applicant_name = $user->display_name;
+		}
+
+		$form_data = array(
+			'application_type' => 'credit_limit_increase',
+			'current_limit'    => $current_limit,
+			'current_balance'  => $current_balance,
+			'requested_amount' => (float) $requested_amount,
+			'reason'           => $reason,
+			'source'           => 'customer_credit_dashboard',
+		);
+
+		$insert_data = array(
+			'forminator_form_id'  => 0,
+			'forminator_entry_id' => 0,
+			'applicant_email'     => sanitize_email($user->user_email),
+			'applicant_name'      => sanitize_text_field($applicant_name),
+			'company_name'        => sanitize_text_field($company_name),
+			'phone'               => sanitize_text_field($phone),
+			'requested_limit'     => (float) $requested_amount,
+			'form_data'           => wp_json_encode($form_data),
+			'status'              => self::STATUS_PENDING,
+			'user_id'             => $user_id,
+			'created_at'          => $now,
+			'updated_at'          => $now,
+		);
+
+		$insert_format = array('%d', '%d', '%s', '%s', '%s', '%s', '%f', '%s', '%s', '%d', '%s', '%s');
+
+		return $wpdb->insert($table, $insert_data, $insert_format);
+	}
+
+	/**
 	 * Capture a Forminator form submission as a trade application.
 	 *
 	 * Maps standard field name patterns to application columns.
@@ -155,6 +226,8 @@ class CWD_V2_Trade_Applications
 		$user    = get_user_by('email', sanitize_email($email));
 		$user_id = $user ? $user->ID : null;
 
+		self::ensure_table_exists();
+
 		global $wpdb;
 		$table = self::get_table_name();
 		$now   = current_time('mysql');
@@ -216,6 +289,8 @@ class CWD_V2_Trade_Applications
 	 */
 	public static function get_pending_count()
 	{
+		self::ensure_table_exists();
+
 		global $wpdb;
 		$table = self::get_table_name();
 		return (int) $wpdb->get_var($wpdb->prepare(
@@ -451,6 +526,8 @@ class CWD_V2_Trade_Applications
 			wp_die(__('You do not have permission to access this page.', 'custom-woo-dashboard'));
 		}
 
+		self::ensure_table_exists();
+
 		// Single application review view
 		if (isset($_GET['view']) && (int) $_GET['view'] > 0) {
 			self::render_single_application((int) $_GET['view']);
@@ -530,7 +607,14 @@ class CWD_V2_Trade_Applications
 							<tr>
 								<td><strong>#<?php echo esc_html($app->id); ?></strong></td>
 								<td><?php echo esc_html(date_i18n(get_option('date_format') . ' ' . get_option('time_format'), strtotime($app->created_at))); ?></td>
-								<td><strong><?php echo esc_html($app->company_name ?: '--'); ?></strong></td>
+								<td>
+									<strong><?php echo esc_html($app->company_name ?: '--'); ?></strong>
+									<?php if ((int) $app->forminator_form_id === 0) : ?>
+										<div style="font-size: 11px; color: #0284c7; font-weight: 600; margin-top: 2px;">
+											<?php esc_html_e('Credit Increase Request', 'custom-woo-dashboard'); ?>
+										</div>
+									<?php endif; ?>
+								</td>
 								<td><?php echo esc_html($app->applicant_name ?: '--'); ?></td>
 								<td><a href="mailto:<?php echo esc_attr($app->applicant_email); ?>"><?php echo esc_html($app->applicant_email); ?></a></td>
 								<td style="font-weight: 600;"><?php echo wp_kses_post(wc_price($app->requested_limit)); ?></td>

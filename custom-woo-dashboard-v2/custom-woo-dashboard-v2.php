@@ -54,9 +54,9 @@ if (! function_exists('cwd_v2_init_plugin')) {
 			// Refresh rewrite rules after WordPress has initialized its rewrite object.
 			add_action('init', 'cwd_v2_refresh_rewrite_rules', 20);
 
-			// Create the invoices/ledger tables for sites where the plugin was
+			// Create the invoices/ledger/trade application tables for sites where the plugin was
 			// already active before this feature was added.
-			$tables_version = '4';
+			$tables_version = '5';
 			if (get_option('cwd_v2_tables_version') !== $tables_version) {
 				CWD_V2_Activator::activate();
 				update_option('cwd_v2_tables_version', $tables_version);
