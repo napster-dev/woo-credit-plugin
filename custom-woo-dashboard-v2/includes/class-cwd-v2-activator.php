@@ -13,6 +13,7 @@ class CWD_V2_Activator
 
 	public static function activate()
 	{
+		self::register_roles();
 		self::create_tables();
 
 		// Ensure WooCommerce is active. We check for a function that exists if Woo is loaded,
@@ -60,6 +61,15 @@ class CWD_V2_Activator
 		// Rewrite rules are registered and flushed during the next init action,
 		// after WordPress has initialized its rewrite object.
 		delete_option('cwd_v2_rewrite_version');
+	}
+
+	public static function register_roles()
+	{
+		if (! get_role('credit_account')) {
+			$customer_role = get_role('customer');
+			$capabilities  = $customer_role ? $customer_role->capabilities : array('read' => true);
+			add_role('credit_account', __('Credit Account Customer', 'custom-woo-dashboard'), $capabilities);
+		}
 	}
 
 	private static function create_tables()
