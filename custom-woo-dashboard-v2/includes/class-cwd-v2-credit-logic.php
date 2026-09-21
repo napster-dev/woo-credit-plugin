@@ -260,7 +260,16 @@ class CWD_V2_Credit_Logic
 
 			wp_mail($admin_email, $subject, $message);
 
-			wc_add_notice(__('Your request for a credit limit increase has been sent to the administrator.', 'custom-woo-dashboard'), 'success');
+			// Also record in Trade Applications queue for admin review & approval
+			if (class_exists('CWD_V2_Trade_Applications')) {
+				CWD_V2_Trade_Applications::record_credit_increase_request(
+					$current_user->ID,
+					(float) $requested_amount,
+					$reason
+				);
+			}
+
+			wc_add_notice(__('Your request for a credit limit increase has been submitted for review.', 'custom-woo-dashboard'), 'success');
 		}
 	}
 
