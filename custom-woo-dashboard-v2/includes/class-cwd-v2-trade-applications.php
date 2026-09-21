@@ -115,6 +115,16 @@ class CWD_V2_Trade_Applications
 		$table = self::get_table_name();
 		$now   = current_time('mysql');
 
+		// Deduplication: prevent duplicate pending requests for the same customer
+		$existing_pending = $wpdb->get_var($wpdb->prepare(
+			"SELECT id FROM {$table} WHERE user_id = %d AND status = %s AND forminator_form_id = 0 LIMIT 1",
+			$user_id,
+			self::STATUS_PENDING
+		));
+		if ($existing_pending) {
+			return (int) $existing_pending;
+		}
+
 		$current_limit   = (float) get_user_meta($user_id, '_credit_limit', true);
 		$current_balance = (float) get_user_meta($user_id, '_credit_balance', true);
 		$company_name    = get_user_meta($user_id, 'billing_company', true) ?: (get_user_meta($user_id, 'ews_company_name', true) ?: '');
@@ -512,6 +522,33 @@ class CWD_V2_Trade_Applications
 			array('%s', '%s', '%d', '%s', '%s'),
 			array('%d')
 		);
+
+		// Send rejection notification email to applicant
+		if (! empty($app->applicant_email)) {
+			$blogname = wp_specialchars_decode(get_option('blogname'), ENT_QUOTES);
+			$is_credit_increase = ((int) $app->forminator_form_id === 0);
+
+			if ($is_credit_increase) {
+				$subject = sprintf(__('Credit Limit Increase Update - %s', 'custom-woo-dashboard'), $blogname);
+				$body  = sprintf(__("Hello %s,\n\n", 'custom-woo-dashboard'), $app->applicant_name ?: 'Customer');
+				$body .= sprintf(__("Thank you for your request to increase your trade credit facility to %s.\n\n", 'custom-woo-dashboard'), wc_price($app->requested_limit));
+				$body .= __("After reviewing your account, we are unable to approve an increase to your credit facility at this time.\n", 'custom-woo-dashboard');
+			} else {
+				$subject = sprintf(__('Trade Credit Application Update - %s', 'custom-woo-dashboard'), $blogname);
+				$body  = sprintf(__("Hello %s,\n\n", 'custom-woo-dashboard'), $app->applicant_name ?: 'Applicant');
+				$body .= __("Thank you for applying for a trade credit account with us.\n\n", 'custom-woo-dashboard');
+				$body .= __("After careful review of your application, we regret to inform you that we are unable to approve your trade credit facility at this time.\n", 'custom-woo-dashboard');
+			}
+
+			if (! empty($admin_note)) {
+				$body .= sprintf(__("\nReason / Notes:\n%s\n", 'custom-woo-dashboard'), $admin_note);
+			}
+
+			$body .= __("\nIf you have questions or would like to discuss this further, please feel free to reach out to our team.\n\n", 'custom-woo-dashboard');
+			$body .= sprintf(__("Kind regards,\n%s Team\n", 'custom-woo-dashboard'), $blogname);
+
+			wp_mail($app->applicant_email, $subject, $body);
+		}
 
 		wp_redirect(admin_url('admin.php?page=cwd-v2-trade-applications&notice=rejected'));
 		exit;
