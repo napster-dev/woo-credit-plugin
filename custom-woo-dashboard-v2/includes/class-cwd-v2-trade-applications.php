@@ -125,6 +125,16 @@ class CWD_V2_Trade_Applications
 			return (int) $existing_pending;
 		}
 
+		// Throttle: don't allow creating requests less than 60 seconds apart for same customer
+		$recent = $wpdb->get_var($wpdb->prepare(
+			"SELECT id FROM {$table} WHERE user_id = %d AND forminator_form_id = 0 AND created_at >= %s LIMIT 1",
+			$user_id,
+			gmdate('Y-m-d H:i:s', time() - 60)
+		));
+		if ($recent) {
+			return (int) $recent;
+		}
+
 		$current_limit   = (float) get_user_meta($user_id, '_credit_limit', true);
 		$current_balance = (float) get_user_meta($user_id, '_credit_balance', true);
 		$company_name    = get_user_meta($user_id, 'billing_company', true) ?: (get_user_meta($user_id, 'ews_company_name', true) ?: '');
