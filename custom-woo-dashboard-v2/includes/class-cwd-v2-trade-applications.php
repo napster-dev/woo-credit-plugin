@@ -159,24 +159,28 @@ class CWD_V2_Trade_Applications
 		$table = self::get_table_name();
 		$now   = current_time('mysql');
 
-		$wpdb->insert(
-			$table,
-			array(
-				'forminator_form_id'  => $form_id,
-				'forminator_entry_id' => $entry_id,
-				'applicant_email'     => sanitize_email($email),
-				'applicant_name'      => sanitize_text_field((string) $name),
-				'company_name'        => sanitize_text_field((string) $company),
-				'phone'               => sanitize_text_field((string) $phone),
-				'requested_limit'     => $requested_limit_val,
-				'form_data'           => wp_json_encode($flat),
-				'status'              => self::STATUS_PENDING,
-				'user_id'             => $user_id,
-				'created_at'          => $now,
-				'updated_at'          => $now,
-			),
-			array('%d', '%d', '%s', '%s', '%s', '%s', '%f', '%s', '%s', '%d', '%s', '%s')
+		$insert_data = array(
+			'forminator_form_id'  => $form_id,
+			'forminator_entry_id' => $entry_id,
+			'applicant_email'     => sanitize_email($email),
+			'applicant_name'      => sanitize_text_field((string) $name),
+			'company_name'        => sanitize_text_field((string) $company),
+			'phone'               => sanitize_text_field((string) $phone),
+			'requested_limit'     => $requested_limit_val,
+			'form_data'           => wp_json_encode($flat),
+			'status'              => self::STATUS_PENDING,
+			'created_at'          => $now,
+			'updated_at'          => $now,
 		);
+		$insert_format = array('%d', '%d', '%s', '%s', '%s', '%s', '%f', '%s', '%s', '%s', '%s');
+
+		// Only include user_id if we found a matching user
+		if ($user_id) {
+			$insert_data['user_id'] = $user_id;
+			$insert_format[]        = '%d';
+		}
+
+		$wpdb->insert($table, $insert_data, $insert_format);
 	}
 
 	/**
@@ -350,9 +354,10 @@ class CWD_V2_Trade_Applications
 			$user->add_role('credit_account');
 		}
 
-		// Set credit limit and zero balance
+		// Set credit limit and initialize balance
 		update_user_meta($user_id, '_credit_limit', $approved_limit);
-		if (! get_user_meta($user_id, '_credit_balance', true)) {
+		// Initialize balance to 0 if not yet set (metadata_exists checks DB, not value)
+		if (! metadata_exists('user', $user_id, '_credit_balance')) {
 			update_user_meta($user_id, '_credit_balance', 0);
 		}
 
