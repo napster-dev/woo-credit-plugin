@@ -33,13 +33,18 @@ if (! function_exists('cwd_v2_init_plugin')) {
 			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-account-ledger.php';
 			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-returns.php';
 			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-backorders.php';
+			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-admin-profile.php';
+			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-rest-api.php';
 
+			CWD_V2_Activator::register_roles();
 			CWD_V2_Shortcode::init();
 			CWD_V2_Endpoints::init();
 			CWD_V2_Credit_Logic::init();
 			CWD_V2_Invoices::init();
 			CWD_V2_Returns::init();
 			CWD_V2_Backorders::init();
+			CWD_V2_Admin_Profile::init();
+			CWD_V2_REST_API::init();
 
 			// Refresh rewrite rules after WordPress has initialized its rewrite object.
 			add_action('init', 'cwd_v2_refresh_rewrite_rules', 20);
