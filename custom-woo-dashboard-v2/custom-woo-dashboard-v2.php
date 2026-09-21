@@ -35,6 +35,7 @@ if (! function_exists('cwd_v2_init_plugin')) {
 			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-backorders.php';
 			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-admin-profile.php';
 			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-rest-api.php';
+			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-trade-applications.php';
 
 			CWD_V2_Activator::register_roles();
 			CWD_V2_Shortcode::init();
@@ -45,13 +46,17 @@ if (! function_exists('cwd_v2_init_plugin')) {
 			CWD_V2_Backorders::init();
 			CWD_V2_Admin_Profile::init();
 			CWD_V2_REST_API::init();
+			CWD_V2_Trade_Applications::init();
+
+			// Register trade application settings
+			add_action('admin_init', array('CWD_V2_Trade_Applications', 'register_settings'));
 
 			// Refresh rewrite rules after WordPress has initialized its rewrite object.
 			add_action('init', 'cwd_v2_refresh_rewrite_rules', 20);
 
 			// Create the invoices/ledger tables for sites where the plugin was
 			// already active before this feature was added.
-			$tables_version = '3';
+			$tables_version = '4';
 			if (get_option('cwd_v2_tables_version') !== $tables_version) {
 				CWD_V2_Activator::activate();
 				update_option('cwd_v2_tables_version', $tables_version);
