@@ -229,8 +229,9 @@ wc_print_notices();
 					</div>
 				<?php endif; ?>
 
-				<form method="post" action="" onsubmit="var btn = this.querySelector('button[type=submit]'); btn.disabled=true; btn.textContent='Submitting...';">
+				<form method="post" action="" onsubmit="var btn = this.querySelector('button[type=submit]'); if (btn) { btn.style.pointerEvents='none'; btn.style.opacity='0.7'; btn.textContent='Submitting...'; }">
 					<?php wp_nonce_field( 'cwd_v2_request_increase_action', 'cwd_v2_request_increase_nonce' ); ?>
+					<input type="hidden" name="cwd_v2_request_increase" value="1" />
 					<div style="margin-bottom: 12px;">
 						<label for="cwd_v2_requested_amount" style="display: block; font-size: 12.5px; font-weight: 600; color: #334155; margin-bottom: 6px;">
 							<?php esc_html_e( 'Requested New Limit', 'custom-woo-dashboard' ); ?> (<?php echo esc_html( get_woocommerce_currency_symbol() ); ?>)

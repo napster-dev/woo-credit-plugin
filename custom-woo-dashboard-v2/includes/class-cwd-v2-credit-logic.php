@@ -236,7 +236,7 @@ class CWD_V2_Credit_Logic
 
 	public static function handle_credit_increase_request()
 	{
-		if (isset($_POST['cwd_v2_request_increase']) && is_user_logged_in()) {
+		if ((isset($_POST['cwd_v2_request_increase']) || isset($_POST['cwd_v2_requested_amount'])) && is_user_logged_in()) {
 			$nonce = isset($_POST['cwd_v2_request_increase_nonce']) ? sanitize_text_field(wp_unslash($_POST['cwd_v2_request_increase_nonce'])) : '';
 			if (! wp_verify_nonce($nonce, 'cwd_v2_request_increase_action')) {
 				wc_add_notice(__('Security check failed.', 'custom-woo-dashboard'), 'error');
