@@ -142,5 +142,10 @@ class CWD_V2_Activator
 			UNIQUE KEY odoo_return_id (odoo_return_id)
 		) {$charset_collate};";
 		dbDelta($sql_returns);
+
+		// Trade Applications table
+		if (class_exists('CWD_V2_Trade_Applications')) {
+			CWD_V2_Trade_Applications::create_table();
+		}
 	}
 }
