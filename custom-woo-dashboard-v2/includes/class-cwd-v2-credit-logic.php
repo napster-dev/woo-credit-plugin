@@ -251,6 +251,23 @@ class CWD_V2_Credit_Logic
 				return;
 			}
 
+			// Check if user already has an active pending request or submitted very recently
+			if (class_exists('CWD_V2_Trade_Applications')) {
+				global $wpdb;
+				$apps_table = CWD_V2_Trade_Applications::get_table_name();
+				$existing_pending = $wpdb->get_var($wpdb->prepare(
+					"SELECT id FROM {$apps_table} WHERE user_id = %d AND status = %s AND forminator_form_id = 0 LIMIT 1",
+					$current_user->ID,
+					'pending'
+				));
+				if ($existing_pending) {
+					wc_add_notice(__('You already have a credit increase request under review.', 'custom-woo-dashboard'), 'notice');
+					$redirect_url = wp_get_referer() ?: wc_get_endpoint_url('credit', '', wc_get_page_permalink('myaccount'));
+					wp_safe_redirect($redirect_url);
+					exit;
+				}
+			}
+
 			$admin_email = get_option('admin_email');
 			$subject = sprintf(__('Credit Limit Increase Request from %s', 'custom-woo-dashboard'), $current_user->display_name);
 
@@ -270,6 +287,11 @@ class CWD_V2_Credit_Logic
 			}
 
 			wc_add_notice(__('Your request for a credit limit increase has been submitted for review.', 'custom-woo-dashboard'), 'success');
+
+			// Post-Redirect-Get: Redirect to GET so refreshing page never re-submits POST form
+			$redirect_url = wp_get_referer() ?: wc_get_endpoint_url('credit', '', wc_get_page_permalink('myaccount'));
+			wp_safe_redirect($redirect_url);
+			exit;
 		}
 	}
 
