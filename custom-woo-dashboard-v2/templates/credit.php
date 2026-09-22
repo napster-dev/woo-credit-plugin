@@ -33,16 +33,22 @@ $latest_rejected_request = null;
 if ( class_exists( 'CWD_V2_Trade_Applications' ) ) {
 	global $wpdb;
 	$apps_table             = CWD_V2_Trade_Applications::get_table_name();
-	$pending_credit_request = $wpdb->get_row( $wpdb->prepare(
-		"SELECT * FROM {$apps_table} WHERE user_id = %d AND status = %s AND forminator_form_id = 0 ORDER BY created_at DESC LIMIT 1",
-		$user_id,
-		'pending'
+
+	// The single most-recent credit request for this user (any status)
+	$most_recent_request = $wpdb->get_row( $wpdb->prepare(
+		"SELECT * FROM {$apps_table} WHERE user_id = %d AND forminator_form_id = 0 ORDER BY id DESC LIMIT 1",
+		$user_id
 	) );
-	$latest_rejected_request = $wpdb->get_row( $wpdb->prepare(
-		"SELECT * FROM {$apps_table} WHERE user_id = %d AND status = %s AND forminator_form_id = 0 ORDER BY reviewed_at DESC, id DESC LIMIT 1",
-		$user_id,
-		'rejected'
-	) );
+
+	if ( $most_recent_request ) {
+		if ( 'pending' === $most_recent_request->status ) {
+			$pending_credit_request = $most_recent_request;
+		} elseif ( 'rejected' === $most_recent_request->status ) {
+			// Only show the rejection banner if the latest request IS the rejected one
+			$latest_rejected_request = $most_recent_request;
+		}
+		// If latest is 'approved', neither banner shows — that is correct behaviour
+	}
 }
 
 // Print notices
