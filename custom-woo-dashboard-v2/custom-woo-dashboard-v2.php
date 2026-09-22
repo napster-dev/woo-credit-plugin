@@ -64,6 +64,19 @@ if (! function_exists('cwd_v2_init_plugin')) {
 
 			// Add custom payment gateway
 			add_filter('woocommerce_payment_gateways', 'cwd_v2_add_payment_gateway');
+
+			// Ensure payment gateway is enabled by default if not explicitly saved
+			$gateway_settings = get_option('woocommerce_cwd_v2_credit_account_settings');
+			if (! is_array($gateway_settings) || empty($gateway_settings)) {
+				update_option('woocommerce_cwd_v2_credit_account_settings', array(
+					'enabled'     => 'yes',
+					'title'       => 'Pay on Credit Account',
+					'description' => 'Your order will be charged to your trade credit account and settled according to your payment terms.',
+				));
+			}
+
+			// Register WooCommerce Blocks payment method integration
+			add_action('woocommerce_blocks_loaded', 'cwd_v2_register_credit_gateway_blocks_support');
 		}
 	}
 }
@@ -87,5 +100,25 @@ if (! function_exists('cwd_v2_add_payment_gateway')) {
 	{
 		$methods[] = 'WC_Gateway_Credit_Account_V2';
 		return $methods;
+	}
+}
+
+if (! function_exists('cwd_v2_register_credit_gateway_blocks_support')) {
+	function cwd_v2_register_credit_gateway_blocks_support()
+	{
+		if (! class_exists('Automattic\WooCommerce\Blocks\Payments\Integrations\AbstractPaymentMethodType')) {
+			return;
+		}
+
+		require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-blocks-payment-gateway.php';
+
+		add_action(
+			'woocommerce_blocks_payment_method_type_registration',
+			function ($payment_method_registry) {
+				if (is_object($payment_method_registry) && method_exists($payment_method_registry, 'register')) {
+					$payment_method_registry->register(new CWD_V2_Blocks_Payment_Gateway());
+				}
+			}
+		);
 	}
 }

@@ -23,8 +23,9 @@ class WC_Gateway_Credit_Account_V2 extends WC_Payment_Gateway
 		$this->init_form_fields();
 		$this->init_settings();
 
-		$this->title       = $this->get_option('title');
-		$this->description = $this->get_option('description');
+		$this->enabled     = $this->get_option('enabled', 'yes');
+		$this->title       = $this->get_option('title', __('Pay on Credit Account', 'custom-woo-dashboard'));
+		$this->description = $this->get_option('description', __('Your order will be charged to your trade credit account and settled according to your payment terms.', 'custom-woo-dashboard'));
 
 		add_action('woocommerce_update_options_payment_gateways_' . $this->id, array($this, 'process_admin_options'));
 	}
@@ -71,7 +72,12 @@ class WC_Gateway_Credit_Account_V2 extends WC_Payment_Gateway
 			return false;
 		}
 
-		return parent::is_available();
+		// Check if explicitly disabled in WooCommerce settings
+		if ('no' === $this->get_option('enabled', 'yes')) {
+			return false;
+		}
+
+		return true;
 	}
 
 	/**
