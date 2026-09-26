@@ -108,9 +108,6 @@ class CWD_V2_Credit_Logic
 
 			// Empty cart to ensure only this payment is processed? Optional, but cleaner.
 			WC()->cart->empty_cart();
-					if ( ! $order->is_paid() ) {
-						return;
-					}
 
 			// Add product to cart with custom price data
 			WC()->cart->add_to_cart($product_id, 1, 0, array(), $cart_item_data);
