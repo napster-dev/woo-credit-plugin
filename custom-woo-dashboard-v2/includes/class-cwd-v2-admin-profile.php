@@ -34,8 +34,8 @@ class CWD_V2_Admin_Profile
 		}
 
 		$user_id          = $user->ID;
-		$credit_limit     = (float) get_user_meta($user_id, '_credit_limit', true);
-		$credit_balance   = (float) get_user_meta($user_id, '_credit_balance', true);
+		$credit_limit     = class_exists('CWD_V2_Credit_Logic') ? CWD_V2_Credit_Logic::get_user_credit_limit($user_id) : (float) get_user_meta($user_id, '_credit_limit', true);
+		$credit_balance   = class_exists('CWD_V2_Credit_Logic') ? CWD_V2_Credit_Logic::get_user_credit_balance($user_id) : (float) get_user_meta($user_id, '_credit_balance', true);
 		$due_date         = (string) get_user_meta($user_id, '_credit_due_date', true);
 		$account_number   = (string) get_user_meta($user_id, 'ews_account_number', true);
 		$available_credit = max(0, $credit_limit - $credit_balance);
@@ -148,7 +148,11 @@ class CWD_V2_Admin_Profile
 			if ($limit < 0) {
 				$limit = 0.0;
 			}
-			update_user_meta($user_id, '_credit_limit', $limit);
+			if (class_exists('CWD_V2_Credit_Logic')) {
+				CWD_V2_Credit_Logic::sync_user_credit_limit($user_id, $limit);
+			} else {
+				update_user_meta($user_id, '_credit_limit', $limit);
+			}
 		}
 
 		// Save Credit Balance
@@ -157,7 +161,11 @@ class CWD_V2_Admin_Profile
 			if ($balance < 0) {
 				$balance = 0.0;
 			}
-			update_user_meta($user_id, '_credit_balance', $balance);
+			if (class_exists('CWD_V2_Credit_Logic')) {
+				CWD_V2_Credit_Logic::sync_user_credit_balance($user_id, $balance);
+			} else {
+				update_user_meta($user_id, '_credit_balance', $balance);
+			}
 		}
 
 		// Save Due Date

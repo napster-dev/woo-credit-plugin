@@ -193,10 +193,7 @@ class CWD_V2_Credit_Logic
 				}
 
 				$new_balance = max(0, $current_balance - $payment_amount);
-				if (false === update_user_meta($user_id, '_credit_balance', $new_balance)) {
-					$wpdb->query('ROLLBACK');
-					return;
-				}
+				self::sync_user_credit_balance($user_id, $new_balance);
 
 				if ($invoice_id) {
 					$ledger_result = CWD_V2_Account_Ledger::record(
@@ -292,36 +289,142 @@ class CWD_V2_Credit_Logic
 		}
 	}
 
+	/**
+	 * Get the synchronized credit limit for a user across all meta sources
+	 *
+	 * @param int $user_id
+	 * @return float
+	 */
+	public static function get_user_credit_limit($user_id)
+	{
+		$user_id = (int) $user_id;
+		if (! $user_id) {
+			return 0.0;
+		}
+
+		$limit = (float) get_user_meta($user_id, '_credit_limit', true);
+		if ($limit <= 0) {
+			// Check other known credit plugin meta keys
+			$keys = array('_fp_credit_limit', 'fp_credit_limit', '_user_credit_limit', 'credit_limit');
+			foreach ($keys as $k) {
+				$val = (float) get_user_meta($user_id, $k, true);
+				if ($val > 0) {
+					$limit = $val;
+					update_user_meta($user_id, '_credit_limit', $limit);
+					break;
+				}
+			}
+		}
+		return max(0.0, $limit);
+	}
+
+	/**
+	 * Get the synchronized credit balance (amount owed) for a user across all meta sources
+	 *
+	 * @param int $user_id
+	 * @return float
+	 */
+	public static function get_user_credit_balance($user_id)
+	{
+		$user_id = (int) $user_id;
+		if (! $user_id) {
+			return 0.0;
+		}
+
+		$balance = (float) get_user_meta($user_id, '_credit_balance', true);
+		if ($balance <= 0) {
+			$keys = array('_fp_used_credit', '_user_credit_balance', 'credit_balance');
+			foreach ($keys as $k) {
+				$val = (float) get_user_meta($user_id, $k, true);
+				if ($val > 0) {
+					$balance = $val;
+					update_user_meta($user_id, '_credit_balance', $balance);
+					break;
+				}
+			}
+		}
+		return max(0.0, $balance);
+	}
+
+	/**
+	 * Sync credit limit across all relevant meta keys
+	 *
+	 * @param int $user_id
+	 * @param float $limit
+	 */
+	public static function sync_user_credit_limit($user_id, $limit)
+	{
+		$user_id = (int) $user_id;
+		$limit   = max(0.0, round((float) $limit, 2));
+		if (! $user_id) {
+			return;
+		}
+
+		update_user_meta($user_id, '_credit_limit', $limit);
+		$keys = array('_fp_credit_limit', 'fp_credit_limit', '_user_credit_limit', 'credit_limit');
+		foreach ($keys as $k) {
+			update_user_meta($user_id, $k, $limit);
+		}
+	}
+
+	/**
+	 * Sync credit balance across all relevant meta keys
+	 *
+	 * @param int $user_id
+	 * @param float $balance
+	 */
+	public static function sync_user_credit_balance($user_id, $balance)
+	{
+		$user_id = (int) $user_id;
+		$balance = max(0.0, round((float) $balance, 2));
+		if (! $user_id) {
+			return;
+		}
+
+		update_user_meta($user_id, '_credit_balance', $balance);
+		$keys = array('_fp_used_credit', '_user_credit_balance', 'credit_balance');
+		foreach ($keys as $k) {
+			update_user_meta($user_id, $k, $balance);
+		}
+	}
+
 	public static function apply_credit_order_charge($order_id)
 	{
 		$order = wc_get_order($order_id);
-		if (! $order || 'cwd_v2_credit_account' !== $order->get_payment_method() || $order->get_meta('_cwd_v2_credit_charge_processed')) {
+		if (! $order) {
 			return;
 		}
+
+		$method           = $order->get_payment_method();
+		$paid_with_credit = $order->get_meta('_paid_with_credit');
+		$is_credit_order  = in_array($method, array('cwd_v2_credit_account', 'credits'), true) || ('yes' === $paid_with_credit);
+
+		if (! $is_credit_order || $order->get_meta('_cwd_v2_credit_charge_processed')) {
+			return;
+		}
+
 		$user_id = (int) $order->get_user_id();
-		$amount = round((float) $order->get_total(), 2);
+		$amount  = round((float) $order->get_total(), 2);
 		if (! $user_id || $amount <= 0) {
 			return;
 		}
-		global $wpdb;
-		$wpdb->query('START TRANSACTION');
-		$wpdb->get_var($wpdb->prepare('SELECT ID FROM ' . $wpdb->users . ' WHERE ID = %d FOR UPDATE', $user_id));
-		$current_balance = (float) get_user_meta($user_id, '_credit_balance', true);
-		$limit = (float) get_user_meta($user_id, '_credit_limit', true);
-		if ($amount > max(0, $limit - $current_balance)) {
-			$wpdb->query('ROLLBACK');
-			$order->add_order_note(__('Credit charge was not applied because the available credit is insufficient.', 'custom-woo-dashboard'));
-			return;
-		}
-		if (false === update_user_meta($user_id, '_credit_balance', $current_balance + $amount)) {
-			$wpdb->query('ROLLBACK');
-			return;
-		}
-		if (false === CWD_V2_Account_Ledger::record($user_id, CWD_V2_Account_Ledger::TYPE_CHARGE, $amount, 'order', $order_id, sprintf(__('Order #%d placed on credit account', 'custom-woo-dashboard'), $order_id))) {
-			$wpdb->query('ROLLBACK');
-			return;
-		}
-		$wpdb->query('COMMIT');
+
+		$current_balance = self::get_user_credit_balance($user_id);
+		$new_balance     = $current_balance + $amount;
+
+		// Update and sync balance across all meta keys
+		self::sync_user_credit_balance($user_id, $new_balance);
+
+		// Record in transaction ledger
+		CWD_V2_Account_Ledger::record(
+			$user_id,
+			CWD_V2_Account_Ledger::TYPE_CHARGE,
+			$amount,
+			'order',
+			$order_id,
+			sprintf(__('Order #%d placed on credit account', 'custom-woo-dashboard'), $order_id)
+		);
+
 		$order->update_meta_data('_cwd_v2_credit_charge_processed', 'yes');
 		$order->save();
 	}
@@ -329,24 +432,37 @@ class CWD_V2_Credit_Logic
 	public static function reverse_credit_order_charge($order_id)
 	{
 		$order = wc_get_order($order_id);
-		if (! $order || 'cwd_v2_credit_account' !== $order->get_payment_method() || ! $order->get_meta('_cwd_v2_credit_charge_processed') || $order->get_meta('_cwd_v2_credit_charge_reversed')) {
+		if (! $order) {
 			return;
 		}
+
+		$method           = $order->get_payment_method();
+		$paid_with_credit = $order->get_meta('_paid_with_credit');
+		$is_credit_order  = in_array($method, array('cwd_v2_credit_account', 'credits'), true) || ('yes' === $paid_with_credit);
+
+		if (! $is_credit_order || ! $order->get_meta('_cwd_v2_credit_charge_processed') || $order->get_meta('_cwd_v2_credit_charge_reversed')) {
+			return;
+		}
+
 		$user_id = (int) $order->get_user_id();
-		$amount = round((float) $order->get_total(), 2);
-		global $wpdb;
-		$wpdb->query('START TRANSACTION');
-		$wpdb->get_var($wpdb->prepare('SELECT ID FROM ' . $wpdb->users . ' WHERE ID = %d FOR UPDATE', $user_id));
-		$current_balance = (float) get_user_meta($user_id, '_credit_balance', true);
-		if (false === update_user_meta($user_id, '_credit_balance', max(0, $current_balance - $amount))) {
-			$wpdb->query('ROLLBACK');
+		$amount  = round((float) $order->get_total(), 2);
+		if (! $user_id || $amount <= 0) {
 			return;
 		}
-		if (false === CWD_V2_Account_Ledger::record($user_id, CWD_V2_Account_Ledger::TYPE_REFUND, $amount, 'order', $order_id, sprintf(__('Credit charge reversed for order #%d', 'custom-woo-dashboard'), $order_id))) {
-			$wpdb->query('ROLLBACK');
-			return;
-		}
-		$wpdb->query('COMMIT');
+
+		$current_balance = self::get_user_credit_balance($user_id);
+		$new_balance     = max(0.0, $current_balance - $amount);
+		self::sync_user_credit_balance($user_id, $new_balance);
+
+		CWD_V2_Account_Ledger::record(
+			$user_id,
+			CWD_V2_Account_Ledger::TYPE_REFUND,
+			$amount,
+			'order',
+			$order_id,
+			sprintf(__('Credit charge reversed for order #%d', 'custom-woo-dashboard'), $order_id)
+		);
+
 		$order->update_meta_data('_cwd_v2_credit_charge_reversed', 'yes');
 		$order->save();
 	}
@@ -376,7 +492,10 @@ class CWD_V2_Credit_Logic
 			}
 		}
 
-		if (! $invoice_id && 'cwd_v2_credit_account' !== $order->get_payment_method()) {
+		$method = $order->get_payment_method();
+		$is_credit_order = in_array($method, array('cwd_v2_credit_account', 'credits'), true);
+
+		if (! $invoice_id && ! $is_credit_order) {
 			return;
 		}
 
@@ -391,14 +510,10 @@ class CWD_V2_Credit_Logic
 			return;
 		}
 
-		global $wpdb;
-		$wpdb->query('START TRANSACTION');
-		$wpdb->get_var($wpdb->prepare('SELECT ID FROM ' . $wpdb->users . ' WHERE ID = %d FOR UPDATE', (int) $user_id));
-		$current_balance = (float) get_user_meta($user_id, '_credit_balance', true);
+		$current_balance = self::get_user_credit_balance($user_id);
 
 		if ($invoice_id) {
 			if (! CWD_V2_Invoices::reverse_invoice_payment($invoice_id, $user_id, $refund_amount)) {
-				$wpdb->query('ROLLBACK');
 				return;
 			}
 			$new_balance = $current_balance + $refund_amount;
@@ -406,18 +521,15 @@ class CWD_V2_Credit_Logic
 			$reference_type = 'invoice';
 			$reference_id = $invoice_id;
 		} else {
-			$new_balance = max(0, $current_balance - $refund_amount);
+			$new_balance = max(0.0, $current_balance - $refund_amount);
 			$ledger_type = CWD_V2_Account_Ledger::TYPE_REFUND;
 			$reference_type = 'order';
 			$reference_id = $order_id;
 		}
 
-		if (false === update_user_meta($user_id, '_credit_balance', $new_balance)) {
-			$wpdb->query('ROLLBACK');
-			return;
-		}
+		self::sync_user_credit_balance($user_id, $new_balance);
 
-		$ledger_result = CWD_V2_Account_Ledger::record(
+		CWD_V2_Account_Ledger::record(
 			$user_id,
 			$ledger_type,
 			$refund_amount,
@@ -425,12 +537,7 @@ class CWD_V2_Credit_Logic
 			$reference_id,
 			sprintf(__('Refund for order #%d', 'custom-woo-dashboard'), $order_id)
 		);
-		if (false === $ledger_result) {
-			$wpdb->query('ROLLBACK');
-			return;
-		}
 
-		$wpdb->query('COMMIT');
 		$refund->update_meta_data('_cwd_v2_credit_refund_processed', 'yes');
 		$refund->save();
 	}

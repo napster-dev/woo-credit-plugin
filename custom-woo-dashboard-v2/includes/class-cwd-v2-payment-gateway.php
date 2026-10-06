@@ -66,9 +66,11 @@ class WC_Gateway_Credit_Account_V2 extends WC_Payment_Gateway
 
 		$current_user = wp_get_current_user();
 		$roles        = (array) $current_user->roles;
+		$user_id      = $current_user->ID;
+		$credit_limit = class_exists('CWD_V2_Credit_Logic') ? CWD_V2_Credit_Logic::get_user_credit_limit($user_id) : (float) get_user_meta($user_id, '_credit_limit', true);
 
-		// Only available for credit_account role or administrators/shop managers
-		if (! in_array('credit_account', $roles, true) && ! current_user_can('manage_options') && ! current_user_can('manage_woocommerce')) {
+		// Available for credit_account role, users with approved credit limit, or administrators/shop managers
+		if (! in_array('credit_account', $roles, true) && $credit_limit <= 0 && ! current_user_can('manage_options') && ! current_user_can('manage_woocommerce')) {
 			return false;
 		}
 
@@ -91,8 +93,8 @@ class WC_Gateway_Credit_Account_V2 extends WC_Payment_Gateway
 		}
 
 		$user_id          = get_current_user_id();
-		$credit_limit     = (float) get_user_meta($user_id, '_credit_limit', true);
-		$credit_balance   = (float) get_user_meta($user_id, '_credit_balance', true);
+		$credit_limit     = class_exists('CWD_V2_Credit_Logic') ? CWD_V2_Credit_Logic::get_user_credit_limit($user_id) : (float) get_user_meta($user_id, '_credit_limit', true);
+		$credit_balance   = class_exists('CWD_V2_Credit_Logic') ? CWD_V2_Credit_Logic::get_user_credit_balance($user_id) : (float) get_user_meta($user_id, '_credit_balance', true);
 		$available_credit = max(0, $credit_limit - $credit_balance);
 		$due_date         = (string) get_user_meta($user_id, '_credit_due_date', true);
 
@@ -200,7 +202,13 @@ class WC_Gateway_Credit_Account_V2 extends WC_Payment_Gateway
 		$user_id = get_current_user_id();
 		$roles   = (array) wp_get_current_user()->roles;
 
-		if (! in_array('credit_account', $roles, true) && ! current_user_can('manage_options') && ! current_user_can('manage_woocommerce')) {
+		$user_id          = get_current_user_id();
+		$roles            = (array) wp_get_current_user()->roles;
+		$credit_limit     = class_exists('CWD_V2_Credit_Logic') ? CWD_V2_Credit_Logic::get_user_credit_limit($user_id) : (float) get_user_meta($user_id, '_credit_limit', true);
+		$credit_balance   = class_exists('CWD_V2_Credit_Logic') ? CWD_V2_Credit_Logic::get_user_credit_balance($user_id) : (float) get_user_meta($user_id, '_credit_balance', true);
+		$available_credit = max(0, $credit_limit - $credit_balance);
+
+		if (! in_array('credit_account', $roles, true) && $credit_limit <= 0 && ! current_user_can('manage_options') && ! current_user_can('manage_woocommerce')) {
 			wc_add_notice(__('Your account is not approved for credit purchases.', 'custom-woo-dashboard'), 'error');
 			return false;
 		}
@@ -215,10 +223,6 @@ class WC_Gateway_Credit_Account_V2 extends WC_Payment_Gateway
 				}
 			}
 		}
-
-		$credit_limit     = (float) get_user_meta($user_id, '_credit_limit', true);
-		$credit_balance   = (float) get_user_meta($user_id, '_credit_balance', true);
-		$available_credit = max(0, $credit_limit - $credit_balance);
 
 		$cart_total = isset(WC()->cart) && WC()->cart ? (float) WC()->cart->get_total('edit') : 0.0;
 
@@ -258,8 +262,8 @@ class WC_Gateway_Credit_Account_V2 extends WC_Payment_Gateway
 		}
 
 		$order_total      = (float) $order->get_total();
-		$credit_limit     = (float) get_user_meta($user_id, '_credit_limit', true);
-		$credit_balance   = (float) get_user_meta($user_id, '_credit_balance', true);
+		$credit_limit     = class_exists('CWD_V2_Credit_Logic') ? CWD_V2_Credit_Logic::get_user_credit_limit($user_id) : (float) get_user_meta($user_id, '_credit_limit', true);
+		$credit_balance   = class_exists('CWD_V2_Credit_Logic') ? CWD_V2_Credit_Logic::get_user_credit_balance($user_id) : (float) get_user_meta($user_id, '_credit_balance', true);
 		$available_credit = max(0, $credit_limit - $credit_balance);
 
 		// Prevent paying credit off with credit
@@ -288,6 +292,11 @@ class WC_Gateway_Credit_Account_V2 extends WC_Payment_Gateway
 		$order->update_meta_data('_paid_with_credit', 'yes');
 		$order->update_meta_data('_credit_balance_at_order', $credit_balance);
 		$order->save();
+
+		// Immediately charge and update credit balance across all sections
+		if (class_exists('CWD_V2_Credit_Logic')) {
+			CWD_V2_Credit_Logic::apply_credit_order_charge($order_id);
+		}
 
 		// Mark order as processing
 		$order->update_status(

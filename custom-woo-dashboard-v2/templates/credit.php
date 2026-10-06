@@ -13,41 +13,46 @@ if ( ! defined( 'ABSPATH' ) ) {
 $current_user = wp_get_current_user();
 $user_id      = $current_user->ID;
 
-$credit_limit     = (float) get_user_meta( $user_id, '_credit_limit', true );
-$credit_balance   = (float) get_user_meta( $user_id, '_credit_balance', true ); // Amount owed
+$credit_limit     = class_exists( 'CWD_V2_Credit_Logic' ) ? CWD_V2_Credit_Logic::get_user_credit_limit( $user_id ) : (float) get_user_meta( $user_id, '_credit_limit', true );
+$credit_balance   = class_exists( 'CWD_V2_Credit_Logic' ) ? CWD_V2_Credit_Logic::get_user_credit_balance( $user_id ) : (float) get_user_meta( $user_id, '_credit_balance', true ); // Amount owed
 $due_date         = (string) get_user_meta( $user_id, '_credit_due_date', true );
 $account_number   = (string) get_user_meta( $user_id, 'ews_account_number', true );
 $available_credit = max( 0, $credit_limit - $credit_balance );
 
-// Fetch credit purchase history (orders made with cwd_v2_credit_account gateway)
+// Fetch credit purchase history (orders made with credit payment gateways)
 $args = array(
 	'customer_id'    => $user_id,
-	'payment_method' => 'cwd_v2_credit_account',
+	'payment_method' => array( 'cwd_v2_credit_account', 'credits' ),
 	'limit'          => 10,
 );
 $credit_orders = wc_get_orders( $args );
 
-// Check for pending and recently rejected requests
+// Fetch all trade applications and credit requests for this user
+$user_trade_requests     = array();
 $pending_credit_request  = null;
 $latest_rejected_request = null;
+
 if ( class_exists( 'CWD_V2_Trade_Applications' ) ) {
 	global $wpdb;
-	$apps_table             = CWD_V2_Trade_Applications::get_table_name();
+	$apps_table = CWD_V2_Trade_Applications::get_table_name();
+	CWD_V2_Trade_Applications::ensure_table_exists();
 
-	// The single most-recent credit request for this user (any status)
-	$most_recent_request = $wpdb->get_row( $wpdb->prepare(
-		"SELECT * FROM {$apps_table} WHERE user_id = %d AND forminator_form_id = 0 ORDER BY id DESC LIMIT 1",
-		$user_id
+	$user_email          = $current_user->user_email;
+	$user_trade_requests = $wpdb->get_results( $wpdb->prepare(
+		"SELECT * FROM {$apps_table} WHERE user_id = %d OR applicant_email = %s ORDER BY created_at DESC",
+		$user_id,
+		$user_email
 	) );
 
-	if ( $most_recent_request ) {
-		if ( 'pending' === $most_recent_request->status ) {
-			$pending_credit_request = $most_recent_request;
-		} elseif ( 'rejected' === $most_recent_request->status ) {
-			// Only show the rejection banner if the latest request IS the rejected one
-			$latest_rejected_request = $most_recent_request;
+	if ( ! empty( $user_trade_requests ) ) {
+		foreach ( $user_trade_requests as $req ) {
+			if ( 'pending' === $req->status && null === $pending_credit_request ) {
+				$pending_credit_request = $req;
+			}
 		}
-		// If latest is 'approved', neither banner shows — that is correct behaviour
+		if ( 'rejected' === $user_trade_requests[0]->status ) {
+			$latest_rejected_request = $user_trade_requests[0];
+		}
 	}
 }
 
@@ -163,11 +168,7 @@ wc_print_notices();
 		
 		<!-- Card 1: Pay Balance -->
 		<div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 24px;">
-			<h3 style="display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 600; color: #0f172a; margin: 0 0 8px 0;">
-				<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0f172a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-					<line x1="12" y1="1" x2="12" y2="23"></line>
-					<path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
-				</svg>
+			<h3 style="font-size: 16px; font-weight: 600; color: #0f172a; margin: 0 0 8px 0;">
 				<?php esc_html_e( 'Settle Credit Balance', 'custom-woo-dashboard' ); ?>
 			</h3>
 			<p style="font-size: 13px; color: #64748b; margin: 0 0 16px 0;">
@@ -257,6 +258,88 @@ wc_print_notices();
 			<?php endif; ?>
 		</div>
 
+	</div>
+
+	<!-- Trade Applications & Facility Requests Section -->
+	<div class="cwd-v2-trade-requests" style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 24px; margin-bottom: 28px;">
+		<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+			<div>
+				<h3 style="font-size: 16px; font-weight: 600; color: #0f172a; margin: 0 0 4px 0;">
+					<?php esc_html_e( 'Trade Applications & Limit Requests', 'custom-woo-dashboard' ); ?>
+				</h3>
+				<p style="font-size: 12.5px; color: #64748b; margin: 0;">
+					<?php esc_html_e( 'Track the real-time review status of your trade facility and credit limit adjustment requests.', 'custom-woo-dashboard' ); ?>
+				</p>
+			</div>
+			<span style="font-size: 12px; font-weight: 600; color: #475569; background: #f1f5f9; border-radius: 4px; padding: 4px 10px;">
+				<?php printf( esc_html__( '%d Total Requests', 'custom-woo-dashboard' ), count( $user_trade_requests ) ); ?>
+			</span>
+		</div>
+
+		<?php if ( ! empty( $user_trade_requests ) ) : ?>
+			<table class="woocommerce-orders-table shop_table shop_table_responsive" style="width: 100%; border-collapse: collapse; font-size: 13px;">
+				<thead>
+					<tr style="border-bottom: 1px solid #e2e8f0; text-align: left;">
+						<th style="padding: 10px 12px; font-weight: 600; color: #64748b; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.04em;"><?php esc_html_e( 'Request ID', 'custom-woo-dashboard' ); ?></th>
+						<th style="padding: 10px 12px; font-weight: 600; color: #64748b; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.04em;"><?php esc_html_e( 'Date', 'custom-woo-dashboard' ); ?></th>
+						<th style="padding: 10px 12px; font-weight: 600; color: #64748b; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.04em;"><?php esc_html_e( 'Type', 'custom-woo-dashboard' ); ?></th>
+						<th style="padding: 10px 12px; font-weight: 600; color: #64748b; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.04em;"><?php esc_html_e( 'Requested Limit', 'custom-woo-dashboard' ); ?></th>
+						<th style="padding: 10px 12px; font-weight: 600; color: #64748b; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.04em;"><?php esc_html_e( 'Approved Limit', 'custom-woo-dashboard' ); ?></th>
+						<th style="padding: 10px 12px; font-weight: 600; color: #64748b; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.04em;"><?php esc_html_e( 'Status', 'custom-woo-dashboard' ); ?></th>
+						<th style="padding: 10px 12px; font-weight: 600; color: #64748b; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.04em;"><?php esc_html_e( 'Notes / Decision', 'custom-woo-dashboard' ); ?></th>
+					</tr>
+				</thead>
+				<tbody>
+					<?php foreach ( $user_trade_requests as $req ) : ?>
+						<?php
+						$is_increase = ( (int) $req->forminator_form_id === 0 );
+						$type_label  = $is_increase ? __( 'Credit Limit Increase', 'custom-woo-dashboard' ) : __( 'Trade Account Application', 'custom-woo-dashboard' );
+						$badge_bg    = '#fef3c7';
+						$badge_color = '#92400e';
+						$badge_border = '#fde68a';
+						if ( 'approved' === $req->status ) {
+							$badge_bg     = '#f0fdf4';
+							$badge_color  = '#166534';
+							$badge_border = '#bbf7d0';
+						} elseif ( 'rejected' === $req->status ) {
+							$badge_bg     = '#fef2f2';
+							$badge_color  = '#991b1b';
+							$badge_border = '#fecaca';
+						}
+						?>
+						<tr style="border-bottom: 1px solid #f1f5f9;">
+							<td style="padding: 12px 12px; font-weight: 600; color: #0f172a;">
+								#<?php echo esc_html( $req->id ); ?>
+							</td>
+							<td style="padding: 12px 12px; color: #64748b;">
+								<?php echo esc_html( date_i18n( get_option( 'date_format' ), strtotime( $req->created_at ) ) ); ?>
+							</td>
+							<td style="padding: 12px 12px; color: #334155; font-weight: 500;">
+								<?php echo esc_html( $type_label ); ?>
+							</td>
+							<td style="padding: 12px 12px; font-weight: 600; color: #0f172a;">
+								<?php echo wp_kses_post( wc_price( $req->requested_limit ) ); ?>
+							</td>
+							<td style="padding: 12px 12px; font-weight: 600; color: #0f172a;">
+								<?php echo ( 'approved' === $req->status && $req->approved_limit !== null ) ? wp_kses_post( wc_price( $req->approved_limit ) ) : '&ndash;'; ?>
+							</td>
+							<td style="padding: 12px 12px;">
+								<span style="display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11.5px; font-weight: 600; text-transform: uppercase; background: <?php echo esc_attr( $badge_bg ); ?>; color: <?php echo esc_attr( $badge_color ); ?>; border: 1px solid <?php echo esc_attr( $badge_border ); ?>;">
+									<?php echo esc_html( ucfirst( $req->status ) ); ?>
+								</span>
+							</td>
+							<td style="padding: 12px 12px; color: #64748b; max-width: 260px;">
+								<?php echo ! empty( $req->admin_note ) ? esc_html( $req->admin_note ) : '&ndash;'; ?>
+							</td>
+						</tr>
+					<?php endforeach; ?>
+				</tbody>
+			</table>
+		<?php else : ?>
+			<div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 14px 16px; font-size: 13px; color: #64748b;">
+				<?php esc_html_e( 'No previous trade credit requests submitted.', 'custom-woo-dashboard' ); ?>
+			</div>
+		<?php endif; ?>
 	</div>
 
 	<!-- Credit Purchase History Table -->

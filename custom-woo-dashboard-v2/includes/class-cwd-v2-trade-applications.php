@@ -440,10 +440,16 @@ class CWD_V2_Trade_Applications
 		}
 
 		// Set credit limit and initialize balance
-		update_user_meta($user_id, '_credit_limit', $approved_limit);
-		// Initialize balance to 0 if not yet set (metadata_exists checks DB, not value)
-		if (! metadata_exists('user', $user_id, '_credit_balance')) {
-			update_user_meta($user_id, '_credit_balance', 0);
+		if (class_exists('CWD_V2_Credit_Logic')) {
+			CWD_V2_Credit_Logic::sync_user_credit_limit($user_id, $approved_limit);
+			if (! metadata_exists('user', $user_id, '_credit_balance')) {
+				CWD_V2_Credit_Logic::sync_user_credit_balance($user_id, 0);
+			}
+		} else {
+			update_user_meta($user_id, '_credit_limit', $approved_limit);
+			if (! metadata_exists('user', $user_id, '_credit_balance')) {
+				update_user_meta($user_id, '_credit_balance', 0);
+			}
 		}
 
 		// Set EWS trade account number if not already set
