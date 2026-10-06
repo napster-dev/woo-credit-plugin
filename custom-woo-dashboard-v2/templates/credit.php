@@ -13,6 +13,11 @@ if ( ! defined( 'ABSPATH' ) ) {
 $current_user = wp_get_current_user();
 $user_id      = $current_user->ID;
 
+// Reconcile pending applications against Credits plugin state in real time
+if ( class_exists( 'CWD_V2_Credits_Bridge' ) ) {
+	CWD_V2_Credits_Bridge::reconcile_pending_applications( $user_id );
+}
+
 $credit_limit     = class_exists( 'CWD_V2_Credit_Logic' ) ? CWD_V2_Credit_Logic::get_user_credit_limit( $user_id ) : (float) get_user_meta( $user_id, '_credit_limit', true );
 $credit_balance   = class_exists( 'CWD_V2_Credit_Logic' ) ? CWD_V2_Credit_Logic::get_user_credit_balance( $user_id ) : (float) get_user_meta( $user_id, '_credit_balance', true ); // Amount owed
 $due_date         = (string) get_user_meta( $user_id, '_credit_due_date', true );
@@ -195,28 +200,43 @@ wc_print_notices();
 			<?php endif; ?>
 		</div>
 
-		<!-- Card 2: Request Limit Increase -->
+		<!-- Card 2: Apply for Trade Credit / Request Limit Increase -->
 		<div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 24px;">
-			<h3 style="display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 600; color: #0f172a; margin: 0 0 8px 0;">
-				<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0f172a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-					<line x1="12" y1="19" x2="12" y2="5"></line>
-					<polyline points="5 12 12 5 19 12"></polyline>
-				</svg>
-				<?php esc_html_e( 'Request Credit Limit Increase', 'custom-woo-dashboard' ); ?>
-			</h3>
-			<p style="font-size: 13px; color: #64748b; margin: 0 0 16px 0;">
-				<?php esc_html_e( 'Submit a formal request to our trade finance team to increase your facility.', 'custom-woo-dashboard' ); ?>
-			</p>
+			<?php if ( $credit_limit > 0 ) : ?>
+				<h3 style="display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 600; color: #0f172a; margin: 0 0 8px 0;">
+					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0f172a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+						<line x1="12" y1="19" x2="12" y2="5"></line>
+						<polyline points="5 12 12 5 19 12"></polyline>
+					</svg>
+					<?php esc_html_e( 'Request Credit Limit Increase', 'custom-woo-dashboard' ); ?>
+				</h3>
+				<p style="font-size: 13px; color: #64748b; margin: 0 0 16px 0;">
+					<?php esc_html_e( 'Submit a formal request to our trade finance team to increase your facility.', 'custom-woo-dashboard' ); ?>
+				</p>
+			<?php else : ?>
+				<h3 style="display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 600; color: #0f172a; margin: 0 0 8px 0;">
+					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0f172a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+						<rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>
+						<path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
+					</svg>
+					<?php esc_html_e( 'Apply for Trade Credit Facility', 'custom-woo-dashboard' ); ?>
+				</h3>
+				<p style="font-size: 13px; color: #64748b; margin: 0 0 16px 0;">
+					<?php esc_html_e( 'Get pre-approved for an official trade credit facility on Net 30 terms with instant checkout access.', 'custom-woo-dashboard' ); ?>
+				</p>
+			<?php endif; ?>
 
 			<?php if ( $pending_credit_request ) : ?>
 				<!-- Pending Request Box -->
 				<div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 16px;">
 					<div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
 						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-						<strong style="color: #92400e; font-size: 13.5px;"><?php esc_html_e( 'Request Currently Under Review', 'custom-woo-dashboard' ); ?></strong>
+						<strong style="color: #92400e; font-size: 13.5px;">
+							<?php echo ( (int) $pending_credit_request->forminator_form_id === 0 && $credit_limit > 0 ) ? esc_html__( 'Credit Limit Request Under Review', 'custom-woo-dashboard' ) : esc_html__( 'Trade Application Under Review', 'custom-woo-dashboard' ); ?>
+						</strong>
 					</div>
 					<p style="font-size: 13px; color: #78350f; margin: 0; line-height: 1.4;">
-						<?php printf( esc_html__( 'You submitted a request for %s on %s. Our trade finance team is actively reviewing your facility.', 'custom-woo-dashboard' ), '<strong>' . wp_kses_post( wc_price( $pending_credit_request->requested_limit ) ) . '</strong>', esc_html( date_i18n( get_option( 'date_format' ), strtotime( $pending_credit_request->created_at ) ) ) ); ?>
+						<?php printf( esc_html__( 'You submitted a trade request for %s on %s. Our trade finance team is actively reviewing your facility.', 'custom-woo-dashboard' ), '<strong>' . wp_kses_post( wc_price( $pending_credit_request->requested_limit ) ) . '</strong>', esc_html( date_i18n( get_option( 'date_format' ), strtotime( $pending_credit_request->created_at ) ) ) ); ?>
 					</p>
 				</div>
 			<?php else : ?>
@@ -236,25 +256,63 @@ wc_print_notices();
 					</div>
 				<?php endif; ?>
 
-				<form method="post" action="" onsubmit="var btn = this.querySelector('button[type=submit]'); if (btn) { btn.style.pointerEvents='none'; btn.style.opacity='0.7'; btn.textContent='Submitting...'; }">
-					<?php wp_nonce_field( 'cwd_v2_request_increase_action', 'cwd_v2_request_increase_nonce' ); ?>
-					<input type="hidden" name="cwd_v2_request_increase" value="1" />
-					<div style="margin-bottom: 12px;">
-						<label for="cwd_v2_requested_amount" style="display: block; font-size: 12.5px; font-weight: 600; color: #334155; margin-bottom: 6px;">
-							<?php esc_html_e( 'Requested New Limit', 'custom-woo-dashboard' ); ?> (<?php echo esc_html( get_woocommerce_currency_symbol() ); ?>)
-						</label>
-						<input type="number" step="50" min="100" name="cwd_v2_requested_amount" id="cwd_v2_requested_amount" placeholder="<?php echo esc_attr( max( 500, $credit_limit + 500 ) ); ?>" required style="width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 10px 12px; font-size: 14px; box-sizing: border-box; background: #ffffff;" />
-					</div>
-					<div style="margin-bottom: 16px;">
-						<label for="cwd_v2_request_reason" style="display: block; font-size: 12.5px; font-weight: 600; color: #334155; margin-bottom: 6px;">
-							<?php esc_html_e( 'Reason / Trade Justification', 'custom-woo-dashboard' ); ?>
-						</label>
-						<textarea name="cwd_v2_request_reason" id="cwd_v2_request_reason" rows="2" style="width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px; font-size: 13.5px; box-sizing: border-box; background: #ffffff;" required></textarea>
-					</div>
-					<button type="submit" name="cwd_v2_request_increase" class="button" style="background: #f1f5f9; color: #0f172a; border: 1px solid #cbd5e1; border-radius: 6px; padding: 10px 18px; font-size: 13.5px; font-weight: 600; cursor: pointer;">
-						<?php esc_html_e( 'Submit Request', 'custom-woo-dashboard' ); ?>
-					</button>
-				</form>
+				<?php if ( $credit_limit > 0 ) : ?>
+					<!-- Limit Increase Form -->
+					<form method="post" action="" onsubmit="var btn = this.querySelector('button[type=submit]'); if (btn) { btn.style.pointerEvents='none'; btn.style.opacity='0.7'; btn.textContent='Submitting...'; }">
+						<?php wp_nonce_field( 'cwd_v2_request_increase_action', 'cwd_v2_request_increase_nonce' ); ?>
+						<input type="hidden" name="cwd_v2_request_increase" value="1" />
+						<div style="margin-bottom: 12px;">
+							<label for="cwd_v2_requested_amount" style="display: block; font-size: 12.5px; font-weight: 600; color: #334155; margin-bottom: 6px;">
+								<?php esc_html_e( 'Requested New Limit', 'custom-woo-dashboard' ); ?> (<?php echo esc_html( get_woocommerce_currency_symbol() ); ?>)
+							</label>
+							<input type="number" step="50" min="100" name="cwd_v2_requested_amount" id="cwd_v2_requested_amount" placeholder="<?php echo esc_attr( max( 500, $credit_limit + 500 ) ); ?>" required style="width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 10px 12px; font-size: 14px; box-sizing: border-box; background: #ffffff;" />
+						</div>
+						<div style="margin-bottom: 16px;">
+							<label for="cwd_v2_request_reason" style="display: block; font-size: 12.5px; font-weight: 600; color: #334155; margin-bottom: 6px;">
+								<?php esc_html_e( 'Reason / Trade Justification', 'custom-woo-dashboard' ); ?>
+							</label>
+							<textarea name="cwd_v2_request_reason" id="cwd_v2_request_reason" rows="2" style="width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px; font-size: 13.5px; box-sizing: border-box; background: #ffffff;" required></textarea>
+						</div>
+						<button type="submit" name="cwd_v2_request_increase" class="button" style="background: #f1f5f9; color: #0f172a; border: 1px solid #cbd5e1; border-radius: 6px; padding: 10px 18px; font-size: 13.5px; font-weight: 600; cursor: pointer;">
+							<?php esc_html_e( 'Submit Request', 'custom-woo-dashboard' ); ?>
+						</button>
+					</form>
+				<?php else : ?>
+					<!-- Trade Credit Application Form -->
+					<form method="post" action="" onsubmit="var btn = this.querySelector('button[type=submit]'); if (btn) { btn.style.pointerEvents='none'; btn.style.opacity='0.7'; btn.textContent='Submitting Application...'; }">
+						<?php wp_nonce_field( 'cwd_v2_apply_trade_action', 'cwd_v2_apply_trade_nonce' ); ?>
+						<input type="hidden" name="cwd_v2_submit_trade_app" value="1" />
+						<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 12px;">
+							<div>
+								<label for="cwd_v2_company_name" style="display: block; font-size: 12.5px; font-weight: 600; color: #334155; margin-bottom: 4px;">
+									<?php esc_html_e( 'Company / Business Name', 'custom-woo-dashboard' ); ?> *
+								</label>
+								<input type="text" name="cwd_v2_company_name" id="cwd_v2_company_name" value="<?php echo esc_attr( get_user_meta( $user_id, 'billing_company', true ) ); ?>" required style="width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 9px 12px; font-size: 13.5px; box-sizing: border-box; background: #ffffff;" />
+							</div>
+							<div>
+								<label for="cwd_v2_phone" style="display: block; font-size: 12.5px; font-weight: 600; color: #334155; margin-bottom: 4px;">
+									<?php esc_html_e( 'Contact Phone', 'custom-woo-dashboard' ); ?> *
+								</label>
+								<input type="tel" name="cwd_v2_phone" id="cwd_v2_phone" value="<?php echo esc_attr( get_user_meta( $user_id, 'billing_phone', true ) ); ?>" required style="width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 9px 12px; font-size: 13.5px; box-sizing: border-box; background: #ffffff;" />
+							</div>
+						</div>
+						<div style="margin-bottom: 12px;">
+							<label for="cwd_v2_requested_limit" style="display: block; font-size: 12.5px; font-weight: 600; color: #334155; margin-bottom: 4px;">
+								<?php esc_html_e( 'Requested Credit Facility', 'custom-woo-dashboard' ); ?> (<?php echo esc_html( get_woocommerce_currency_symbol() ); ?>) *
+							</label>
+							<input type="number" step="50" min="100" name="cwd_v2_requested_limit" id="cwd_v2_requested_limit" placeholder="1000" value="1000" required style="width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 9px 12px; font-size: 13.5px; box-sizing: border-box; background: #ffffff;" />
+						</div>
+						<div style="margin-bottom: 16px;">
+							<label for="cwd_v2_trading_details" style="display: block; font-size: 12.5px; font-weight: 600; color: #334155; margin-bottom: 4px;">
+								<?php esc_html_e( 'Business Description / Trading Type', 'custom-woo-dashboard' ); ?>
+							</label>
+							<textarea name="cwd_v2_trading_details" id="cwd_v2_trading_details" rows="2" style="width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px; font-size: 13px; box-sizing: border-box; background: #ffffff;" placeholder="<?php esc_attr_e( 'e.g. Electrical contracting, construction supply, regular monthly trade volume...', 'custom-woo-dashboard' ); ?>"></textarea>
+						</div>
+						<button type="submit" name="cwd_v2_submit_trade_app" class="button button-primary" style="background: #0f172a; color: #ffffff; border: 1px solid #0f172a; border-radius: 6px; padding: 10px 18px; font-size: 13.5px; font-weight: 600; cursor: pointer;">
+							<?php esc_html_e( 'Submit Trade Application', 'custom-woo-dashboard' ); ?>
+						</button>
+					</form>
+				<?php endif; ?>
 			<?php endif; ?>
 		</div>
 
