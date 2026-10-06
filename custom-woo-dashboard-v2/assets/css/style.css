@@ -214,17 +214,35 @@
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
+    align-items: center;
 }
 
 .cwd-v2-section-links a {
+    display: inline-block;
+    padding: 6px 14px;
+    border-radius: 20px;
+    background: var(--cwd-v2-surface);
+    border: 1px solid var(--cwd-v2-border);
     color: var(--cwd-v2-blue-dark);
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 600;
     text-decoration: none;
+    transition: all 0.2s ease;
 }
 
 .cwd-v2-section-links a:hover {
-    text-decoration: underline;
+    background: var(--cwd-v2-blue-soft);
+    border-color: var(--cwd-v2-blue);
+    color: var(--cwd-v2-blue-dark);
+    text-decoration: none;
+}
+
+.cwd-v2-section-links a.cwd-v2-active-link {
+    background: var(--cwd-v2-blue-dark);
+    border-color: var(--cwd-v2-blue-dark);
+    color: #fff;
+    font-weight: 600;
+    text-decoration: none;
 }
 
 .cwd-v2-track-list {

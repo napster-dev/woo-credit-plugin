@@ -15,6 +15,7 @@ class CWD_V2_Shortcode
 	{
 		add_shortcode('custom_woo_dashboard_v2', array(__CLASS__, 'render'));
 		// Need to filter WooCommerce endpoint content if we are on the dashboard.
+		add_action('woocommerce_account_orders_endpoint', array(__CLASS__, 'orders_content'), 5);
 		add_action('woocommerce_account_invoices_endpoint', array(__CLASS__, 'invoices_content'));
 		add_action('woocommerce_account_view-invoice_endpoint', array(__CLASS__, 'view_invoice_content'));
 		add_action('woocommerce_account_returns_endpoint', array(__CLASS__, 'returns_content'));
@@ -135,6 +136,12 @@ class CWD_V2_Shortcode
 	public static function change_password_content()
 	{
 		include CWD_V2_PLUGIN_DIR . 'templates/change-password.php';
+	}
+
+	public static function orders_content()
+	{
+		remove_action('woocommerce_account_orders_endpoint', 'woocommerce_account_orders');
+		include CWD_V2_PLUGIN_DIR . 'templates/orders.php';
 	}
 
 	public static function live_orders_content()
