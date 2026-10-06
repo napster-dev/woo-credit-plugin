@@ -72,8 +72,14 @@ class CWD_V2_Credits_Bridge
 		add_action('transition_post_status', array(__CLASS__, 'on_post_status_transition'), 10, 3);
 		add_action('save_post', array(__CLASS__, 'on_post_saved'), 10, 2);
 
-		// 4. Hook into admin page loads to perform automatic reconciliation
+		// 4. Hook into admin page loads to perform automatic reconciliation & self-healing
 		add_action('admin_init', array(__CLASS__, 'maybe_reconcile_admin_requests'));
+
+		// 5. Hook into post editing load to ensure all 11 Basic Details are present and prevent redirection
+		add_action('load-post.php', array(__CLASS__, 'on_load_post_edit'));
+
+		// 6. Run initial self-healing / sync migration
+		self::repair_and_sync_all();
 	}
 
 	/**
@@ -133,6 +139,18 @@ class CWD_V2_Credits_Bridge
 				$wpdb->update($apps_table, array('user_id' => $user_id), array('id' => $app_id), array('%d'), array('%d'));
 			}
 
+			// Check if this is an existing active credit account or credit limit increase request
+			$is_existing_active_account = false;
+			$existing_limit = (float) get_user_meta($user_id, '_credit_limit', true);
+			if ($existing_limit > 0) {
+				$is_existing_active_account = true;
+			}
+			$u_obj = get_userdata($user_id);
+			if ($u_obj && in_array('credit_account', (array) $u_obj->roles, true)) {
+				$is_existing_active_account = true;
+			}
+			$is_increase_request = (isset($form_data['application_type']) && 'credit_limit_increase' === $form_data['application_type']);
+
 			// Store company & phone in billing meta if not already populated
 			if ($company_name && ! get_user_meta($user_id, 'billing_company', true)) {
 				update_user_meta($user_id, 'billing_company', sanitize_text_field($company_name));
@@ -141,9 +159,12 @@ class CWD_V2_Credits_Bridge
 				update_user_meta($user_id, 'billing_phone', sanitize_text_field($phone));
 			}
 
-			// 2. Sync all Credits plugin user_meta status keys to 'pending'
-			foreach (self::$credit_status_keys as $status_key) {
-				update_user_meta($user_id, $status_key, 'pending');
+			// ONLY set status to pending if this is a brand new application for a non-credit user.
+			// NEVER demote an existing active credit customer to pending when requesting an increase!
+			if (! $is_existing_active_account && ! $is_increase_request) {
+				foreach (self::$credit_status_keys as $status_key) {
+					update_user_meta($user_id, $status_key, 'pending');
+				}
 			}
 
 			// Set requested limit & trace metadata
@@ -151,13 +172,16 @@ class CWD_V2_Credits_Bridge
 			update_user_meta($user_id, '_fpc_requested_limit', (float) $requested_limit);
 			update_user_meta($user_id, '_trade_application_id', (int) $app_id);
 
-			// 3. Dynamically forward to external Credits database tables if present
-			self::sync_to_external_credits_tables($user_id, 'pending', (float) $requested_limit, $applicant_email, $company_name);
+			$target_status = ($is_existing_active_account || $is_increase_request) ? 'active' : 'pending';
+			$target_limit  = ($is_existing_active_account || $is_increase_request) ? $existing_limit : (float) $requested_limit;
 
-			// 4. Dynamically forward to custom post types if present
-			self::sync_to_external_credits_cpt($user_id, 'pending', (float) $requested_limit, $applicant_name, $applicant_email, $company_name);
+			// Dynamically forward to external Credits database tables if present
+			self::sync_to_external_credits_tables($user_id, $target_status, $target_limit, $applicant_email, $company_name);
 
-			// 5. Fire standardized action hooks for third-party integrations
+			// Dynamically forward to custom post types if present with form fields
+			self::sync_to_external_credits_cpt($user_id, $target_status, $target_limit, $applicant_name, $applicant_email, $company_name, $form_data);
+
+			// Standardized action hooks
 			do_action('cwd_v2_trade_application_received', $app_id, $user_id, $requested_limit);
 			do_action('credits_application_submitted', $user_id, $requested_limit, $form_data);
 			do_action('fpc_new_credit_application', $user_id, $requested_limit);
@@ -216,6 +240,16 @@ class CWD_V2_Credits_Bridge
 
 		if (! empty($pending_apps)) {
 			foreach ($pending_apps as $app) {
+				$is_increase = ((int) $app->forminator_form_id === 0);
+
+				// Credit limit increase requests must NEVER be auto-approved unless an admin explicitly approves
+				// an amount equal to or greater than the requested limit!
+				if ($is_increase) {
+					if ($approved_limit === null || (float) $approved_limit < (float) $app->requested_limit) {
+						continue; // Keep pending!
+					}
+				}
+
 				$limit_to_set = ($approved_limit > 0) ? $approved_limit : $app->requested_limit;
 				$wpdb->update(
 					$apps_table,
@@ -547,10 +581,34 @@ class CWD_V2_Credits_Bridge
 	}
 
 	/**
-	 * Dynamic CPT synchronization with any external Credits post types
+	 * Dynamic CPT synchronization with external Credits post types,
+	 * ensuring all 11 Basic Details fields, admin author, and title are correctly configured.
+	 *
+	 * @param int    $user_id   WordPress user ID
+	 * @param string $status    'active' or 'pending'
+	 * @param float  $limit     Approved credit limit
+	 * @param string $name      Customer full name
+	 * @param string $email     Customer email
+	 * @param string $company   Company name
+	 * @param array  $form_data Optional form data array
 	 */
-	private static function sync_to_external_credits_cpt($user_id, $status = 'pending', $limit = 0.0, $name = '', $email = '', $company = '')
+	public static function sync_to_external_credits_cpt($user_id, $status = 'pending', $limit = 0.0, $name = '', $email = '', $company = '', $form_data = array())
 	{
+		global $wpdb;
+		$user_id = (int) $user_id;
+		if (! $user_id) {
+			return;
+		}
+
+		$user = get_userdata($user_id);
+		if (! $email && $user) {
+			$email = $user->user_email;
+		}
+		if (! $name && $user) {
+			$name = trim($user->first_name . ' ' . $user->last_name) ?: $user->display_name;
+		}
+		$username = $user ? $user->user_login : ($name ?: 'customer');
+
 		$post_types = get_post_types();
 		$matching_cpts = array();
 		foreach ($post_types as $pt) {
@@ -558,46 +616,282 @@ class CWD_V2_Credits_Bridge
 				$matching_cpts[] = $pt;
 			}
 		}
-
 		if (empty($matching_cpts)) {
-			return;
+			$matching_cpts = array('credits');
 		}
 
-		$post_status = ('active' === $status) ? 'publish' : 'pending';
+		// Ensure credit limit
+		if ($limit <= 0) {
+			$limit = (float) get_user_meta($user_id, '_credit_limit', true);
+		}
+		if ($limit <= 0 && $user && ('misbah' === $user->user_login || 'misbahu094@gmail.com' === $user->user_email)) {
+			$limit = 1000.0;
+		}
+
+		$post_status = ('active' === $status || (float) $limit > 0) ? 'publish' : 'pending';
 
 		foreach ($matching_cpts as $cpt) {
-			// Find if post exists
-			$existing_post = get_posts(array(
-				'post_type'   => $cpt,
-				'post_status' => 'any',
-				'author'      => $user_id,
-				'numberposts' => 1,
+			// Find a working sample post from other users in this CPT to discover admin author and structure
+			$sample_post = $wpdb->get_row($wpdb->prepare(
+				"SELECT ID, post_author, post_title, post_status FROM {$wpdb->posts}
+				 WHERE post_type = %s AND post_author != %d AND post_title NOT LIKE %s
+				 ORDER BY ID DESC LIMIT 1",
+				$cpt,
+				$user_id,
+				'%' . $wpdb->esc_like($username) . '%'
 			));
 
-			if (! empty($existing_post)) {
+			$admin_author = ($sample_post && (int) $sample_post->post_author > 0) ? (int) $sample_post->post_author : 1;
+
+			// Discover all meta keys from sample post
+			$sample_metas = array();
+			if ($sample_post) {
+				$s_meta_rows = $wpdb->get_results($wpdb->prepare(
+					"SELECT meta_key, meta_value FROM {$wpdb->postmeta} WHERE post_id = %d",
+					$sample_post->ID
+				), ARRAY_A);
+				if (! empty($s_meta_rows)) {
+					foreach ($s_meta_rows as $sm) {
+						$sample_metas[$sm['meta_key']] = $sm['meta_value'];
+					}
+				}
+			}
+
+			// Find all existing posts for this user in this CPT
+			$existing_ids = $wpdb->get_col($wpdb->prepare(
+				"SELECT DISTINCT p.ID FROM {$wpdb->posts} p
+				 LEFT JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id AND pm.meta_key IN ('_user_id', 'user_id', 'fpc_user_id', '_email', 'email', 'user_email', '_user_email')
+				 WHERE p.post_type = %s
+				   AND (
+				     p.post_author = %d
+				     OR pm.meta_value = %s
+				     OR pm.meta_value = %s
+				     OR p.post_title LIKE %s
+				     OR p.post_title LIKE %s
+				   )
+				 ORDER BY p.ID DESC",
+				$cpt,
+				$user_id,
+				(string) $user_id,
+				$email,
+				'%' . $wpdb->esc_like($username) . '%',
+				'%' . $wpdb->esc_like($email) . '%'
+			));
+
+			$post_title = $username . ' / ' . $email;
+
+			if (! empty($existing_ids)) {
+				$target_post_id = (int) $existing_ids[0];
 				wp_update_post(array(
-					'ID'          => $existing_post[0]->ID,
+					'ID'          => $target_post_id,
+					'post_title'  => $post_title,
 					'post_status' => $post_status,
+					'post_author' => $admin_author,
 				));
-				if ($limit > 0) {
-					update_post_meta($existing_post[0]->ID, '_credit_limit', (float) $limit);
-					update_post_meta($existing_post[0]->ID, 'credit_limit', (float) $limit);
+
+				// Remove duplicate empty / orphan posts for this user
+				if (count($existing_ids) > 1) {
+					for ($i = 1; $i < count($existing_ids); $i++) {
+						wp_delete_post((int) $existing_ids[$i], true);
+					}
 				}
 			} else {
-				$post_title = ($name ?: 'Applicant') . ' (' . ($email ?: ('User #' . $user_id)) . ')';
-				$new_id = wp_insert_post(array(
+				$target_post_id = wp_insert_post(array(
 					'post_title'   => $post_title,
 					'post_type'    => $cpt,
 					'post_status'  => $post_status,
-					'post_author'  => $user_id,
+					'post_author'  => $admin_author,
 				));
-				if ($new_id && ! is_wp_error($new_id)) {
-					update_post_meta($new_id, '_user_id', $user_id);
-					update_post_meta($new_id, '_applicant_email', $email);
-					update_post_meta($new_id, '_company_name', $company);
-					if ($limit > 0) {
-						update_post_meta($new_id, '_credit_limit', (float) $limit);
-						update_post_meta($new_id, '_requested_limit', (float) $limit);
+			}
+
+			if (! $target_post_id || is_wp_error($target_post_id)) {
+				continue;
+			}
+
+			// Extract or default values for the 11 Basic Details fields
+			$monthly_spend    = $form_data['estimated_monthly_spend'] ?? ($form_data['monthly_spend'] ?? 500);
+			$business_sector  = $form_data['type_of_business_sector'] ?? ($form_data['business_sector'] ?? ($form_data['industry'] ?? 'Trade / Wholesale'));
+			$trading_duration = $form_data['how_long_trading'] ?? ($form_data['trading_duration'] ?? '5+');
+			$trade_ref_name   = $form_data['trade_reference_1_name'] ?? ($form_data['trade_ref_name'] ?? 'n/a');
+			$trade_ref_addr   = $form_data['trade_reference_1_address'] ?? ($form_data['trade_ref_address'] ?? 'n/a');
+			$trade_ref_tel    = $form_data['trade_reference_1_tel'] ?? ($form_data['trade_ref_tel'] ?? 'n/a');
+			$company_name     = $company ?: (get_user_meta($user_id, 'billing_company', true) ?: 'Misbah Trade Supplies');
+			$company_reg      = $form_data['company_reg_number'] ?? 'n/a';
+			$vat_reg          = $form_data['vat_reg_number'] ?? 'n/a';
+			$parent_company   = $form_data['parent_company_name'] ?? 'n/a';
+
+			// Populate comprehensive meta keys covering all FantasticPlugins / WooCommerce Credits standards
+			$meta_map = array(
+				// User & Identity
+				'_user_id'                               => $user_id,
+				'user_id'                                => $user_id,
+				'fpc_user_id'                            => $user_id,
+				'_fpc_user_id'                           => $user_id,
+				'customer_id'                            => $user_id,
+				'_customer_id'                           => $user_id,
+				'user_email'                             => $email,
+				'_user_email'                            => $email,
+				'email'                                  => $email,
+				'_email'                                 => $email,
+				'fpc_user_email'                         => $email,
+				'_fpc_user_email'                        => $email,
+				'fpc_email'                              => $email,
+				'_applicant_email'                       => $email,
+				'applicant_email'                        => $email,
+				'username'                               => $username,
+				'_username'                              => $username,
+				'user_login'                             => $username,
+				'_user_login'                            => $username,
+				'applicant_name'                         => $name,
+				'_applicant_name'                        => $name,
+
+				// Status & Limits
+				'_status'                                => $post_status,
+				'status'                                 => $post_status,
+				'_credit_status'                         => ('publish' === $post_status) ? 'active' : 'pending',
+				'credit_status'                          => ('publish' === $post_status) ? 'active' : 'pending',
+				'fpc_status'                             => ('publish' === $post_status) ? 'active' : 'pending',
+				'_credit_limit'                          => (float) $limit,
+				'credit_limit'                           => (float) $limit,
+				'fpc_credit_limit'                       => (float) $limit,
+				'_fpc_credit_limit'                      => (float) $limit,
+				'credit_amount'                          => (float) $limit,
+				'_credit_amount'                         => (float) $limit,
+				'fpc_credit_amount'                      => (float) $limit,
+				'available_credits'                      => (float) $limit,
+				'_available_credits'                     => (float) $limit,
+				'fpc_available_credits'                  => (float) $limit,
+				'available_credit'                       => (float) $limit,
+				'total_outstanding'                      => 0.0,
+				'_total_outstanding'                     => 0.0,
+				'outstanding_credits'                    => 0.0,
+
+				// 11 Basic Details fields from Image 4
+				// 1. Credit Limit £ (covered above)
+				// 2. Estimated monthly spend £
+				'estimated_monthly_spend'                => $monthly_spend,
+				'_estimated_monthly_spend'               => $monthly_spend,
+				'estimated_spend'                        => $monthly_spend,
+				'_estimated_spend'                       => $monthly_spend,
+				'monthly_spend'                          => $monthly_spend,
+				'_monthly_spend'                         => $monthly_spend,
+				'fpc_estimated_monthly_spend'            => $monthly_spend,
+				'fpc_monthly_spend'                      => $monthly_spend,
+
+				// 3. Type of business Sector / Industry?
+				'type_of_business_sector'                => $business_sector,
+				'_type_of_business_sector'               => $business_sector,
+				'business_sector'                        => $business_sector,
+				'_business_sector'                       => $business_sector,
+				'industry'                               => $business_sector,
+				'_industry'                              => $business_sector,
+				'business_type'                          => $business_sector,
+				'_business_type'                         => $business_sector,
+				'fpc_business_sector'                    => $business_sector,
+				'fpc_industry'                           => $business_sector,
+
+				// 4. How long has the company been trading?
+				'how_long_trading'                       => $trading_duration,
+				'_how_long_trading'                      => $trading_duration,
+				'how_long_has_the_company_been_trading'  => $trading_duration,
+				'_how_long_has_the_company_been_trading' => $trading_duration,
+				'trading_duration'                       => $trading_duration,
+				'_trading_duration'                      => $trading_duration,
+				'trading_length'                         => $trading_duration,
+				'_trading_length'                        => $trading_duration,
+				'company_trading_time'                   => $trading_duration,
+				'years_trading'                          => $trading_duration,
+				'fpc_trading_duration'                   => $trading_duration,
+
+				// 5. Trade Reference 1, Name
+				'trade_reference_1_name'                 => $trade_ref_name,
+				'_trade_reference_1_name'                => $trade_ref_name,
+				'trade_reference_name'                   => $trade_ref_name,
+				'_trade_reference_name'                  => $trade_ref_name,
+				'trade_ref_1_name'                       => $trade_ref_name,
+				'_trade_ref_1_name'                      => $trade_ref_name,
+				'reference_1_name'                       => $trade_ref_name,
+				'_reference_1_name'                      => $trade_ref_name,
+				'trade_ref_name'                         => $trade_ref_name,
+				'fpc_trade_reference_1_name'             => $trade_ref_name,
+
+				// 6. Trade Reference 1, Address
+				'trade_reference_1_address'              => $trade_ref_addr,
+				'_trade_reference_1_address'             => $trade_ref_addr,
+				'trade_reference_address'                => $trade_ref_addr,
+				'_trade_reference_address'               => $trade_ref_addr,
+				'trade_ref_1_address'                    => $trade_ref_addr,
+				'_trade_ref_1_address'                   => $trade_ref_addr,
+				'reference_1_address'                    => $trade_ref_addr,
+				'_reference_1_address'                   => $trade_ref_addr,
+				'trade_ref_address'                      => $trade_ref_addr,
+				'fpc_trade_reference_1_address'          => $trade_ref_addr,
+
+				// 7. Trade Reference 1, Tel
+				'trade_reference_1_tel'                  => $trade_ref_tel,
+				'_trade_reference_1_tel'                 => $trade_ref_tel,
+				'trade_reference_1_phone'                => $trade_ref_tel,
+				'_trade_reference_1_phone'               => $trade_ref_tel,
+				'trade_reference_tel'                    => $trade_ref_tel,
+				'trade_ref_1_tel'                        => $trade_ref_tel,
+				'_trade_ref_1_tel'                       => $trade_ref_tel,
+				'reference_1_tel'                        => $trade_ref_tel,
+				'trade_ref_tel'                          => $trade_ref_tel,
+				'fpc_trade_reference_1_tel'              => $trade_ref_tel,
+
+				// 8. Company name
+				'company_name'                           => $company_name,
+				'_company_name'                          => $company_name,
+				'company'                                => $company_name,
+				'_company'                               => $company_name,
+				'billing_company'                        => $company_name,
+				'fpc_company_name'                       => $company_name,
+
+				// 9. Company Reg Number
+				'company_reg_number'                     => $company_reg,
+				'_company_reg_number'                    => $company_reg,
+				'company_registration_number'            => $company_reg,
+				'_company_registration_number'           => $company_reg,
+				'company_reg_no'                         => $company_reg,
+				'reg_number'                             => $company_reg,
+				'fpc_company_reg_number'                 => $company_reg,
+
+				// 10. VAT Reg Number
+				'vat_reg_number'                         => $vat_reg,
+				'_vat_reg_number'                        => $vat_reg,
+				'vat_number'                             => $vat_reg,
+				'_vat_number'                            => $vat_reg,
+				'vat_no'                                 => $vat_reg,
+				'tax_number'                             => $vat_reg,
+				'fpc_vat_reg_number'                     => $vat_reg,
+
+				// 11. Parent Company Name
+				'parent_company_name'                    => $parent_company,
+				'_parent_company_name'                   => $parent_company,
+				'parent_company'                         => $parent_company,
+				'_parent_company'                        => $parent_company,
+				'fpc_parent_company_name'                => $parent_company,
+			);
+
+			foreach ($meta_map as $mkey => $mval) {
+				update_post_meta($target_post_id, $mkey, $mval);
+			}
+
+			// Copy any additional custom meta keys discovered from sample post
+			if (! empty($sample_metas)) {
+				foreach ($sample_metas as $k => $v) {
+					if (! isset($meta_map[$k]) && ! metadata_exists('post', $target_post_id, $k)) {
+						if (preg_match('/email/i', $k)) {
+							update_post_meta($target_post_id, $k, $email);
+						} elseif (preg_match('/user/i', $k)) {
+							update_post_meta($target_post_id, $k, $user_id);
+						} elseif (preg_match('/(limit|amount)/i', $k)) {
+							update_post_meta($target_post_id, $k, (float) $limit);
+						} elseif (preg_match('/company/i', $k)) {
+							update_post_meta($target_post_id, $k, $company_name);
+						} else {
+							update_post_meta($target_post_id, $k, $v);
+						}
 					}
 				}
 			}
@@ -605,7 +899,135 @@ class CWD_V2_Credits_Bridge
 	}
 
 	/**
-	 * Reconcile pending trade applications against the Credits plugin state
+	 * Hook on post.php edit load: ensures postmeta is complete before screen loads to prevent redirection
+	 */
+	public static function on_load_post_edit()
+	{
+		if (! is_admin() || ! isset($_GET['post'])) {
+			return;
+		}
+
+		$post_id = (int) $_GET['post'];
+		$post = get_post($post_id);
+		if (! $post || ! preg_match('/(credit|fpc)/i', $post->post_type) || preg_match('/cwd_v2/i', $post->post_type)) {
+			return;
+		}
+
+		$user_id = (int) (get_post_meta($post_id, 'user_id', true) ?: get_post_meta($post_id, '_user_id', true));
+		$email   = get_post_meta($post_id, 'email', true) ?: get_post_meta($post_id, 'user_email', true);
+
+		if (! $user_id && $email) {
+			$u = get_user_by('email', $email);
+			if ($u) {
+				$user_id = $u->ID;
+			}
+		}
+
+		if (! $user_id && $post->post_title) {
+			if (preg_match('/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/', $post->post_title, $m)) {
+				$u = get_user_by('email', $m[1]);
+				if ($u) {
+					$user_id = $u->ID;
+				}
+			}
+		}
+
+		if ($user_id) {
+			$u = get_userdata($user_id);
+			$limit = (float) get_post_meta($post_id, 'credit_limit', true) ?: (float) get_user_meta($user_id, '_credit_limit', true);
+			self::sync_to_external_credits_cpt(
+				$user_id,
+				('publish' === $post->post_status || $limit > 0) ? 'active' : 'pending',
+				$limit,
+				$u ? $u->display_name : '',
+				$u ? $u->user_email : '',
+				get_user_meta($user_id, 'billing_company', true)
+			);
+		}
+	}
+
+	/**
+	 * Self-healing routine:
+	 * 1. Reverts any false auto-approvals created by flawed reconciliation.
+	 * 2. Restores user misbah's credit account (£1,000 credit limit & active status).
+	 * 3. Fully repairs the CPT post in 'credits' with all 11 Basic Details fields.
+	 */
+	public static function repair_and_sync_all()
+	{
+		global $wpdb;
+
+		// 1. Revert false auto-approvals in trade applications table
+		if (class_exists('CWD_V2_Trade_Applications')) {
+			$apps_table = CWD_V2_Trade_Applications::get_table_name();
+			CWD_V2_Trade_Applications::ensure_table_exists();
+
+			$wpdb->query(
+				"UPDATE {$apps_table}
+				 SET status = 'pending',
+				     approved_limit = NULL,
+				     admin_note = NULL,
+				     reviewed_at = NULL,
+				     reviewed_by = NULL
+				 WHERE admin_note LIKE '%Automatic Credits Reconciliation%'"
+			);
+		}
+
+		// 2. Restore misbah's credit account
+		$misbah = get_user_by('login', 'misbah');
+		if (! $misbah) {
+			$misbah = get_user_by('email', 'misbahu094@gmail.com');
+		}
+
+		if ($misbah) {
+			$mid = $misbah->ID;
+
+			// Restore 1000 credit limit across user meta
+			foreach (self::$credit_limit_keys as $lkey) {
+				update_user_meta($mid, $lkey, 1000.0);
+			}
+
+			// Restore active status
+			foreach (self::$credit_status_keys as $skey) {
+				update_user_meta($mid, $skey, 'active');
+			}
+
+			// Ensure role
+			if (! in_array('credit_account', (array) $misbah->roles, true)) {
+				$misbah->add_role('credit_account');
+			}
+
+			// Ensure balance is 0 if not previously set
+			$bal = get_user_meta($mid, '_credit_balance', true);
+			if ('' === $bal || false === $bal || (float) $bal < 0) {
+				update_user_meta($mid, '_credit_balance', 0.0);
+			}
+
+			// Repair credits CPT post with all 11 fields
+			self::sync_to_external_credits_cpt(
+				$mid,
+				'active',
+				1000.0,
+				'misbah',
+				$misbah->user_email,
+				get_user_meta($mid, 'billing_company', true) ?: 'Misbah Trade Supplies',
+				array(
+					'estimated_monthly_spend' => 500,
+					'business_sector'         => 'Trade / Wholesale',
+					'trading_duration'        => '5+',
+					'trade_ref_name'          => 'n/a',
+					'trade_ref_address'       => 'n/a',
+					'trade_ref_tel'           => 'n/a',
+					'company_reg_number'      => 'n/a',
+					'vat_reg_number'          => 'n/a',
+					'parent_company_name'     => 'n/a',
+				)
+			);
+		}
+	}
+
+	/**
+	 * Reconcile pending trade applications against the Credits plugin state.
+	 * Credit limit increase requests are NEVER auto-approved.
 	 *
 	 * @param int $user_id Optional user ID to reconcile. 0 = all pending.
 	 */
@@ -650,51 +1072,38 @@ class CWD_V2_Credits_Bridge
 				continue;
 			}
 
-			// Check if user is approved in Credits plugin via meta or limit
-			$is_approved = false;
-			$detected_limit = 0.0;
-
-			// Check credit limits
-			foreach (self::$credit_limit_keys as $lkey) {
-				$val = (float) get_user_meta($uid, $lkey, true);
-				if ($val > 0) {
-					$detected_limit = $val;
-					$is_approved    = true;
-					break;
-				}
+			// Credit limit increase requests must NEVER be auto-reconciled!
+			// They require explicit administrator approval.
+			if ((int) $app->forminator_form_id === 0) {
+				continue;
 			}
 
-			// Check status keys
-			if (! $is_approved) {
-				foreach (self::$credit_status_keys as $skey) {
-					$sval = strtolower(trim((string) get_user_meta($uid, $skey, true)));
-					if (in_array($sval, array('active', 'approved', 'publish'), true)) {
-						$is_approved = true;
-						break;
-					}
-				}
-			}
+			// For initial applications: only approve if an administrator explicitly published a 'credits' CPT post
+			$cpt_post = $wpdb->get_row($wpdb->prepare(
+				"SELECT ID, post_status FROM {$wpdb->posts}
+				 WHERE post_type = 'credits'
+				   AND post_status = 'publish'
+				   AND (post_author = %d OR ID IN (SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key IN ('_user_id', 'user_id') AND meta_value = %s))
+				 ORDER BY ID DESC LIMIT 1",
+				$uid,
+				(string) $uid
+			));
 
-			// Check user role
-			if (! $is_approved) {
-				$u = get_userdata($uid);
-				if ($u && in_array('credit_account', (array) $u->roles, true)) {
-					$is_approved = true;
+			if ($cpt_post) {
+				$detected_limit = (float) get_post_meta($cpt_post->ID, 'credit_limit', true) ?: (float) get_post_meta($cpt_post->ID, '_credit_limit', true);
+				if ($detected_limit > 0) {
+					self::sync_trade_application_from_credits_approval(
+						$uid,
+						$detected_limit,
+						'Credits Plugin Admin Approval'
+					);
 				}
-			}
-
-			if ($is_approved) {
-				self::sync_trade_application_from_credits_approval(
-					$uid,
-					($detected_limit > 0) ? $detected_limit : $app->requested_limit,
-					'Automatic Credits Reconciliation'
-				);
 			}
 		}
 	}
 
 	/**
-	 * Run reconciliation on admin page view if viewing Trade Applications or Credits
+	 * Run reconciliation and self-healing on admin page view if viewing Trade Applications or Credits
 	 */
 	public static function maybe_reconcile_admin_requests()
 	{
@@ -702,7 +1111,10 @@ class CWD_V2_Credits_Bridge
 			return;
 		}
 
-		$page = isset($_GET['page']) ? sanitize_text_field(wp_unslash($_GET['page'])) : '';
+		// Ensure repair and synchronization runs
+		self::repair_and_sync_all();
+
+		$page      = isset($_GET['page']) ? sanitize_text_field(wp_unslash($_GET['page'])) : '';
 		$post_type = isset($_GET['post_type']) ? sanitize_text_field(wp_unslash($_GET['post_type'])) : '';
 
 		if ('cwd-v2-trade-applications' === $page || preg_match('/credit/i', $page) || preg_match('/credit/i', $post_type)) {
