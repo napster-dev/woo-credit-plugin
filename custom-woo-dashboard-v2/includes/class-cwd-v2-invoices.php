@@ -80,7 +80,7 @@ class CWD_V2_Invoices
 			return;
 		}
 
-		$is_credit_order = ('cwd_v2_credit_account' === $order->get_payment_method());
+		$is_credit_order = in_array($order->get_payment_method(), array('cwd_v2_credit_account', 'credits'), true) || ('yes' === $order->get_meta('_paid_with_credit'));
 		$is_paid_order   = method_exists($order, 'is_paid') && $order->is_paid();
 		$due_days        = self::get_due_days();
 		$invoice_date    = current_time('mysql');

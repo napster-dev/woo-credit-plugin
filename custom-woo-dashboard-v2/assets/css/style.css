@@ -137,11 +137,9 @@
     border-top: 1px solid var(--cwd-v2-border);
     padding: 15px 20px;
     background-color: var(--cwd-v2-surface);
-}
-
-.cwd-v2-profile-card .cwd-v2-card-footer {
     display: flex;
     flex-wrap: wrap;
+    align-items: center;
     gap: 10px 18px;
 }
 

@@ -24,6 +24,42 @@ class CWD_V2_Account_Ledger {
 	}
 
 	/**
+	 * Create transactions ledger table
+	 */
+	public static function create_table() {
+		global $wpdb;
+		require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+		$table_name      = self::table_name();
+		$charset_collate = $wpdb->get_charset_collate();
+		$sql = "CREATE TABLE {$table_name} (
+			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+			user_id BIGINT UNSIGNED NOT NULL,
+			type VARCHAR(20) NOT NULL,
+			amount DECIMAL(18,2) NOT NULL,
+			balance_after DECIMAL(18,2) NOT NULL,
+			reference_type VARCHAR(20) NULL DEFAULT NULL,
+			reference_id BIGINT UNSIGNED NULL DEFAULT NULL,
+			note VARCHAR(255) NULL DEFAULT NULL,
+			created_at DATETIME NOT NULL,
+			PRIMARY KEY  (id),
+			KEY user_id (user_id),
+			KEY created_at (created_at)
+		) {$charset_collate};";
+		dbDelta( $sql );
+	}
+
+	/**
+	 * Ensure table exists before queries
+	 */
+	public static function ensure_table_exists() {
+		global $wpdb;
+		$table_name = self::table_name();
+		if ( $wpdb->get_var( "SHOW TABLES LIKE '{$table_name}'" ) !== $table_name ) {
+			self::create_table();
+		}
+	}
+
+	/**
 	 * Records one ledger entry. Call this AFTER update_user_meta() has already
 	 * written the new '_credit_balance' value, so that balance_after is accurate.
 	 *
@@ -37,6 +73,8 @@ class CWD_V2_Account_Ledger {
 	 */
 	public static function record( $user_id, $type, $amount, $reference_type = '', $reference_id = 0, $note = '' ) {
 		global $wpdb;
+
+		self::ensure_table_exists();
 
 		$balance_after = (float) get_user_meta( $user_id, '_credit_balance', true );
 
