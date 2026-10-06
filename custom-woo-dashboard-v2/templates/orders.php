@@ -9,13 +9,17 @@ if (! defined('ABSPATH')) {
 
 $current_user = wp_get_current_user();
 $user_id      = (int) $current_user->ID;
-$view         = 'live-orders';
+$view         = 'all-orders';
 
 global $wp;
-if (isset($wp->query_vars['back-orders'])) {
+if (isset($wp->query_vars['live-orders']) || (isset($_GET['view']) && 'live-orders' === $_GET['view'])) {
+    $view = 'live-orders';
+} elseif (isset($wp->query_vars['back-orders']) || (isset($_GET['view']) && 'back-orders' === $_GET['view'])) {
     $view = 'back-orders';
-} elseif (isset($wp->query_vars['order-history'])) {
+} elseif (isset($wp->query_vars['order-history']) || (isset($_GET['view']) && 'order-history' === $_GET['view'])) {
     $view = 'order-history';
+} elseif (isset($wp->query_vars['orders'])) {
+    $view = 'all-orders';
 }
 
 $orders = wc_get_orders(
@@ -27,15 +31,34 @@ $orders = wc_get_orders(
     )
 );
 
-$title       = 'live-orders' === $view ? __('Live Orders', 'custom-woo-dashboard') : ('back-orders' === $view ? __('Back Orders', 'custom-woo-dashboard') : __('Order History', 'custom-woo-dashboard'));
-$description = 'live-orders' === $view ? __('Orders currently being prepared or awaiting payment.', 'custom-woo-dashboard') : ('back-orders' === $view ? __('Orders containing products that WooCommerce currently identifies as backordered.', 'custom-woo-dashboard') : __('Your completed and previously placed orders.', 'custom-woo-dashboard'));
+switch ($view) {
+    case 'live-orders':
+        $title       = __('Live Orders', 'custom-woo-dashboard');
+        $description = __('Orders currently being prepared or awaiting payment.', 'custom-woo-dashboard');
+        break;
+    case 'back-orders':
+        $title       = __('Back Orders', 'custom-woo-dashboard');
+        $description = __('Orders containing products that WooCommerce currently identifies as backordered.', 'custom-woo-dashboard');
+        break;
+    case 'order-history':
+        $title       = __('Order History', 'custom-woo-dashboard');
+        $description = __('Your completed and previously placed orders.', 'custom-woo-dashboard');
+        break;
+    case 'all-orders':
+    default:
+        $title       = __('Manage Orders', 'custom-woo-dashboard');
+        $description = __('View and manage all your orders, track active shipments and history.', 'custom-woo-dashboard');
+        break;
+}
 $matching_orders = array();
 
 foreach ($orders as $order) {
     $status = $order->get_status();
     $include = false;
 
-    if ('live-orders' === $view) {
+    if ('all-orders' === $view) {
+        $include = true;
+    } elseif ('live-orders' === $view) {
         $include = in_array($status, array('pending', 'processing', 'on-hold'), true);
     } elseif ('order-history' === $view) {
         $include = in_array($status, array('completed', 'cancelled', 'refunded', 'failed'), true);
@@ -72,9 +95,10 @@ foreach ($orders as $order) {
             <p><?php echo esc_html($description); ?></p>
         </div>
         <nav class="cwd-v2-section-links" aria-label="<?php esc_attr_e('Order views', 'custom-woo-dashboard'); ?>">
-            <a href="<?php echo esc_url(wc_get_endpoint_url('live-orders')); ?>"><?php esc_html_e('Live', 'custom-woo-dashboard'); ?></a>
-            <a href="<?php echo esc_url(wc_get_endpoint_url('back-orders')); ?>"><?php esc_html_e('Back Orders', 'custom-woo-dashboard'); ?></a>
-            <a href="<?php echo esc_url(wc_get_endpoint_url('order-history')); ?>"><?php esc_html_e('History', 'custom-woo-dashboard'); ?></a>
+            <a href="<?php echo esc_url(wc_get_endpoint_url('orders')); ?>" class="<?php echo 'all-orders' === $view ? 'cwd-v2-active-link' : ''; ?>"><?php esc_html_e('All Orders', 'custom-woo-dashboard'); ?></a>
+            <a href="<?php echo esc_url(wc_get_endpoint_url('live-orders')); ?>" class="<?php echo 'live-orders' === $view ? 'cwd-v2-active-link' : ''; ?>"><?php esc_html_e('Live Orders', 'custom-woo-dashboard'); ?></a>
+            <a href="<?php echo esc_url(wc_get_endpoint_url('back-orders')); ?>" class="<?php echo 'back-orders' === $view ? 'cwd-v2-active-link' : ''; ?>"><?php esc_html_e('Back Orders', 'custom-woo-dashboard'); ?></a>
+            <a href="<?php echo esc_url(wc_get_endpoint_url('order-history')); ?>" class="<?php echo 'order-history' === $view ? 'cwd-v2-active-link' : ''; ?>"><?php esc_html_e('Order History', 'custom-woo-dashboard'); ?></a>
         </nav>
     </div>
 
