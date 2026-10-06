@@ -13,8 +13,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 $current_user = wp_get_current_user();
 $user_id      = $current_user->ID;
 
-// Reconcile pending applications against Credits plugin state in real time
+// Self-heal and reconcile pending applications against Credits plugin state in real time
 if ( class_exists( 'CWD_V2_Credits_Bridge' ) ) {
+	CWD_V2_Credits_Bridge::repair_and_sync_all();
 	CWD_V2_Credits_Bridge::reconcile_pending_applications( $user_id );
 }
 
