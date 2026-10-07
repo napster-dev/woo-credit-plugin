@@ -7,8 +7,8 @@
  * the WooCommerce Credit System (Credits for WooCommerce / wc_cs), and Odoo.
  *
  * Key guarantees:
- * 1. Authors credit posts as admin (user ID 1) so Credits > Credits links open
- *    edit screen (post.php?post={ID}&action=edit) and NEVER redirect to "Add new credit account user".
+ * 1. Authors credit posts as each customer's user ID so Credits > Credits list displays
+ *    real usernames (not "accounts") and clicking "View more" opens the record without modal prompts.
  * 2. Populates all 11 Basic Details fields using the user's REAL submitted application data
  *    from Forminator / trade applications, preserving existing values and never hardcoding defaults.
  * 3. Populates all wc_cs_form_field IDs (31596, 31595, 31583, 31584, 31588, 31589, 31590, 23162, 25894, 25895, 23163)
@@ -324,8 +324,8 @@ class CWD_V2_Credits_Bridge
 	/**
 	 * Core synchronization method linking a user to their 'credits' post.
 	 *
-	 * Uses admin authorship (1) so the Credits plugin allows editing without redirection,
-	 * while extracting live, non-hardcoded data for each user.
+	 * Uses customer authorship so the Credits list displays the real username
+	 * and opens edit without search modal prompts.
 	 *
 	 * @param int    $user_id          User ID
 	 * @param string $status           'active' or 'pending'
@@ -875,7 +875,7 @@ class CWD_V2_Credits_Bridge
 
 	/**
 	 * Self-healing routine:
-	 * 1. Scans every existing credit post in 'credits' and sets post_author = 1 (admin).
+	 * 1. Scans every existing credit post in 'credits' and ensures post_author is the customer.
 	 * 2. Links the post to the correct customer and fills all 11 Basic Details fields
 	 *    using the customer's actual submitted application without hardcoding.
 	 * 3. Ensures every credit account user has their corresponding credit post.

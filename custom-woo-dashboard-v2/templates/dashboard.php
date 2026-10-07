@@ -52,9 +52,6 @@ $initial = strtoupper(substr($display_name, 0, 1));
 		</div>
 		<div class="cwd-v2-card-footer">
 			<a href="<?php echo esc_url(wc_get_endpoint_url('orders')); ?>"><?php _e('Manage Orders', 'custom-woo-dashboard'); ?></a>
-			<a href="<?php echo esc_url(wc_get_endpoint_url('live-orders')); ?>"><?php _e('Live Orders', 'custom-woo-dashboard'); ?></a>
-			<a href="<?php echo esc_url(wc_get_endpoint_url('back-orders')); ?>"><?php _e('Back Orders', 'custom-woo-dashboard'); ?></a>
-			<a href="<?php echo esc_url(wc_get_endpoint_url('order-history')); ?>"><?php _e('Order History', 'custom-woo-dashboard'); ?></a>
 		</div>
 	</div>
 

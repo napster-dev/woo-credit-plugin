@@ -158,9 +158,23 @@ class CWD_V2_Trade_Applications
 			'updated_at'          => $now,
 		);
 
-		$insert_format = array('%d', '%d', '%s', '%s', '%s', '%s', '%f', '%s', '%s', '%d', '%s', '%s');
+		$wpdb->insert($table, $insert_data, $insert_format);
+		$inserted_id = $wpdb->insert_id;
 
-		return $wpdb->insert($table, $insert_data, $insert_format);
+		if ($inserted_id && class_exists('CWD_V2_Credits_Bridge')) {
+			CWD_V2_Credits_Bridge::forward_application_to_credits_plugin(
+				$inserted_id,
+				$user_id,
+				$user->user_email,
+				$applicant_name,
+				$company_name,
+				$phone,
+				(float) $requested_amount,
+				$form_data
+			);
+		}
+
+		return $inserted_id;
 	}
 
 	/**
@@ -264,6 +278,20 @@ class CWD_V2_Trade_Applications
 		}
 
 		$wpdb->insert($table, $insert_data, $insert_format);
+		$app_id = $wpdb->insert_id;
+
+		if ($app_id && class_exists('CWD_V2_Credits_Bridge')) {
+			CWD_V2_Credits_Bridge::forward_application_to_credits_plugin(
+				$app_id,
+				$user_id,
+				$email,
+				$name,
+				$company,
+				$phone,
+				$requested_limit_val,
+				$flat
+			);
+		}
 	}
 
 	/**
@@ -487,6 +515,11 @@ class CWD_V2_Trade_Applications
 			array('%d')
 		);
 
+		// Sync approval to Credits plugin
+		if (class_exists('CWD_V2_Credits_Bridge')) {
+			CWD_V2_Credits_Bridge::sync_credits_plugin_from_trade_approval($app_id, $user_id, $approved_limit);
+		}
+
 		wp_redirect(admin_url('admin.php?page=cwd-v2-trade-applications&notice=approved'));
 		exit;
 	}
@@ -570,6 +603,10 @@ class CWD_V2_Trade_Applications
 		}
 
 		self::ensure_table_exists();
+
+		if (class_exists('CWD_V2_Credits_Bridge')) {
+			CWD_V2_Credits_Bridge::reconcile_pending_applications();
+		}
 
 		// Single application review view
 		if (isset($_GET['view']) && (int) $_GET['view'] > 0) {

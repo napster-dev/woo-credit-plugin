@@ -209,6 +209,28 @@ class CWD_V2_REST_API
 				),
 			)
 		);
+
+		register_rest_route(
+			'cwd/v2',
+			'/sync-invoice',
+			array(
+				'methods'             => 'POST',
+				'callback'            => array( __CLASS__, 'handle_direct_invoice_sync' ),
+				'permission_callback' => array( __CLASS__, 'rest_meta_auth_callback' ),
+				'args'                => array(
+					'customer_id'     => array( 'type' => 'integer', 'required' => false ),
+					'email'           => array( 'type' => 'string',  'required' => false ),
+					'odoo_invoice_id' => array( 'type' => 'string',  'required' => true ),
+					'invoice_number'  => array( 'type' => 'string',  'required' => false ),
+					'invoice_date'    => array( 'type' => 'string',  'required' => false ),
+					'due_date'        => array( 'type' => 'string',  'required' => false ),
+					'amount_total'    => array( 'type' => 'number',  'required' => false ),
+					'amount_paid'     => array( 'type' => 'number',  'required' => false ),
+					'status'          => array( 'type' => 'string',  'required' => false ),
+					'document_url'    => array( 'type' => 'string',  'required' => false ),
+				),
+			)
+		);
 	}
 
 	/**
@@ -291,6 +313,55 @@ class CWD_V2_REST_API
 				'ews_account_number' => (string) get_user_meta($user_id, 'ews_account_number', true),
 			),
 			200
+		);
+	}
+
+	/**
+	 * Process direct invoice sync request from Odoo.
+	 * POST /wp-json/cwd/v2/sync-invoice
+	 *
+	 * @param WP_REST_Request $request
+	 * @return WP_REST_Response
+	 */
+	public static function handle_direct_invoice_sync( $request )
+	{
+		$customer_id = (int) $request->get_param( 'customer_id' );
+		$email       = sanitize_email( (string) $request->get_param( 'email' ) );
+
+		$user = null;
+		if ( $customer_id > 0 ) {
+			$user = get_userdata( $customer_id );
+		}
+		if ( ! $user && ! empty( $email ) ) {
+			$user = get_user_by( 'email', $email );
+		}
+		if ( ! $user ) {
+			return new WP_REST_Response(
+				array( 'success' => false, 'message' => __( 'Customer not found.', 'custom-woo-dashboard' ) ),
+				404
+			);
+		}
+
+		$row = array(
+			'odoo_invoice_id' => $request->get_param( 'odoo_invoice_id' ),
+			'invoice_number'  => $request->get_param( 'invoice_number' ),
+			'invoice_date'    => $request->get_param( 'invoice_date' ),
+			'due_date'        => $request->get_param( 'due_date' ),
+			'amount_total'    => $request->get_param( 'amount_total' ),
+			'amount_paid'     => $request->get_param( 'amount_paid' ),
+			'status'          => $request->get_param( 'status' ),
+			'document_url'    => $request->get_param( 'document_url' ),
+		);
+
+		$ok = CWD_V2_Invoices::upsert_odoo_invoice( $user->ID, $row );
+
+		return new WP_REST_Response(
+			array(
+				'success'     => $ok,
+				'customer_id' => $user->ID,
+				'email'       => $user->user_email,
+			),
+			$ok ? 200 : 500
 		);
 	}
 }
