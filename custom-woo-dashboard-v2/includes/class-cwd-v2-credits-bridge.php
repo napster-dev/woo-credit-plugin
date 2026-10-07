@@ -204,15 +204,15 @@ class CWD_V2_Credits_Bridge
 			return;
 		}
 
-		// Ensure post_author is admin user 1 so WordPress capability checks permit editing
-		if ((int) $post->post_author !== 1) {
-			global $wpdb;
-			$wpdb->update($wpdb->posts, array('post_author' => 1), array('ID' => $post_id), array('%d'), array('%d'));
-			clean_post_cache($post_id);
-		}
-
 		// Resolve user ID
 		$user_id = self::resolve_user_id_for_credit_post($post);
+
+		// Ensure post_author is the customer user ID
+		if ($user_id && (int) $post->post_author !== (int) $user_id) {
+			global $wpdb;
+			$wpdb->update($wpdb->posts, array('post_author' => (int) $user_id), array('ID' => $post_id), array('%d'), array('%d'));
+			clean_post_cache($post_id);
+		}
 
 		if ($user_id) {
 			$u = get_userdata($user_id);
@@ -364,8 +364,8 @@ class CWD_V2_Credits_Bridge
 
 		$matching_cpts = array('credits');
 
-		// Admin author 1 is mandatory so WordPress admin permits editing without redirecting to post-new.php
-		$admin_author = 1;
+		// Customer author ensures Credits list displays customer username/email and opens edit directly
+		$customer_author = (int) $user_id;
 
 		foreach ($matching_cpts as $cpt) {
 			$target_post_id = 0;
@@ -422,13 +422,13 @@ class CWD_V2_Credits_Bridge
 			$post_title = $username . ' / ' . $email;
 
 			if ($target_post_id > 0) {
-				// Ensure admin authorship and active status
+				// Ensure customer authorship and active status
 				$wpdb->update(
 					$wpdb->posts,
 					array(
 						'post_title'  => $post_title,
 						'post_status' => $post_status,
-						'post_author' => $admin_author,
+						'post_author' => $customer_author,
 					),
 					array('ID' => $target_post_id),
 					array('%s', '%s', '%d'),
@@ -440,7 +440,7 @@ class CWD_V2_Credits_Bridge
 					'post_title'   => $post_title,
 					'post_type'    => $cpt,
 					'post_status'  => $post_status,
-					'post_author'  => $admin_author,
+					'post_author'  => $customer_author,
 				));
 			}
 
@@ -896,16 +896,16 @@ class CWD_V2_Credits_Bridge
 			foreach ($all_credit_posts as $cp) {
 				$post_id = (int) $cp->ID;
 
-				// Ensure admin authorship immediately
-				if ((int) $cp->post_author !== 1) {
-					$wpdb->update($wpdb->posts, array('post_author' => 1), array('ID' => $post_id), array('%d'), array('%d'));
-					clean_post_cache($post_id);
-				}
-
 				// Resolve customer for this post
 				$uid = self::resolve_user_id_for_credit_post($cp);
 				if (! $uid) {
 					continue;
+				}
+
+				// Ensure customer authorship so Credits list displays the real customer
+				if ((int) $cp->post_author !== (int) $uid) {
+					$wpdb->update($wpdb->posts, array('post_author' => (int) $uid), array('ID' => $post_id), array('%d'), array('%d'));
+					clean_post_cache($post_id);
 				}
 
 				$synced_uids[] = $uid;
