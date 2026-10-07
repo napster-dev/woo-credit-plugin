@@ -88,15 +88,12 @@ class CWD_V2_Credits_Bridge
 		// 7. Hook into Forminator submission to create/update credit post immediately
 		add_action('forminator_form_after_save_entry', array(__CLASS__, 'on_forminator_submission'), 20, 2);
 
-		// 8. Hook on admin_init to perform safe reconciliation and self-healing
+		// 8. Hook on admin_init for safe reconciliation
 		add_action('admin_init', array(__CLASS__, 'maybe_reconcile_admin_requests'));
-
-		// 9. Initial self-healing on boot
-		self::repair_and_sync_all();
 	}
 
 	/**
-	 * Run reconciliation and self-healing on admin page view if viewing Trade Applications or Credits
+	 * Run reconciliation on admin page view if viewing Trade Applications or Credits
 	 */
 	public static function maybe_reconcile_admin_requests()
 	{
@@ -109,8 +106,6 @@ class CWD_V2_Credits_Bridge
 			return;
 		}
 		set_transient('cwd_v2_credits_reconcile_last', time(), 30);
-
-		self::repair_and_sync_all();
 
 		$page      = isset($_GET['page']) ? sanitize_text_field(wp_unslash($_GET['page'])) : '';
 		$post_type = isset($_GET['post_type']) ? sanitize_text_field(wp_unslash($_GET['post_type'])) : '';
@@ -1586,9 +1581,9 @@ class CWD_V2_Credits_Bridge
 					continue;
 				}
 
-				$limit = (float) get_post_meta($post_id, 'credit_limit', true)
-					?: (float) get_post_meta($post_id, '_credit_limit', true)
-					?: (float) get_user_meta($uid, '_credit_limit', true);
+				$user_existing_limit = (float) get_user_meta($uid, '_credit_limit', true);
+				$post_limit = (float) get_post_meta($post_id, 'credit_limit', true) ?: (float) get_post_meta($post_id, '_credit_limit', true);
+				$limit = max($user_existing_limit, $post_limit);
 
 				$company = get_post_meta($post_id, 'company_name', true)
 					?: get_post_meta($post_id, 'company', true)

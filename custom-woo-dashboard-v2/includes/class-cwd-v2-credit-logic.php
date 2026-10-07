@@ -416,21 +416,28 @@ class CWD_V2_Credit_Logic
 			return 0.0;
 		}
 
-		$limit = (float) get_user_meta($user_id, '_credit_limit', true);
-		if ($limit <= 0) {
-			// Check other known credit plugin meta keys
-			$keys = array('_credit_limit', 'credit_limit', '_fpc_credit_limit', 'fpc_credit_limit', '_fp_credit_limit', 'fp_credit_limit', '_user_credit_limit');
-			foreach ($keys as $k) {
-				$val = (float) get_user_meta($user_id, $k, true);
-				if ($val > 0) {
-					$limit = $val;
-					break;
-				}
+		$existing_limit = (float) get_user_meta($user_id, '_credit_limit', true);
+		$max_limit      = $existing_limit;
+
+		// Check all known credit plugin meta keys to discover existing limits
+		$keys = array(
+			'credit_limit',
+			'_credits_limit',
+			'_fpc_credit_limit',
+			'fpc_credit_limit',
+			'_fp_credit_limit',
+			'fp_credit_limit',
+			'_user_credit_limit'
+		);
+		foreach ($keys as $k) {
+			$val = (float) get_user_meta($user_id, $k, true);
+			if ($val > $max_limit) {
+				$max_limit = $val;
 			}
 		}
 
-		// Check external CPT posts for this user if still 0
-		if ($limit <= 0) {
+		// Check external CPT posts for this user if no positive limit found yet
+		if ($max_limit <= 0) {
 			global $wpdb;
 			$u = get_userdata($user_id);
 			$email = $u ? $u->user_email : '';
@@ -448,13 +455,13 @@ class CWD_V2_Credit_Logic
 				(string) $user_id,
 				$email
 			));
-			if ($cpt_limit > 0) {
-				$limit = $cpt_limit;
+			if ($cpt_limit > $max_limit) {
+				$max_limit = $cpt_limit;
 			}
 		}
 
-		// Check trade applications table for last approved limit if still 0
-		if ($limit <= 0 && class_exists('CWD_V2_Trade_Applications')) {
+		// Check trade applications table for approved limit if still 0
+		if ($max_limit <= 0 && class_exists('CWD_V2_Trade_Applications')) {
 			global $wpdb;
 			$apps_table = CWD_V2_Trade_Applications::get_table_name();
 			$u = get_userdata($user_id);
@@ -467,24 +474,17 @@ class CWD_V2_Credit_Logic
 				$email,
 				'approved'
 			));
-			if ($app_limit > 0) {
-				$limit = $app_limit;
+			if ($app_limit > $max_limit) {
+				$max_limit = $app_limit;
 			}
 		}
 
-		// Account recovery fallback for user misbah
-		if ($limit <= 0) {
-			$u = get_userdata($user_id);
-			if ($u && ('misbah' === $u->user_login || 'misbahu094@gmail.com' === $u->user_email)) {
-				$limit = 1000.0;
-			}
+		// If a higher limit was discovered in legacy keys, self-heal _credit_limit up to that amount (never reduce)
+		if ($max_limit > $existing_limit) {
+			update_user_meta($user_id, '_credit_limit', $max_limit);
 		}
 
-		if ($limit > 0) {
-			update_user_meta($user_id, '_credit_limit', $limit);
-		}
-
-		return max(0.0, $limit);
+		return max(0.0, $max_limit);
 	}
 
 	/**
