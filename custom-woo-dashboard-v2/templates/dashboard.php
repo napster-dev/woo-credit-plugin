@@ -143,24 +143,22 @@ $initial = strtoupper(substr($display_name, 0, 1));
 		</div>
 	</div>
 
-	<?php if ($is_credit_account) : ?>
-		<!-- Credit Dashboard Card -->
-		<div class="cwd-v2-card cwd-v2-credit-card">
-			<div class="cwd-v2-card-content">
-				<div class="cwd-v2-icon cwd-v2-icon-credit">
-					<svg viewBox="0 0 24 24" aria-hidden="true">
-						<rect x="3" y="5" width="18" height="14" rx="2" />
-						<path d="M3 10h18M7 15h4" />
-					</svg>
-				</div>
-				<div class="cwd-v2-card-text">
-					<h3><?php _e('Credit Dashboard', 'custom-woo-dashboard'); ?></h3>
-					<p><?php _e('View credit limit, balance, and pay off your account.', 'custom-woo-dashboard'); ?></p>
-				</div>
+	<!-- Credit Dashboard Card -->
+	<div class="cwd-v2-card cwd-v2-credit-card">
+		<div class="cwd-v2-card-content">
+			<div class="cwd-v2-icon cwd-v2-icon-credit">
+				<svg viewBox="0 0 24 24" aria-hidden="true">
+					<rect x="3" y="5" width="18" height="14" rx="2" />
+					<path d="M3 10h18M7 15h4" />
+				</svg>
 			</div>
-			<div class="cwd-v2-card-footer">
-				<a href="<?php echo esc_url(wc_get_endpoint_url('credit')); ?>"><?php _e('Manage Credit', 'custom-woo-dashboard'); ?></a>
+			<div class="cwd-v2-card-text">
+				<h3><?php echo $is_credit_account ? __('Credit Dashboard', 'custom-woo-dashboard') : __('Trade Credit', 'custom-woo-dashboard'); ?></h3>
+				<p><?php echo $is_credit_account ? __('View credit limit, balance, and pay off your account.', 'custom-woo-dashboard') : __('Apply for a trade credit account and track facility applications.', 'custom-woo-dashboard'); ?></p>
 			</div>
 		</div>
-	<?php endif; ?>
+		<div class="cwd-v2-card-footer">
+			<a href="<?php echo esc_url(wc_get_endpoint_url('credit')); ?>"><?php echo $is_credit_account ? __('Manage Credit', 'custom-woo-dashboard') : __('Apply for Credit', 'custom-woo-dashboard'); ?></a>
+		</div>
+	</div>
 </div>

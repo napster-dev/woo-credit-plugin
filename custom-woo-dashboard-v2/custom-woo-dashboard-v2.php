@@ -36,6 +36,7 @@ if (! function_exists('cwd_v2_init_plugin')) {
 			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-admin-profile.php';
 			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-rest-api.php';
 			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-trade-applications.php';
+			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-credits-bridge.php';
 
 			CWD_V2_Activator::register_roles();
 			CWD_V2_Shortcode::init();
@@ -47,6 +48,7 @@ if (! function_exists('cwd_v2_init_plugin')) {
 			CWD_V2_Admin_Profile::init();
 			CWD_V2_REST_API::init();
 			CWD_V2_Trade_Applications::init();
+			CWD_V2_Credits_Bridge::init();
 
 			// Register trade application settings
 			add_action('admin_init', array('CWD_V2_Trade_Applications', 'register_settings'));

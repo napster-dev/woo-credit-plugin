@@ -21,17 +21,8 @@ class CWD_V2_Trade_Applications
 
 	public static function init()
 	{
-		// Capture Forminator submissions
+		// Capture Forminator submissions (records audit copy in database)
 		add_action('forminator_form_after_save_entry', array(__CLASS__, 'capture_forminator_submission'), 10, 2);
-
-		// Register WP Admin menu under WooCommerce
-		add_action('admin_menu', array(__CLASS__, 'register_admin_menu'));
-
-		// Handle approve/reject actions
-		add_action('admin_init', array(__CLASS__, 'handle_admin_actions'));
-
-		// Add pending count bubble to the admin menu
-		add_action('admin_menu', array(__CLASS__, 'add_pending_count_bubble'), 99);
 	}
 
 	/**
