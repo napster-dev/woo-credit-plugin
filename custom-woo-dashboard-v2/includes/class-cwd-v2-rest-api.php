@@ -267,11 +267,17 @@ class CWD_V2_REST_API
 		if (null !== $request->get_param('credit_limit')) {
 			$limit = round((float) wc_format_decimal($request->get_param('credit_limit')), 2);
 			update_user_meta($user_id, '_credit_limit', max(0, $limit));
+			if (class_exists('CWD_V2_Credit_Logic')) {
+				CWD_V2_Credit_Logic::sync_user_credit_limit($user_id, max(0, $limit));
+			}
 		}
 
 		if (null !== $request->get_param('credit_balance')) {
 			$balance = round((float) wc_format_decimal($request->get_param('credit_balance')), 2);
 			update_user_meta($user_id, '_credit_balance', max(0, $balance));
+			if (class_exists('CWD_V2_Credit_Logic')) {
+				CWD_V2_Credit_Logic::sync_user_credit_balance($user_id, max(0, $balance));
+			}
 		}
 
 		if (null !== $request->get_param('credit_due_date')) {
@@ -282,10 +288,14 @@ class CWD_V2_REST_API
 			update_user_meta($user_id, 'ews_account_number', sanitize_text_field($request->get_param('ews_account_number')));
 		}
 
-		if (true === $request->get_param('enable_credit')) {
+		if (true === $request->get_param('enable_credit') || (isset($limit) && $limit > 0)) {
 			if (! in_array('credit_account', (array) $user->roles, true)) {
 				$user->add_role('credit_account');
 			}
+		}
+
+		if (class_exists('CWD_V2_Credits_Bridge')) {
+			CWD_V2_Credits_Bridge::sync_user_to_credits_post($user_id);
 		}
 
 		$final_limit     = (float) get_user_meta($user_id, '_credit_limit', true);

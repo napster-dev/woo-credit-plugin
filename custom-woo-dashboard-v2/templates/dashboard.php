@@ -140,7 +140,7 @@ $initial = strtoupper(substr($display_name, 0, 1));
 		</div>
 	</div>
 
-	<!-- Trade Credit Dashboard Card -->
+	<!-- Credit Dashboard Card -->
 	<div class="cwd-v2-card cwd-v2-credit-card">
 		<div class="cwd-v2-card-content">
 			<div class="cwd-v2-icon cwd-v2-icon-credit">
