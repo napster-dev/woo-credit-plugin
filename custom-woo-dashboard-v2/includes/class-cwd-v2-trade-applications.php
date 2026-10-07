@@ -224,6 +224,20 @@ class CWD_V2_Trade_Applications
 			}
 		}
 
+		// Expand field labels so all field names and human labels are stored and forwarded
+		if (class_exists('Forminator_API') && method_exists('Forminator_API', 'get_form_fields')) {
+			$form_fields = Forminator_API::get_form_fields((int) $form_id);
+			if (is_array($form_fields)) {
+				foreach ($form_fields as $f) {
+					$fid    = is_object($f) ? ($f->slug ?? ($f->element_id ?? '')) : ($f['element_id'] ?? '');
+					$flabel = is_object($f) ? ($f->raw['field_label'] ?? ($f->field_label ?? '')) : ($f['field_label'] ?? '');
+					if ($fid && $flabel && array_key_exists($fid, $flat)) {
+						$flat[$flabel] = $flat[$fid];
+					}
+				}
+			}
+		}
+
 		// Map fields using common Forminator field name patterns
 		$email           = self::find_field_value($flat, array('email', 'email-1', 'applicant_email', 'contact_email'));
 		$name            = self::find_field_value($flat, array('name', 'name-1', 'applicant_name', 'contact_name', 'full_name'));

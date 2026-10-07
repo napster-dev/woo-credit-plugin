@@ -530,9 +530,22 @@ class CWD_V2_Credit_Logic
 		}
 
 		update_user_meta($user_id, '_credit_limit', $limit);
-		$keys = array('_fp_credit_limit', 'fp_credit_limit', '_user_credit_limit', 'credit_limit');
+		$keys = array(
+			'_fp_credit_limit', 'fp_credit_limit', '_user_credit_limit', 'credit_limit',
+			'_wc_cs_credit_limit', 'wc_cs_credit_limit',
+			'_approved_credits', 'approved_credits',
+			'_approved_credit', 'approved_credit',
+			'_wc_cs_approved_credits', 'wc_cs_approved_credits',
+			'_available_credits', 'available_credits',
+			'_wc_cs_available_credits', 'wc_cs_available_credits',
+		);
 		foreach ($keys as $k) {
 			update_user_meta($user_id, $k, $limit);
+		}
+
+		// Also update the credit post in Credits > Credits
+		if (class_exists('CWD_V2_Credits_Bridge') && method_exists('CWD_V2_Credits_Bridge', 'sync_user_to_credits_post')) {
+			CWD_V2_Credits_Bridge::sync_user_to_credits_post($user_id);
 		}
 	}
 
