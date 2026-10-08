@@ -789,11 +789,20 @@ class CWD_V2_Trade_Applications
 			array('%d')
 		);
 
-		if ($app->user_id > 0) {
+		$target_user_id = (int) $app->user_id;
+		if (! $target_user_id && ! empty($app->applicant_email)) {
+			$u = get_user_by('email', $app->applicant_email);
+			if ($u) {
+				$target_user_id = (int) $u->ID;
+				$wpdb->update($table, array('user_id' => $target_user_id), array('id' => $app_id), array('%d'), array('%d'));
+			}
+		}
+
+		if ($target_user_id > 0) {
 			if (class_exists('CWD_V2_Credit_Logic')) {
-				CWD_V2_Credit_Logic::sync_user_credit_limit($app->user_id, $new_limit);
+				CWD_V2_Credit_Logic::sync_user_credit_limit($target_user_id, $new_limit);
 			} else {
-				update_user_meta($app->user_id, '_credit_limit', $new_limit);
+				update_user_meta($target_user_id, '_credit_limit', $new_limit);
 			}
 		}
 
@@ -823,15 +832,17 @@ class CWD_V2_Trade_Applications
 					update_user_meta($user_id, '_credit_limit', $new_limit);
 				}
 
-				// Update corresponding trade application
+				// Update all corresponding trade applications for this user
 				global $wpdb;
 				$table = self::get_table_name();
 				$wpdb->query($wpdb->prepare(
-					"UPDATE {$table} SET approved_limit = %f, updated_at = %s WHERE user_id = %d AND status = %s ORDER BY id DESC LIMIT 1",
+					"UPDATE {$table} SET approved_limit = %f, status = %s, user_id = %d, updated_at = %s WHERE (user_id = %d OR (applicant_email = %s AND applicant_email != ''))",
 					$new_limit,
+					self::STATUS_APPROVED,
+					$user_id,
 					current_time('mysql'),
 					$user_id,
-					self::STATUS_APPROVED
+					$user->user_email
 				));
 			}
 		}
@@ -994,6 +1005,17 @@ class CWD_V2_Trade_Applications
 					$user_ids[(int) $uid] = (int) $uid;
 				}
 			}
+			// Link guest applications by registered email
+			$guest_emails = $wpdb->get_col("SELECT DISTINCT applicant_email FROM {$apps_table} WHERE (user_id IS NULL OR user_id = 0) AND applicant_email != ''");
+			if (! empty($guest_emails)) {
+				foreach ($guest_emails as $ge) {
+					$u = get_user_by('email', $ge);
+					if ($u) {
+						$user_ids[(int) $u->ID] = (int) $u->ID;
+						$wpdb->update($apps_table, array('user_id' => $u->ID), array('applicant_email' => $ge), array('%d'), array('%s'));
+					}
+				}
+			}
 		}
 
 		// 3. Discover users with positive credit limit in usermeta
@@ -1018,12 +1040,22 @@ class CWD_V2_Trade_Applications
 		$pending_by_uid = array();
 		$pending_by_email = array();
 		$latest_app_company_by_uid = array();
+		$latest_approved_limit_by_uid = array();
+		$latest_approved_limit_by_email = array();
 		if ($has_app_tbl) {
-			$app_rows = $wpdb->get_results("SELECT id, user_id, applicant_email, company_name, status, requested_limit, created_at, forminator_form_id FROM {$apps_table} ORDER BY id DESC LIMIT 500");
+			$app_rows = $wpdb->get_results("SELECT id, user_id, applicant_email, company_name, status, requested_limit, approved_limit, created_at, forminator_form_id FROM {$apps_table} ORDER BY id DESC LIMIT 500");
 			if (! empty($app_rows)) {
 				foreach ($app_rows as $ar) {
 					if ($ar->user_id > 0 && ! isset($latest_app_company_by_uid[$ar->user_id]) && ! empty($ar->company_name)) {
 						$latest_app_company_by_uid[$ar->user_id] = $ar->company_name;
+					}
+					if ($ar->status === self::STATUS_APPROVED && (float) $ar->approved_limit > 0) {
+						if ($ar->user_id > 0 && ! isset($latest_approved_limit_by_uid[$ar->user_id])) {
+							$latest_approved_limit_by_uid[$ar->user_id] = (float) $ar->approved_limit;
+						}
+						if (! empty($ar->applicant_email) && ! isset($latest_approved_limit_by_email[strtolower($ar->applicant_email)])) {
+							$latest_approved_limit_by_email[strtolower($ar->applicant_email)] = (float) $ar->approved_limit;
+						}
 					}
 					if ($ar->status === self::STATUS_PENDING) {
 						if ($ar->user_id > 0 && ! isset($pending_by_uid[$ar->user_id])) {
@@ -1064,6 +1096,13 @@ class CWD_V2_Trade_Applications
 			}
 
 			$limit   = class_exists('CWD_V2_Credit_Logic') ? CWD_V2_Credit_Logic::get_user_credit_limit($uid) : (float) get_user_meta($uid, '_credit_limit', true);
+			$app_limit = $latest_approved_limit_by_uid[$uid] ?? ($latest_approved_limit_by_email[strtolower($user->user_email)] ?? 0.0);
+			if ($app_limit > 0 && ($limit <= 0 || ! metadata_exists('user', $uid, '_credit_limit'))) {
+				$limit = $app_limit;
+				if (class_exists('CWD_V2_Credit_Logic')) {
+					CWD_V2_Credit_Logic::sync_user_credit_limit($uid, $limit);
+				}
+			}
 			$balance = class_exists('CWD_V2_Credit_Logic') ? CWD_V2_Credit_Logic::get_user_credit_balance($uid) : (float) get_user_meta($uid, '_credit_balance', true);
 
 			if ($limit > 0) {
@@ -1160,9 +1199,9 @@ class CWD_V2_Trade_Applications
 					'account_number'   => 'Pending',
 					'account_type'     => __('New Applicant', 'custom-woo-dashboard'),
 					'terms'            => '30 Days EOM',
-					'credit_limit'     => 0.0,
+					'credit_limit'     => ($gapp->status === self::STATUS_APPROVED && (float) $gapp->approved_limit > 0) ? (float) $gapp->approved_limit : 0.0,
 					'credit_used'      => 0.0,
-					'credit_available' => 0.0,
+					'credit_available' => ($gapp->status === self::STATUS_APPROVED && (float) $gapp->approved_limit > 0) ? (float) $gapp->approved_limit : 0.0,
 					'due_date'         => null,
 					'is_overdue'       => false,
 					'pending_request'  => ($gapp->status === self::STATUS_PENDING) ? $gapp : null,

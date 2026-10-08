@@ -421,27 +421,38 @@ class CWD_V2_Credit_Logic
 			return 0.0;
 		}
 
-		$existing_limit = (float) get_user_meta($user_id, '_credit_limit', true);
-		$max_limit      = $existing_limit;
+		// 1. Authoritative check: If _credit_limit is set in usermeta, it is the absolute source of truth.
+		// Never override an explicitly set admin limit with older legacy values.
+		if (metadata_exists('user', $user_id, '_credit_limit')) {
+			return max(0.0, (float) get_user_meta($user_id, '_credit_limit', true));
+		}
+
+		// 2. Initial discovery: Only when _credit_limit has never been initialized for this user
+		$discovered_limit = 0.0;
 
 		// Check all known credit plugin meta keys to discover existing limits
 		$keys = array(
 			'credit_limit',
 			'_credits_limit',
+			'credits_limit',
 			'_fpc_credit_limit',
 			'fpc_credit_limit',
 			'_fp_credit_limit',
 			'fp_credit_limit',
-			'_user_credit_limit'
+			'_user_credit_limit',
+			'_wc_cs_credit_limit',
+			'wc_cs_credit_limit',
+			'_approved_credits',
+			'approved_credits',
 		);
 		foreach ($keys as $k) {
 			$val = (float) get_user_meta($user_id, $k, true);
-			if ($val > $max_limit) {
-				$max_limit = $val;
+			if ($val > $discovered_limit) {
+				$discovered_limit = $val;
 			}
 		}
 
-		// Always check latest approved application in trade applications table
+		// Check latest approved application in trade applications table
 		if (class_exists('CWD_V2_Trade_Applications')) {
 			global $wpdb;
 			$apps_table = CWD_V2_Trade_Applications::get_table_name();
@@ -449,18 +460,18 @@ class CWD_V2_Credit_Logic
 			$email = $u ? $u->user_email : '';
 			$app_limit = (float) $wpdb->get_var($wpdb->prepare(
 				"SELECT approved_limit FROM {$apps_table}
-				 WHERE (user_id = %d OR applicant_email = %s) AND status = %s AND approved_limit > 0
+				 WHERE (user_id = %d OR (applicant_email = %s AND applicant_email != '')) AND status = %s AND approved_limit > 0
 				 ORDER BY id DESC LIMIT 1",
 				$user_id,
 				$email,
 				'approved'
 			));
-			if ($app_limit > 0 && $app_limit > $max_limit) {
-				$max_limit = $app_limit;
+			if ($app_limit > $discovered_limit) {
+				$discovered_limit = $app_limit;
 			}
 		}
 
-		// Always check external CPT posts in 'credits' / 'wc_cs_credits' / 'fpc_credits'
+		// Check external CPT posts in 'credits' / 'wc_cs_credits' / 'fpc_credits'
 		global $wpdb;
 		$u = get_userdata($user_id);
 		$email = $u ? $u->user_email : '';
@@ -483,9 +494,9 @@ class CWD_V2_Credit_Logic
 			       OR p.ID IN (
 			           SELECT post_id FROM {$wpdb->postmeta}
 			           WHERE meta_key IN (
-			               '_user_id', 'user_id', 'wc_cs_user_id', '_wc_cs_user_id',
-			               'customer_id', '_customer_id', 'customer_user', '_customer_user',
-			               'email', '_email', 'user_email', '_user_email', 'wc_cs_user_email', '_wc_cs_user_email'
+				           '_user_id', 'user_id', 'wc_cs_user_id', '_wc_cs_user_id',
+				           'customer_id', '_customer_id', 'customer_user', '_customer_user',
+				           'email', '_email', 'user_email', '_user_email', 'wc_cs_user_email', '_wc_cs_user_email'
 			           ) AND (meta_value = %s OR meta_value = %s OR meta_value = %s)
 			       )
 			   )
@@ -497,17 +508,17 @@ class CWD_V2_Credit_Logic
 			$email,
 			$login
 		));
-		if ($cpt_limit > 0 && $cpt_limit > $max_limit) {
-			$max_limit = $cpt_limit;
+		if ($cpt_limit > $discovered_limit) {
+			$discovered_limit = $cpt_limit;
 		}
 
-		// If a higher limit was discovered in trade applications or legacy keys, self-heal and sync
-		if ($max_limit > $existing_limit) {
-			update_user_meta($user_id, '_credit_limit', $max_limit);
-			self::sync_user_credit_limit($user_id, $max_limit);
+		// Initialize authoritative usermeta so future lookups are immediate and consistent
+		if ($discovered_limit > 0) {
+			update_user_meta($user_id, '_credit_limit', $discovered_limit);
+			self::sync_user_credit_limit($user_id, $discovered_limit);
 		}
 
-		return max(0.0, $max_limit);
+		return max(0.0, $discovered_limit);
 	}
 
 	/**
@@ -624,18 +635,24 @@ class CWD_V2_Credit_Logic
 			return;
 		}
 
+		// 1. Authoritative user meta
 		update_user_meta($user_id, '_credit_limit', $limit);
+
+		// 2. All legacy & plugin-specific user meta keys
 		$keys = array(
 			'_fp_credit_limit', 'fp_credit_limit', '_user_credit_limit', 'credit_limit',
 			'_wc_cs_credit_limit', 'wc_cs_credit_limit',
 			'_approved_credits', 'approved_credits',
 			'_approved_credit', 'approved_credit',
 			'_wc_cs_approved_credits', 'wc_cs_approved_credits',
+			'_fpc_credit_limit', 'fpc_credit_limit',
+			'_credits_limit', 'credits_limit',
 		);
 		foreach ($keys as $k) {
 			update_user_meta($user_id, $k, $limit);
 		}
 
+		// 3. Available credit calculations
 		$current_balance = (float) get_user_meta($user_id, '_credit_balance', true);
 		$available = max(0.0, $limit - $current_balance);
 		$avail_keys = array(
@@ -647,9 +664,29 @@ class CWD_V2_Credit_Logic
 			update_user_meta($user_id, $ak, $available);
 		}
 
-		// Also update the credit post in Credits > Credits
+		// 4. Synchronize trade application rows in wp_cwd_v2_trade_applications
+		if (class_exists('CWD_V2_Trade_Applications')) {
+			global $wpdb;
+			$apps_table = CWD_V2_Trade_Applications::get_table_name();
+			if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $apps_table)) === $apps_table) {
+				$u = get_userdata($user_id);
+				$email = $u ? $u->user_email : '';
+				$wpdb->query($wpdb->prepare(
+					"UPDATE {$apps_table} 
+					 SET approved_limit = %f, user_id = %d, updated_at = %s 
+					 WHERE (user_id = %d OR (applicant_email = %s AND applicant_email != ''))",
+					$limit,
+					$user_id,
+					current_time('mysql'),
+					$user_id,
+					$email
+				));
+			}
+		}
+
+		// 5. Synchronize credit post in Credits > Credits with explicit limit value
 		if (class_exists('CWD_V2_Credits_Bridge') && method_exists('CWD_V2_Credits_Bridge', 'sync_user_to_credits_post')) {
-			CWD_V2_Credits_Bridge::sync_user_to_credits_post($user_id);
+			CWD_V2_Credits_Bridge::sync_user_to_credits_post($user_id, $limit);
 		}
 	}
 

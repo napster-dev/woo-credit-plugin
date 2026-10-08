@@ -275,6 +275,19 @@ class CWD_V2_Credits_Bridge
 				);
 			}
 		} else {
+			// Update existing applications for this user so approved_limit is always current
+			$wpdb->query($wpdb->prepare(
+				"UPDATE {$apps_table} 
+				 SET status = %s, approved_limit = %f, user_id = %d, updated_at = %s 
+				 WHERE (user_id = %d OR (applicant_email = %s AND applicant_email != ''))",
+				CWD_V2_Trade_Applications::STATUS_APPROVED,
+				$approved_limit,
+				$user_id,
+				$now,
+				$user_id,
+				$user->user_email
+			));
+
 			// If no trade application record exists at all, create an approved record so customer dashboard sees it
 			$has_any = (int) $wpdb->get_var($wpdb->prepare(
 				"SELECT COUNT(*) FROM {$apps_table} WHERE user_id = %d OR applicant_email = %s",
@@ -312,12 +325,12 @@ class CWD_V2_Credits_Bridge
 		}
 
 		// Ensure credit_account role
-		if (! in_array('credit_account', (array) $user->roles, true)) {
+		if (! in_array('credit_account', (array) $user->roles, true) && $approved_limit > 0) {
 			$user->add_role('credit_account');
 		}
 
 		// Sync credit limit across all keys
-		if ($approved_limit > 0 && class_exists('CWD_V2_Credit_Logic')) {
+		if ($approved_limit !== null && class_exists('CWD_V2_Credit_Logic')) {
 			CWD_V2_Credit_Logic::sync_user_credit_limit($user_id, $approved_limit);
 			if (! metadata_exists('user', $user_id, '_credit_balance')) {
 				CWD_V2_Credit_Logic::sync_user_credit_balance($user_id, 0);
@@ -2020,18 +2033,22 @@ class CWD_V2_Credits_Bridge
 	}
 
 	/**
-	 * Sync user to credits post (called directly from Odoo REST endpoint)
+	 * Sync user to credits post (called directly from Odoo REST endpoint or sync_user_credit_limit)
 	 */
-	public static function sync_user_to_credits_post($user_id)
+	public static function sync_user_to_credits_post($user_id, $limit = null)
 	{
 		$user = get_userdata((int) $user_id);
 		if (! $user) {
 			return;
 		}
 
-		$limit = class_exists('CWD_V2_Credit_Logic')
-			? CWD_V2_Credit_Logic::get_user_credit_limit($user_id)
-			: (float) get_user_meta($user_id, '_credit_limit', true);
+		if ($limit === null) {
+			$limit = class_exists('CWD_V2_Credit_Logic')
+				? CWD_V2_Credit_Logic::get_user_credit_limit($user_id)
+				: (float) get_user_meta($user_id, '_credit_limit', true);
+		} else {
+			$limit = max(0.0, (float) $limit);
+		}
 
 		$status = ($limit > 0 || in_array('credit_account', (array) $user->roles, true)) ? 'active' : 'pending';
 
