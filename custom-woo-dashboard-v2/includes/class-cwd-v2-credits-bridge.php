@@ -835,6 +835,18 @@ class CWD_V2_Credits_Bridge
 			$vat_reg          = $get_field_val(array('25895', '41983', 'vat_reg_number', 'vat_number', 'tax_number'), '/vat/i', 'n/a');
 			$parent_company   = $get_field_val(array('23163', '41984', 'parent_company_name', 'parent_company'), '/parent/i', 'n/a');
 
+			// Retrieve the user's actual live balance (amount owed) and compute available credits dynamically
+			$existing_post_balance = (float) get_post_meta($target_post_id, 'total_outstanding', true)
+				?: (float) get_post_meta($target_post_id, '_total_outstanding', true)
+				?: (float) get_post_meta($target_post_id, 'wc_cs_total_outstanding', true);
+
+			$live_user_balance = class_exists('CWD_V2_Credit_Logic')
+				? CWD_V2_Credit_Logic::get_user_credit_balance($user_id)
+				: (float) get_user_meta($user_id, '_credit_balance', true);
+
+			$user_balance = max($existing_post_balance, $live_user_balance);
+			$avail_credit = max(0.0, (float) $limit - $user_balance);
+
 			// Populate comprehensive meta keys covering all FantasticPlugins / WooCommerce Credits standards
 			$meta_map = array(
 				// User & Identity (crucial: sets all user identifiers so the "Register Credits to New User" modal never appears)
@@ -879,13 +891,13 @@ class CWD_V2_Credits_Bridge
 				'credit_amount'                          => (float) $limit,
 				'_credit_amount'                         => (float) $limit,
 				'fpc_credit_amount'                      => (float) $limit,
-				'available_credits'                      => (float) $limit,
-				'_available_credits'                     => (float) $limit,
-				'fpc_available_credits'                  => (float) $limit,
-				'available_credit'                       => (float) $limit,
-				'total_outstanding'                      => 0.0,
-				'_total_outstanding'                     => 0.0,
-				'outstanding_credits'                    => 0.0,
+				'available_credits'                      => $avail_credit,
+				'_available_credits'                     => $avail_credit,
+				'fpc_available_credits'                  => $avail_credit,
+				'available_credit'                       => $avail_credit,
+				'total_outstanding'                      => $user_balance,
+				'_total_outstanding'                     => $user_balance,
+				'outstanding_credits'                    => $user_balance,
 				'approved_credits'                       => (float) $limit,
 				'_approved_credits'                      => (float) $limit,
 				'approved_credit'                        => (float) $limit,
@@ -906,12 +918,12 @@ class CWD_V2_Credits_Bridge
 				'_wc_cs_approved_credit'                 => (float) $limit,
 				'wc_cs_credit_limit'                     => (float) $limit,
 				'_wc_cs_credit_limit'                    => (float) $limit,
-				'wc_cs_available_credits'                => (float) $limit,
-				'_wc_cs_available_credits'               => (float) $limit,
-				'wc_cs_total_outstanding'                => 0.0,
-				'_wc_cs_total_outstanding'               => 0.0,
-				'wc_cs_outstanding_credits'              => 0.0,
-				'_wc_cs_outstanding_credits'             => 0.0,
+				'wc_cs_available_credits'                => $avail_credit,
+				'_wc_cs_available_credits'               => $avail_credit,
+				'wc_cs_total_outstanding'                => $user_balance,
+				'_wc_cs_total_outstanding'               => $user_balance,
+				'wc_cs_outstanding_credits'              => $user_balance,
+				'_wc_cs_outstanding_credits'             => $user_balance,
 				'wc_cs_status'                           => ('publish' === $post_status) ? 'active' : 'pending',
 				'_wc_cs_status'                          => ('publish' === $post_status) ? 'active' : 'pending',
 				'wc_cs_credit_status'                    => ('publish' === $post_status) ? 'active' : 'pending',
