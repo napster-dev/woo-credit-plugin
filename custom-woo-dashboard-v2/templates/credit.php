@@ -453,28 +453,30 @@ wc_print_notices();
 		$due_display  = '';
 		$due_desc     = '';
 		$due_css      = '';
+		$due_ts       = $due_date ? strtotime( $due_date ) : false;
 
-		if ( $credit_balance <= 0 ) {
-			$due_display = esc_html__( 'Nil Balance', 'custom-woo-dashboard' );
+		if ( $credit_balance > 0 && $due_ts && $due_ts < current_time( 'timestamp' ) ) {
+			// Overdue balance
+			$is_overdue  = true;
+			$due_display = sprintf( esc_html__( '⚠️ %s', 'custom-woo-dashboard' ), date_i18n( 'd M Y', $due_ts ) );
+			$due_desc    = esc_html__( 'Payment overdue - please settle balance', 'custom-woo-dashboard' );
+			$due_css     = 'color: #dc2626; font-size: 19px; font-weight: 800;';
+		} elseif ( $credit_balance > 0 && $due_ts ) {
+			// Active balance with future due date
+			$days_left   = max( 0, (int) round( ( $due_ts - current_time( 'timestamp' ) ) / DAY_IN_SECONDS ) );
+			$due_display = date_i18n( 'd M Y', $due_ts );
+			$due_desc    = sprintf( esc_html__( '%d days remaining (%s)', 'custom-woo-dashboard' ), $days_left, $user_terms );
+			$due_css     = 'color: #0f172a; font-size: 20px;';
+		} elseif ( $due_ts && $due_ts >= current_time( 'timestamp' ) ) {
+			// Scheduled statement date
+			$due_display = date_i18n( 'd M Y', $due_ts );
 			$due_desc    = sprintf( esc_html__( 'Terms: %s', 'custom-woo-dashboard' ), $user_terms );
-			$due_css     = 'color: #166534; font-size: 20px;';
-		} elseif ( $due_date ) {
-			$due_ts = strtotime( $due_date );
-			if ( $due_ts && $due_ts < current_time( 'timestamp' ) ) {
-				$is_overdue  = true;
-				$due_display = sprintf( esc_html__( '⚠️ %s', 'custom-woo-dashboard' ), date_i18n( 'd M Y', $due_ts ) );
-				$due_desc    = esc_html__( 'Payment overdue - please settle balance', 'custom-woo-dashboard' );
-				$due_css     = 'color: #dc2626; font-size: 19px; font-weight: 800;';
-			} elseif ( $due_ts ) {
-				$days_left   = max( 0, (int) round( ( $due_ts - current_time( 'timestamp' ) ) / DAY_IN_SECONDS ) );
-				$due_display = date_i18n( 'd M Y', $due_ts );
-				$due_desc    = sprintf( esc_html__( '%d days remaining (%s)', 'custom-woo-dashboard' ), $days_left, $user_terms );
-				$due_css     = 'color: #0f172a; font-size: 20px;';
-			}
+			$due_css     = 'color: #0f172a; font-size: 20px;';
 		} else {
+			// Standard settlement schedule
 			$due_display = esc_html( $user_terms );
 			$due_desc    = esc_html__( 'Standard settlement schedule', 'custom-woo-dashboard' );
-			$due_css     = 'color: #334155; font-size: 18px;';
+			$due_css     = 'color: #0f172a; font-size: 19px;';
 		}
 		?>
 		<div class="cwd-v2-stat-card <?php echo $is_overdue ? 'cwd-card-overdue' : ''; ?>" <?php echo $is_overdue ? 'style="border-color: #fca5a5; background: #fff5f5 !important;"' : ''; ?>>

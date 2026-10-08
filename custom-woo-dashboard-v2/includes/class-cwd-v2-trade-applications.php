@@ -2126,7 +2126,6 @@ class CWD_V2_Trade_Applications
 									</select>
 									<div id="cwd-custom-terms-wrap" style="display: none; margin-top: 6px;">
 										<input type="text" name="payment_terms" id="payment_terms" value="30 Days End of Month" placeholder="<?php esc_attr_e('e.g. 45 Days Net or 15 Days EOM', 'custom-woo-dashboard'); ?>" style="width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 7px 10px; font-size: 13px;" />
-										<span class="description" style="font-size: 11px; color: #64748b;"><?php esc_html_e('Number of days or EOM will be automatically parsed to compute invoice due dates and track late payments.', 'custom-woo-dashboard'); ?></span>
 									</div>
 								</div>
 
@@ -2134,24 +2133,19 @@ class CWD_V2_Trade_Applications
 									<label for="customer_note" style="display: block; font-size: 13px; font-weight: 600; color: #334155; margin-bottom: 4px;">
 										<?php esc_html_e('Customer Approval Message (Optional)', 'custom-woo-dashboard'); ?>
 									</label>
-									<textarea name="customer_note" id="customer_note" rows="2" style="width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px; font-size: 13px;" placeholder="<?php esc_attr_e('Visible to customer in approval email and on their dashboard (e.g. Welcome to your EWS Trade Credit account).', 'custom-woo-dashboard'); ?>"></textarea>
-									<span class="description" style="font-size: 11px; color: #64748b;"><?php esc_html_e('Visible to the customer.', 'custom-woo-dashboard'); ?></span>
+									<textarea name="customer_note" id="customer_note" rows="2" style="width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px; font-size: 13px;" placeholder="<?php esc_attr_e('Optional message sent to customer...', 'custom-woo-dashboard'); ?>"></textarea>
 								</div>
 
 								<div style="margin-bottom: 16px;">
 									<label for="internal_note" style="display: block; font-size: 13px; font-weight: 600; color: #334155; margin-bottom: 4px;">
 										<?php esc_html_e('🔒 Internal Staff Note (Private - Staff Only)', 'custom-woo-dashboard'); ?>
 									</label>
-									<textarea name="internal_note" id="internal_note" rows="2" style="width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px; font-size: 13px; background: #f8fafc;" placeholder="<?php esc_attr_e('Strictly private for internal staff/admin reference. NEVER visible to the customer.', 'custom-woo-dashboard'); ?>"></textarea>
-									<span class="description" style="font-size: 11px; color: #0284c7; font-weight: 600;"><?php esc_html_e('Strictly private. Never sent in emails or shown to customer.', 'custom-woo-dashboard'); ?></span>
+									<textarea name="internal_note" id="internal_note" rows="2" style="width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px; font-size: 13px; background: #f8fafc;" placeholder="<?php esc_attr_e('Private internal staff note...', 'custom-woo-dashboard'); ?>"></textarea>
 								</div>
 
 								<button type="submit" name="cwd_v2_approve_application" class="button button-primary" style="background: #16a34a; border-color: #16a34a; width: 100%; padding: 8px 16px; font-weight: 700; font-size: 14px; height: auto;">
 									<?php esc_html_e('Approve & Provision Account', 'custom-woo-dashboard'); ?>
 								</button>
-								<p class="description" style="margin-top: 8px; text-align: center;">
-									<?php esc_html_e('Assigns credit_account role, sets credit limit, generates EWS trade account #, and sends confirmation email.', 'custom-woo-dashboard'); ?>
-								</p>
 							</form>
 						</div>
 
@@ -2170,16 +2164,14 @@ class CWD_V2_Trade_Applications
 									<label for="reject_customer_note" style="display: block; font-size: 13px; font-weight: 600; color: #334155; margin-bottom: 4px;">
 										<?php esc_html_e('Reason for Rejection (Visible to Customer)', 'custom-woo-dashboard'); ?>
 									</label>
-									<textarea name="customer_note" id="reject_customer_note" rows="2" style="width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px; font-size: 13px;" placeholder="<?php esc_attr_e('e.g. Incomplete trading history or credit check unverified. Please contact trade desk.', 'custom-woo-dashboard'); ?>"></textarea>
-									<span class="description" style="font-size: 11px; color: #64748b;"><?php esc_html_e('Visible to customer on dashboard and notification email.', 'custom-woo-dashboard'); ?></span>
+									<textarea name="customer_note" id="reject_customer_note" rows="2" style="width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px; font-size: 13px;" placeholder="<?php esc_attr_e('Reason for rejection...', 'custom-woo-dashboard'); ?>"></textarea>
 								</div>
 
 								<div style="margin-bottom: 14px;">
 									<label for="reject_internal_note" style="display: block; font-size: 13px; font-weight: 600; color: #334155; margin-bottom: 4px;">
 										<?php esc_html_e('🔒 Internal Staff Note (Private - Staff Only)', 'custom-woo-dashboard'); ?>
 									</label>
-									<textarea name="internal_note" id="reject_internal_note" rows="2" style="width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px; font-size: 13px; background: #f8fafc;" placeholder="<?php esc_attr_e('e.g. Credit score below minimum threshold. Director refuses guarantee.', 'custom-woo-dashboard'); ?>"></textarea>
-									<span class="description" style="font-size: 11px; color: #0284c7; font-weight: 600;"><?php esc_html_e('Strictly private. Never sent in emails or shown to customer.', 'custom-woo-dashboard'); ?></span>
+									<textarea name="internal_note" id="reject_internal_note" rows="2" style="width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px; font-size: 13px; background: #f8fafc;" placeholder="<?php esc_attr_e('Private internal staff note...', 'custom-woo-dashboard'); ?>"></textarea>
 								</div>
 
 								<button type="submit" name="cwd_v2_reject_application" class="button" style="background: #fef2f2; border-color: #fca5a5; color: #991b1b; width: 100%; padding: 6px 16px; font-weight: 600; height: auto;" onclick="return confirm('<?php esc_attr_e('Are you sure you want to reject this trade credit application?', 'custom-woo-dashboard'); ?>');">
