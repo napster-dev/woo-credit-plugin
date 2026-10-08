@@ -85,7 +85,7 @@ class CWD_V2_Invoices
 		$due_days        = self::get_due_days();
 		$invoice_date    = current_time('mysql');
 		$due_date        = $is_credit_order || ! $is_paid_order
-			? gmdate('Y-m-d H:i:s', strtotime($invoice_date . ' + ' . $due_days . ' days'))
+			? self::calculate_due_date_for_user($user_id, $invoice_date)
 			: $invoice_date;
 		$status          = $is_credit_order || ! $is_paid_order ? self::STATUS_UNPAID : self::STATUS_PAID;
 		$amount_total    = (float) $order->get_total();
@@ -113,6 +113,11 @@ class CWD_V2_Invoices
 
 		$order->update_meta_data('_cwd_v2_invoice_generated', 'yes');
 		$order->save();
+
+		// Keep user's active due date synchronized
+		if ($user_id) {
+			self::update_user_earliest_due_date($user_id);
+		}
 	}
 
 	/**
@@ -136,6 +141,11 @@ class CWD_V2_Invoices
 			array('%s', '%s'),
 			array('%d')
 		);
+
+		$order = wc_get_order($order_id);
+		if ($order && $order->get_user_id()) {
+			self::update_user_earliest_due_date($order->get_user_id());
+		}
 	}
 
 	/**
@@ -150,9 +160,6 @@ class CWD_V2_Invoices
 	/**
 	 * Number of days credit-account invoices are given to be paid.
 	 * Configurable via the 'cwd_v2_invoice_due_days' option (defaults to 30).
-	 * There is no admin settings screen for this yet — override it with
-	 * update_option( 'cwd_v2_invoice_due_days', 45 ) if a different value
-	 * is needed later.
 	 *
 	 * @return int
 	 */
@@ -160,6 +167,108 @@ class CWD_V2_Invoices
 	{
 		$days = get_option('cwd_v2_invoice_due_days', 30);
 		return absint($days) > 0 ? absint($days) : 30;
+	}
+
+	/**
+	 * Compute due date based on user's specific payment terms.
+	 * Supports:
+	 *  - "30 Days End of Month", "30 Days EOM", "EOM" (Standard UK trade)
+	 *  - "Net 14 Days", "14 Days", "Net 30 Days", "Net 60 Days", "7 Days", etc.
+	 *  - "Due on Receipt", "Immediate"
+	 *  - Custom days
+	 *
+	 * @param int $user_id
+	 * @param string|null $from_date
+	 * @return string Y-m-d H:i:s
+	 */
+	public static function calculate_due_date_for_user($user_id, $from_date = null)
+	{
+		$terms = trim((string) get_user_meta($user_id, '_credit_payment_terms', true));
+		if (empty($terms)) {
+			$terms = '30 Days End of Month';
+		}
+		return self::calculate_due_date_from_terms($terms, $from_date);
+	}
+
+	/**
+	 * Calculate due date datetime from a payment terms string.
+	 *
+	 * @param string $terms
+	 * @param string|int|null $from_date
+	 * @return string Y-m-d H:i:s
+	 */
+	public static function calculate_due_date_from_terms($terms, $from_date = null)
+	{
+		$from_ts = $from_date ? (is_numeric($from_date) ? (int) $from_date : strtotime($from_date)) : current_time('timestamp');
+		if (! $from_ts) {
+			$from_ts = current_time('timestamp');
+		}
+
+		$terms_lower = strtolower(trim((string) $terms));
+
+		// 1. End of Month variants (e.g. "30 Days EOM", "30 Days End of Month", "EOM")
+		if (strpos($terms_lower, 'eom') !== false || strpos($terms_lower, 'end of month') !== false) {
+			if (preg_match('/(\d+)\s*days?/i', $terms_lower, $m)) {
+				$days_after_eom = (int) $m[1];
+				$eom_ts = strtotime(date('Y-m-t 23:59:59', $from_ts));
+				return date('Y-m-d 23:59:59', strtotime("+{$days_after_eom} days", $eom_ts));
+			} else {
+				return date('Y-m-t 23:59:59', $from_ts);
+			}
+		}
+
+		// 2. Specific calendar days (e.g. "Net 14", "14 Days", "Net 30 Days", "60 Days Net", "7 Days", "45 Days")
+		if (preg_match('/(\d+)\s*days?/i', $terms_lower, $m) || preg_match('/net\s*(\d+)/i', $terms_lower, $m)) {
+			$days = (int) $m[1];
+			return date('Y-m-d 23:59:59', strtotime("+{$days} days", $from_ts));
+		}
+
+		// 3. Due on receipt / immediate
+		if (strpos($terms_lower, 'immediate') !== false || strpos($terms_lower, 'receipt') !== false) {
+			return date('Y-m-d 23:59:59', $from_ts);
+		}
+
+		// 4. Numeric value entered directly
+		if (is_numeric($terms) && (int) $terms > 0) {
+			$days = (int) $terms;
+			return date('Y-m-d 23:59:59', strtotime("+{$days} days", $from_ts));
+		}
+
+		// 5. Default fallback to global due days (30 days)
+		$fallback = self::get_due_days();
+		return date('Y-m-d 23:59:59', strtotime("+{$fallback} days", $from_ts));
+	}
+
+	/**
+	 * Keep the user's `_credit_due_date` meta synchronized with their earliest unpaid invoice.
+	 *
+	 * @param int $user_id
+	 */
+	public static function update_user_earliest_due_date($user_id)
+	{
+		$user_id = (int) $user_id;
+		if (! $user_id) {
+			return;
+		}
+
+		global $wpdb;
+		$table = self::table_name();
+		if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $table)) !== $table) {
+			return;
+		}
+
+		$earliest = $wpdb->get_var($wpdb->prepare(
+			"SELECT MIN(due_date) FROM {$table}
+			 WHERE user_id = %d AND status = %s AND (amount_total - amount_paid) > 0",
+			$user_id,
+			self::STATUS_UNPAID
+		));
+
+		if ($earliest) {
+			update_user_meta($user_id, '_credit_due_date', date('Y-m-d', strtotime($earliest)));
+		} else {
+			delete_user_meta($user_id, '_credit_due_date');
+		}
 	}
 
 	/**
@@ -380,6 +489,10 @@ class CWD_V2_Invoices
 			$amount
 		));
 
+		if ($updated) {
+			self::update_user_earliest_due_date($user_id);
+		}
+
 		return 1 === (int) $updated;
 	}
 
@@ -409,6 +522,10 @@ class CWD_V2_Invoices
 			(int) $user_id,
 			$amount
 		));
+
+		if ($updated) {
+			self::update_user_earliest_due_date($user_id);
+		}
 
 		return 1 === (int) $updated;
 	}

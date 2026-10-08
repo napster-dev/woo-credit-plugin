@@ -537,8 +537,9 @@ class CWD_V2_Trade_Applications
 		}
 
 		$approved_limit = isset($_POST['approved_limit']) ? round((float) wc_format_decimal(wp_unslash($_POST['approved_limit'])), 2) : $app->requested_limit;
-		$admin_note     = isset($_POST['admin_note']) ? sanitize_textarea_field(wp_unslash($_POST['admin_note'])) : '';
-		$payment_terms  = isset($_POST['payment_terms']) ? sanitize_text_field(wp_unslash($_POST['payment_terms'])) : '30 Days End of Month';
+		$customer_note  = isset($_POST['customer_note']) ? sanitize_textarea_field(wp_unslash($_POST['customer_note'])) : (isset($_POST['admin_note']) ? sanitize_textarea_field(wp_unslash($_POST['admin_note'])) : '');
+		$internal_note  = isset($_POST['internal_note']) ? sanitize_textarea_field(wp_unslash($_POST['internal_note'])) : '';
+		$payment_terms  = isset($_POST['payment_terms']) && ! empty(trim($_POST['payment_terms'])) ? sanitize_text_field(wp_unslash($_POST['payment_terms'])) : '30 Days End of Month';
 
 		if ($approved_limit <= 0) {
 			$approved_limit = $app->requested_limit;
@@ -597,6 +598,11 @@ class CWD_V2_Trade_Applications
 		// Set payment terms
 		update_user_meta($user_id, '_credit_payment_terms', $payment_terms);
 
+		// Synchronize due date if user has existing unpaid balance or invoices
+		if (class_exists('CWD_V2_Invoices')) {
+			CWD_V2_Invoices::update_user_earliest_due_date($user_id);
+		}
+
 		// Set EWS trade account number if not already set
 		if (! get_user_meta($user_id, 'ews_account_number', true)) {
 			$last_num = (int) get_option('cwd_v2_last_trade_number', 0) + 1;
@@ -613,20 +619,30 @@ class CWD_V2_Trade_Applications
 			update_user_meta($user_id, 'billing_phone', $app->phone);
 		}
 
+		// Store private internal staff note and customer note in structured JSON
+		$form_data = json_decode((string) $app->form_data, true) ?: array();
+		if (! empty($internal_note)) {
+			$form_data['internal_staff_note'] = $internal_note;
+		}
+		if (! empty($customer_note)) {
+			$form_data['customer_approval_message'] = $customer_note;
+		}
+
 		// Update application record
 		$wpdb->update(
 			$table,
 			array(
 				'status'         => self::STATUS_APPROVED,
 				'approved_limit' => $approved_limit,
-				'admin_note'     => $admin_note,
+				'admin_note'     => $customer_note, // strictly customer-facing message
+				'form_data'      => wp_json_encode($form_data),
 				'reviewed_by'    => get_current_user_id(),
 				'reviewed_at'    => current_time('mysql'),
 				'user_id'        => $user_id,
 				'updated_at'     => current_time('mysql'),
 			),
 			array('id' => $app_id),
-			array('%s', '%f', '%s', '%d', '%s', '%d', '%s'),
+			array('%s', '%f', '%s', '%s', '%d', '%s', '%d', '%s'),
 			array('%d')
 		);
 
@@ -635,7 +651,7 @@ class CWD_V2_Trade_Applications
 			CWD_V2_Credits_Bridge::sync_credits_plugin_from_trade_approval($app_id, $user_id, $approved_limit);
 		}
 
-		// Send approval notification email to applicant
+		// Send approval notification email to applicant (contains ONLY customer message, NEVER internal note)
 		if (! empty($app->applicant_email)) {
 			$blogname = wp_specialchars_decode(get_option('blogname'), ENT_QUOTES);
 			$login_url = wc_get_page_permalink('myaccount');
@@ -645,8 +661,8 @@ class CWD_V2_Trade_Applications
 			$body .= sprintf(__("Approved Credit Facility: %s\n", 'custom-woo-dashboard'), wc_price($approved_limit));
 			$body .= sprintf(__("Payment Terms: %s\n", 'custom-woo-dashboard'), $payment_terms);
 			$body .= sprintf(__("Trade Account Number: %s\n", 'custom-woo-dashboard'), get_user_meta($user_id, 'ews_account_number', true));
-			if (! empty($admin_note)) {
-				$body .= sprintf(__("Account Notes: %s\n", 'custom-woo-dashboard'), $admin_note);
+			if (! empty($customer_note)) {
+				$body .= sprintf(__("\nMessage from Trade Team:\n%s\n", 'custom-woo-dashboard'), $customer_note);
 			}
 			$body .= sprintf(__("\nYou can now purchase on credit account at checkout by selecting 'Pay on Credit Account'.\n\nAccess your credit dashboard here:\n%s\n\n", 'custom-woo-dashboard'), $login_url);
 			$body .= sprintf(__("Kind regards,\n%s Team\n", 'custom-woo-dashboard'), $blogname);
@@ -673,30 +689,40 @@ class CWD_V2_Trade_Applications
 		}
 
 		global $wpdb;
-		$table      = self::get_table_name();
-		$app        = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$table} WHERE id = %d", $app_id));
-		$admin_note = isset($_POST['admin_note']) ? sanitize_textarea_field(wp_unslash($_POST['admin_note'])) : '';
+		$table         = self::get_table_name();
+		$app           = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$table} WHERE id = %d", $app_id));
+		$customer_note = isset($_POST['customer_note']) ? sanitize_textarea_field(wp_unslash($_POST['customer_note'])) : (isset($_POST['admin_note']) ? sanitize_textarea_field(wp_unslash($_POST['admin_note'])) : '');
+		$internal_note = isset($_POST['internal_note']) ? sanitize_textarea_field(wp_unslash($_POST['internal_note'])) : '';
 
 		if (! $app || $app->status !== self::STATUS_PENDING) {
 			wp_redirect(admin_url('admin.php?page=cwd-v2-trade-applications&notice=invalid'));
 			exit;
 		}
 
+		$form_data = json_decode((string) $app->form_data, true) ?: array();
+		if (! empty($internal_note)) {
+			$form_data['internal_staff_note'] = $internal_note;
+		}
+		if (! empty($customer_note)) {
+			$form_data['customer_rejection_reason'] = $customer_note;
+		}
+
 		$wpdb->update(
 			$table,
 			array(
 				'status'      => self::STATUS_REJECTED,
-				'admin_note'  => $admin_note,
+				'admin_note'  => $customer_note, // strictly customer-facing message
+				'form_data'   => wp_json_encode($form_data),
 				'reviewed_by' => get_current_user_id(),
 				'reviewed_at' => current_time('mysql'),
 				'updated_at'  => current_time('mysql'),
 			),
 			array('id' => $app_id),
-			array('%s', '%s', '%d', '%s', '%s'),
+			array('%s', '%s', '%s', '%d', '%s', '%s'),
 			array('%d')
 		);
 
-		// Send rejection notification email to applicant
+		// Send rejection notification email to applicant (contains ONLY customer message, NEVER internal note)
 		if (! empty($app->applicant_email)) {
 			$blogname = wp_specialchars_decode(get_option('blogname'), ENT_QUOTES);
 			$is_credit_increase = ((int) $app->forminator_form_id === 0);
@@ -713,8 +739,8 @@ class CWD_V2_Trade_Applications
 				$body .= __("After careful review of your application, we regret to inform you that we are unable to approve your trade credit facility at this time.\n", 'custom-woo-dashboard');
 			}
 
-			if (! empty($admin_note)) {
-				$body .= sprintf(__("\nReason / Notes:\n%s\n", 'custom-woo-dashboard'), $admin_note);
+			if (! empty($customer_note)) {
+				$body .= sprintf(__("\nReason / Message:\n%s\n", 'custom-woo-dashboard'), $customer_note);
 			}
 
 			$body .= __("\nIf you have questions or would like to discuss this further, please feel free to reach out to our team.\n\n", 'custom-woo-dashboard');
@@ -2086,17 +2112,38 @@ class CWD_V2_Trade_Applications
 								</div>
 
 								<div style="margin-bottom: 14px;">
-									<label for="payment_terms" style="display: block; font-size: 13px; font-weight: 600; color: #334155; margin-bottom: 6px;">
+									<label for="payment_terms_preset" style="display: block; font-size: 13px; font-weight: 600; color: #334155; margin-bottom: 6px;">
 										<?php esc_html_e('Payment Terms', 'custom-woo-dashboard'); ?>
 									</label>
-									<input type="text" name="payment_terms" id="payment_terms" value="30 Days End of Month" style="width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px; font-size: 13px;" />
+									<select name="payment_terms_preset" id="payment_terms_preset" onchange="var customWrap = document.getElementById('cwd-custom-terms-wrap'); var input = document.getElementById('payment_terms'); if (this.value === 'custom') { customWrap.style.display = 'block'; } else { customWrap.style.display = 'none'; input.value = this.value; }" style="width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 7px 10px; font-size: 13px; background: #ffffff; margin-bottom: 6px;">
+										<option value="30 Days End of Month" selected><?php esc_html_e('30 Days End of Month (30 Days EOM - Standard UK Trade)', 'custom-woo-dashboard'); ?></option>
+										<option value="Net 30 Days"><?php esc_html_e('Net 30 Days (30 calendar days from invoice)', 'custom-woo-dashboard'); ?></option>
+										<option value="Net 14 Days"><?php esc_html_e('Net 14 Days (14 calendar days from invoice)', 'custom-woo-dashboard'); ?></option>
+										<option value="Net 7 Days"><?php esc_html_e('Net 7 Days (7 calendar days from invoice)', 'custom-woo-dashboard'); ?></option>
+										<option value="Net 60 Days"><?php esc_html_e('Net 60 Days (60 calendar days from invoice)', 'custom-woo-dashboard'); ?></option>
+										<option value="Due on Receipt"><?php esc_html_e('Due on Receipt (Immediate / 0 days)', 'custom-woo-dashboard'); ?></option>
+										<option value="custom"><?php esc_html_e('Custom Days / Terms...', 'custom-woo-dashboard'); ?></option>
+									</select>
+									<div id="cwd-custom-terms-wrap" style="display: none; margin-top: 6px;">
+										<input type="text" name="payment_terms" id="payment_terms" value="30 Days End of Month" placeholder="<?php esc_attr_e('e.g. 45 Days Net or 15 Days EOM', 'custom-woo-dashboard'); ?>" style="width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 7px 10px; font-size: 13px;" />
+										<span class="description" style="font-size: 11px; color: #64748b;"><?php esc_html_e('Number of days or EOM will be automatically parsed to compute invoice due dates and track late payments.', 'custom-woo-dashboard'); ?></span>
+									</div>
+								</div>
+
+								<div style="margin-bottom: 14px;">
+									<label for="customer_note" style="display: block; font-size: 13px; font-weight: 600; color: #334155; margin-bottom: 4px;">
+										<?php esc_html_e('Customer Approval Message (Optional)', 'custom-woo-dashboard'); ?>
+									</label>
+									<textarea name="customer_note" id="customer_note" rows="2" style="width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px; font-size: 13px;" placeholder="<?php esc_attr_e('Visible to customer in approval email and on their dashboard (e.g. Welcome to your EWS Trade Credit account).', 'custom-woo-dashboard'); ?>"></textarea>
+									<span class="description" style="font-size: 11px; color: #64748b;"><?php esc_html_e('Visible to the customer.', 'custom-woo-dashboard'); ?></span>
 								</div>
 
 								<div style="margin-bottom: 16px;">
-									<label for="admin_note" style="display: block; font-size: 13px; font-weight: 600; color: #334155; margin-bottom: 6px;">
-										<?php esc_html_e('Internal Admin Note (Optional)', 'custom-woo-dashboard'); ?>
+									<label for="internal_note" style="display: block; font-size: 13px; font-weight: 600; color: #334155; margin-bottom: 4px;">
+										<?php esc_html_e('🔒 Internal Staff Note (Private - Staff Only)', 'custom-woo-dashboard'); ?>
 									</label>
-									<textarea name="admin_note" id="admin_note" rows="2" style="width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px; font-size: 13px;" placeholder="<?php esc_attr_e('e.g. Approved based on verified business registration', 'custom-woo-dashboard'); ?>"></textarea>
+									<textarea name="internal_note" id="internal_note" rows="2" style="width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px; font-size: 13px; background: #f8fafc;" placeholder="<?php esc_attr_e('Strictly private for internal staff/admin reference. NEVER visible to the customer.', 'custom-woo-dashboard'); ?>"></textarea>
+									<span class="description" style="font-size: 11px; color: #0284c7; font-weight: 600;"><?php esc_html_e('Strictly private. Never sent in emails or shown to customer.', 'custom-woo-dashboard'); ?></span>
 								</div>
 
 								<button type="submit" name="cwd_v2_approve_application" class="button button-primary" style="background: #16a34a; border-color: #16a34a; width: 100%; padding: 8px 16px; font-weight: 700; font-size: 14px; height: auto;">
@@ -2120,10 +2167,19 @@ class CWD_V2_Trade_Applications
 								<input type="hidden" name="application_id" value="<?php echo esc_attr($app->id); ?>" />
 
 								<div style="margin-bottom: 14px;">
-									<label for="reject_note" style="display: block; font-size: 13px; font-weight: 600; color: #334155; margin-bottom: 6px;">
-										<?php esc_html_e('Reason for Rejection', 'custom-woo-dashboard'); ?>
+									<label for="reject_customer_note" style="display: block; font-size: 13px; font-weight: 600; color: #334155; margin-bottom: 4px;">
+										<?php esc_html_e('Reason for Rejection (Visible to Customer)', 'custom-woo-dashboard'); ?>
 									</label>
-									<textarea name="admin_note" id="reject_note" rows="2" style="width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px; font-size: 13px;" placeholder="<?php esc_attr_e('e.g. Incomplete trading history or credit check unverified', 'custom-woo-dashboard'); ?>"></textarea>
+									<textarea name="customer_note" id="reject_customer_note" rows="2" style="width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px; font-size: 13px;" placeholder="<?php esc_attr_e('e.g. Incomplete trading history or credit check unverified. Please contact trade desk.', 'custom-woo-dashboard'); ?>"></textarea>
+									<span class="description" style="font-size: 11px; color: #64748b;"><?php esc_html_e('Visible to customer on dashboard and notification email.', 'custom-woo-dashboard'); ?></span>
+								</div>
+
+								<div style="margin-bottom: 14px;">
+									<label for="reject_internal_note" style="display: block; font-size: 13px; font-weight: 600; color: #334155; margin-bottom: 4px;">
+										<?php esc_html_e('🔒 Internal Staff Note (Private - Staff Only)', 'custom-woo-dashboard'); ?>
+									</label>
+									<textarea name="internal_note" id="reject_internal_note" rows="2" style="width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px; font-size: 13px; background: #f8fafc;" placeholder="<?php esc_attr_e('e.g. Credit score below minimum threshold. Director refuses guarantee.', 'custom-woo-dashboard'); ?>"></textarea>
+									<span class="description" style="font-size: 11px; color: #0284c7; font-weight: 600;"><?php esc_html_e('Strictly private. Never sent in emails or shown to customer.', 'custom-woo-dashboard'); ?></span>
 								</div>
 
 								<button type="submit" name="cwd_v2_reject_application" class="button" style="background: #fef2f2; border-color: #fca5a5; color: #991b1b; width: 100%; padding: 6px 16px; font-weight: 600; height: auto;" onclick="return confirm('<?php esc_attr_e('Are you sure you want to reject this trade credit application?', 'custom-woo-dashboard'); ?>');">
@@ -2134,6 +2190,11 @@ class CWD_V2_Trade_Applications
 
 					<?php else : ?>
 						<!-- Decision Record Card -->
+						<?php
+						$f_data        = json_decode((string) $app->form_data, true) ?: array();
+						$internal_note = $f_data['internal_staff_note'] ?? '';
+						$customer_note = $app->admin_note;
+						?>
 						<div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 24px; margin-bottom: 20px;">
 							<h3 style="margin: 0 0 14px; font-size: 16px; font-weight: 700; color: #0f172a;">
 								<?php esc_html_e('Review Decision', 'custom-woo-dashboard'); ?>
@@ -2150,10 +2211,16 @@ class CWD_V2_Trade_Applications
 										<td style="padding: 6px 0;"><strong style="color: #166534; font-size: 16px;"><?php echo wp_kses_post(wc_price($app->approved_limit)); ?></strong></td>
 									</tr>
 								<?php endif; ?>
-								<?php if ($app->admin_note) : ?>
+								<?php if ($customer_note) : ?>
 									<tr>
-										<th style="padding: 6px 0;"><?php esc_html_e('Admin Note', 'custom-woo-dashboard'); ?></th>
-										<td style="padding: 6px 0;"><?php echo esc_html($app->admin_note); ?></td>
+										<th style="padding: 6px 0;"><?php esc_html_e('Customer Message / Reason', 'custom-woo-dashboard'); ?></th>
+										<td style="padding: 6px 0; color: #0369a1; font-weight: 500;"><?php echo esc_html($customer_note); ?></td>
+									</tr>
+								<?php endif; ?>
+								<?php if ($internal_note) : ?>
+									<tr>
+										<th style="padding: 6px 0;"><?php esc_html_e('🔒 Private Staff Note', 'custom-woo-dashboard'); ?></th>
+										<td style="padding: 6px 0; font-style: italic; color: #475569; background: #f8fafc; padding: 6px 10px; border-radius: 4px; border-left: 3px solid #0284c7;"><?php echo esc_html($internal_note); ?></td>
 									</tr>
 								<?php endif; ?>
 								<tr>
