@@ -32,7 +32,6 @@ $initial = strtoupper(substr($display_name, 0, 1));
 		<div class="cwd-v2-card-footer">
 			<a href="<?php echo esc_url(wc_get_endpoint_url('edit-account')); ?>"><?php _e('View Account Details', 'custom-woo-dashboard'); ?></a>
 			<a href="<?php echo esc_url(wc_get_endpoint_url('edit-address')); ?>"><?php _e('Billing & Delivery Details', 'custom-woo-dashboard'); ?></a>
-			<a href="<?php echo esc_url(wc_get_endpoint_url('change-password')); ?>"><?php _e('Change Password', 'custom-woo-dashboard'); ?></a>
 		</div>
 	</div>
 
