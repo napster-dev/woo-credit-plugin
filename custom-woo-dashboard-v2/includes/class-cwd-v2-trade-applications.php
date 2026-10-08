@@ -1305,20 +1305,20 @@ class CWD_V2_Trade_Applications
 					</p>
 				</div>
 				<div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-					<a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=cwd-v2-trade-applications&action=sync_credits'), 'cwd_v2_sync_credits')); ?>" class="button" style="font-weight: 600; display: inline-flex; align-items: center; gap: 6px; border-color: #cbd5e1; background: #ffffff;" title="<?php esc_attr_e('Synchronize and import all credit accounts, limits, and outstanding balances from the credit plugin into WordPress database', 'custom-woo-dashboard'); ?>">
-						<span class="dashicons dashicons-update" style="font-size: 16px; width: 16px; height: 16px;"></span>
-						<?php esc_html_e('Sync Credit Plugin', 'custom-woo-dashboard'); ?>
+					<a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=cwd-v2-trade-applications&action=sync_credits'), 'cwd_v2_sync_credits')); ?>" class="button" style="font-weight: 600; display: inline-flex; align-items: center; justify-content: center; height: 32px; line-height: 1; padding: 0 12px; gap: 6px; border-color: #cbd5e1; background: #ffffff; vertical-align: middle;" title="<?php esc_attr_e('Synchronize and import all credit accounts, limits, and outstanding balances from the credit plugin into WordPress database', 'custom-woo-dashboard'); ?>">
+						<span class="dashicons dashicons-update" style="font-size: 16px; width: 16px; height: 16px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; margin: 0;"></span>
+						<span style="line-height: 1;"><?php esc_html_e('Sync Credit Plugin', 'custom-woo-dashboard'); ?></span>
 					</a>
 					<?php if ($active_tab !== 'provision') : ?>
-						<a href="<?php echo esc_url(admin_url('admin.php?page=cwd-v2-trade-applications&tab=provision')); ?>" class="button button-primary" style="font-weight: 600; background: #0284c7; border-color: #0284c7; display: inline-flex; align-items: center; gap: 6px;">
-							<span class="dashicons dashicons-plus-alt2" style="font-size: 16px; width: 16px; height: 16px;"></span>
-							<?php esc_html_e('Provision Trade Account', 'custom-woo-dashboard'); ?>
+						<a href="<?php echo esc_url(admin_url('admin.php?page=cwd-v2-trade-applications&tab=provision')); ?>" class="button button-primary" style="font-weight: 600; background: #0284c7; border-color: #0284c7; display: inline-flex; align-items: center; justify-content: center; height: 32px; line-height: 1; padding: 0 12px; gap: 6px; vertical-align: middle;">
+							<span class="dashicons dashicons-plus-alt2" style="font-size: 16px; width: 16px; height: 16px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; margin: 0;"></span>
+							<span style="line-height: 1;"><?php esc_html_e('Provision Trade Account', 'custom-woo-dashboard'); ?></span>
 						</a>
 					<?php endif; ?>
 					<?php if ($active_tab !== 'queue' && $pending_count > 0) : ?>
-						<a href="<?php echo esc_url(admin_url('admin.php?page=cwd-v2-trade-applications&tab=queue&status=pending')); ?>" class="button" style="font-weight: 600; border-color: #f59e0b; color: #b45309; background: #fffbeb; display: inline-flex; align-items: center; gap: 6px;">
-							<span class="dashicons dashicons-bell" style="font-size: 16px; width: 16px; height: 16px;"></span>
-							<?php printf(esc_html__('Review Pending (%d)', 'custom-woo-dashboard'), $pending_count); ?>
+						<a href="<?php echo esc_url(admin_url('admin.php?page=cwd-v2-trade-applications&tab=queue&status=pending')); ?>" class="button" style="font-weight: 600; border-color: #f59e0b; color: #b45309; background: #fffbeb; display: inline-flex; align-items: center; justify-content: center; height: 32px; line-height: 1; padding: 0 12px; gap: 6px; vertical-align: middle;">
+							<span class="dashicons dashicons-bell" style="font-size: 16px; width: 16px; height: 16px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; margin: 0;"></span>
+							<span style="line-height: 1;"><?php printf(esc_html__('Review Pending (%d)', 'custom-woo-dashboard'), $pending_count); ?></span>
 						</a>
 					<?php endif; ?>
 				</div>
@@ -1646,25 +1646,27 @@ class CWD_V2_Trade_Applications
 									<div style="display: inline-flex; align-items: center; justify-content: flex-end; gap: 4px;">
 										<?php if ($acc['user_id'] > 0) : ?>
 											<details style="display: inline-block; position: relative;">
-												<summary class="button button-small" style="font-size: 11px; cursor: pointer; padding: 1px 6px;">
+												<summary class="button button-small" style="font-size: 11px; cursor: pointer; padding: 1px 7px; height: 26px; line-height: 24px; vertical-align: middle;">
 													<?php esc_html_e('Limit', 'custom-woo-dashboard'); ?>
 												</summary>
-												<div style="position: absolute; right: 0; top: 100%; margin-top: 4px; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 12px; z-index: 100; box-shadow: 0 4px 12px rgba(0,0,0,0.15); width: 220px; text-align: left;">
-													<form method="post" action="">
+												<div style="position: absolute; right: 0; top: 100%; margin-top: 6px; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 12px; z-index: 1000; box-shadow: 0 4px 16px rgba(0,0,0,0.18); width: 210px; text-align: left; white-space: normal !important; box-sizing: border-box;">
+													<form method="post" action="" style="margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; white-space: normal !important;">
 														<?php wp_nonce_field('cwd_v2_credit_accounts_action', 'cwd_v2_credit_nonce'); ?>
 														<input type="hidden" name="user_id" value="<?php echo esc_attr($acc['user_id']); ?>" />
-														<label style="display: block; font-size: 11px; font-weight: 600; color: #334155; margin-bottom: 4px;">
-															<?php esc_html_e('New Limit (£):', 'custom-woo-dashboard'); ?>
-														</label>
-														<input type="number" step="0.01" min="0" name="new_credit_limit" value="<?php echo esc_attr(number_format((float) $acc['credit_limit'], 2, '.', '')); ?>" style="width: 100%; margin-bottom: 8px; font-weight: 700;" required />
-														<button type="submit" name="cwd_v2_adjust_user_credit_limit" class="button button-primary button-small" style="width: 100%;">
+														<div>
+															<label style="display: block; font-size: 11px; font-weight: 600; color: #334155; margin-bottom: 4px; line-height: 1.3;">
+																<?php esc_html_e('New Limit (£):', 'custom-woo-dashboard'); ?>
+															</label>
+															<input type="number" step="0.01" min="0" name="new_credit_limit" value="<?php echo esc_attr(number_format((float) $acc['credit_limit'], 2, '.', '')); ?>" style="display: block; width: 100%; box-sizing: border-box; padding: 5px 8px; font-size: 13px; font-weight: 700; border: 1px solid #cbd5e1; border-radius: 4px; margin: 0; height: 32px;" required />
+														</div>
+														<button type="submit" name="cwd_v2_adjust_user_credit_limit" class="button button-primary button-small" style="display: block; width: 100%; box-sizing: border-box; text-align: center; height: 30px; line-height: 28px; font-weight: 600; font-size: 11.5px; background: #0284c7; border-color: #0284c7; color: #ffffff; cursor: pointer; border-radius: 4px; margin: 0; white-space: nowrap;">
 															<?php esc_html_e('Save New Limit', 'custom-woo-dashboard'); ?>
 														</button>
 													</form>
 												</div>
 											</details>
 
-											<a href="<?php echo esc_url(get_edit_user_link($acc['user_id'])); ?>" class="button button-small" style="font-size: 11px; padding: 1px 6px;" target="_blank">
+											<a href="<?php echo esc_url(get_edit_user_link($acc['user_id'])); ?>" class="button button-small" style="font-size: 11px; padding: 1px 7px; height: 26px; line-height: 24px; vertical-align: middle;" target="_blank">
 												<?php esc_html_e('Profile', 'custom-woo-dashboard'); ?>
 											</a>
 										<?php elseif (! empty($acc['raw_app'])) : ?>
