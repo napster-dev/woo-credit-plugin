@@ -96,9 +96,15 @@ class CWD_V2_REST_API
 				if (in_array($key, array('_credit_limit', 'credit_limit'), true)) {
 					$limit = round((float) wc_format_decimal($value), 2);
 					$customer->update_meta_data('_credit_limit', max(0, $limit));
+					if (class_exists('CWD_V2_Credit_Logic') && $customer->get_id()) {
+						CWD_V2_Credit_Logic::sync_user_credit_limit($customer->get_id(), max(0, $limit));
+					}
 				} elseif (in_array($key, array('_credit_balance', 'credit_balance'), true)) {
 					$balance = round((float) wc_format_decimal($value), 2);
 					$customer->update_meta_data('_credit_balance', max(0, $balance));
+					if (class_exists('CWD_V2_Credit_Logic') && $customer->get_id()) {
+						CWD_V2_Credit_Logic::sync_user_credit_balance($customer->get_id(), max(0, $balance));
+					}
 				} elseif (in_array($key, array('_credit_due_date', 'credit_due_date'), true)) {
 					$customer->update_meta_data('_credit_due_date', sanitize_text_field($value));
 				} elseif (in_array($key, array('ews_account_number', '_ews_account_number'), true)) {
@@ -111,10 +117,16 @@ class CWD_V2_REST_API
 		if (null !== $request->get_param('credit_limit')) {
 			$limit = round((float) wc_format_decimal($request->get_param('credit_limit')), 2);
 			$customer->update_meta_data('_credit_limit', max(0, $limit));
+			if (class_exists('CWD_V2_Credit_Logic') && $customer->get_id()) {
+				CWD_V2_Credit_Logic::sync_user_credit_limit($customer->get_id(), max(0, $limit));
+			}
 		}
 		if (null !== $request->get_param('credit_balance')) {
 			$balance = round((float) wc_format_decimal($request->get_param('credit_balance')), 2);
 			$customer->update_meta_data('_credit_balance', max(0, $balance));
+			if (class_exists('CWD_V2_Credit_Logic') && $customer->get_id()) {
+				CWD_V2_Credit_Logic::sync_user_credit_balance($customer->get_id(), max(0, $balance));
+			}
 		}
 		if (null !== $request->get_param('ews_account_number')) {
 			$customer->update_meta_data('ews_account_number', sanitize_text_field($request->get_param('ews_account_number')));
@@ -138,15 +150,15 @@ class CWD_V2_REST_API
 			return $response;
 		}
 
-		$credit_limit     = (float) get_user_meta($user_id, '_credit_limit', true);
-		$credit_balance   = (float) get_user_meta($user_id, '_credit_balance', true);
+		$credit_limit     = class_exists('CWD_V2_Credit_Logic') ? CWD_V2_Credit_Logic::get_user_credit_limit($user_id) : (float) get_user_meta($user_id, '_credit_limit', true);
+		$credit_balance   = class_exists('CWD_V2_Credit_Logic') ? CWD_V2_Credit_Logic::get_user_credit_balance($user_id) : (float) get_user_meta($user_id, '_credit_balance', true);
 		$available_credit = max(0, $credit_limit - $credit_balance);
 		$due_date         = (string) get_user_meta($user_id, '_credit_due_date', true);
 		$account_number   = (string) get_user_meta($user_id, 'ews_account_number', true);
 
 		$data = $response->get_data();
 		$data['credit_account'] = array(
-			'is_credit_customer' => in_array('credit_account', (array) $customer->get_role(), true) || in_array('credit_account', (array) get_userdata($user_id)->roles, true),
+			'is_credit_customer' => in_array('credit_account', (array) $customer->get_role(), true) || in_array('credit_account', (array) get_userdata($user_id)->roles, true) || $credit_limit > 0,
 			'credit_limit'       => $credit_limit,
 			'credit_balance'     => $credit_balance,
 			'available_credit'   => $available_credit,
@@ -355,11 +367,17 @@ class CWD_V2_REST_API
 
 		$ok = CWD_V2_Invoices::upsert_odoo_invoice( $user->ID, $row );
 
+		$live_balance = 0.0;
+		if ( $ok && class_exists( 'CWD_V2_Credit_Logic' ) ) {
+			$live_balance = CWD_V2_Credit_Logic::recalculate_and_sync_user_credit_balance( $user->ID );
+		}
+
 		return new WP_REST_Response(
 			array(
-				'success'     => $ok,
-				'customer_id' => $user->ID,
-				'email'       => $user->user_email,
+				'success'        => $ok,
+				'customer_id'    => $user->ID,
+				'email'          => $user->user_email,
+				'credit_balance' => $live_balance,
 			),
 			$ok ? 200 : 500
 		);

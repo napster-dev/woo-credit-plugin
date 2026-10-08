@@ -39,8 +39,7 @@ final class CWD_V2_Blocks_Payment_Gateway extends AbstractPaymentMethodType
 	public function get_payment_method_script_handles()
 	{
 		$script_url  = CWD_V2_PLUGIN_URL . 'assets/js/credit-account-blocks.js';
-		$script_path = CWD_V2_PLUGIN_DIR . 'assets/js/credit-account-blocks.js';
-		$version     = file_exists($script_path) ? filemtime($script_path) : '1.0.0';
+		$version     = defined('CWD_V2_VERSION') ? CWD_V2_VERSION : '2.2.2';
 
 		wp_register_script(
 			'cwd-v2-credit-account-blocks',
@@ -62,8 +61,8 @@ final class CWD_V2_Blocks_Payment_Gateway extends AbstractPaymentMethodType
 	public function get_payment_method_data()
 	{
 		$user_id          = get_current_user_id();
-		$credit_limit     = (float) get_user_meta($user_id, '_credit_limit', true);
-		$credit_balance   = (float) get_user_meta($user_id, '_credit_balance', true);
+		$credit_limit     = class_exists('CWD_V2_Credit_Logic') ? CWD_V2_Credit_Logic::get_user_credit_limit($user_id) : (float) get_user_meta($user_id, '_credit_limit', true);
+		$credit_balance   = class_exists('CWD_V2_Credit_Logic') ? CWD_V2_Credit_Logic::get_user_credit_balance($user_id) : (float) get_user_meta($user_id, '_credit_balance', true);
 		$available_credit = max(0, $credit_limit - $credit_balance);
 		$due_date         = (string) get_user_meta($user_id, '_credit_due_date', true);
 

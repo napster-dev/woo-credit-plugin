@@ -31,10 +31,15 @@ class CWD_V2_Credit_Logic
 		add_action('woocommerce_order_status_processing', array(__CLASS__, 'reduce_credit_balance_on_payment'));
 		add_action('woocommerce_order_status_completed', array(__CLASS__, 'reduce_credit_balance_on_payment'));
 		add_action('woocommerce_checkout_create_order_line_item', array(__CLASS__, 'add_payment_item_metadata'), 10, 4);
-		add_action('woocommerce_order_status_processing', array(__CLASS__, 'apply_credit_order_charge'));
-		add_action('woocommerce_order_status_completed', array(__CLASS__, 'apply_credit_order_charge'));
-		add_action('woocommerce_order_status_cancelled', array(__CLASS__, 'reverse_credit_order_charge'));
-		add_action('woocommerce_order_status_failed', array(__CLASS__, 'reverse_credit_order_charge'));
+
+		// Hook into order checkout and status changes to immediately deduct available credit and charge account
+		add_action('woocommerce_checkout_order_processed', array(__CLASS__, 'apply_credit_order_charge'), 10, 1);
+		add_action('woocommerce_payment_complete', array(__CLASS__, 'apply_credit_order_charge'), 10, 1);
+		add_action('woocommerce_order_status_processing', array(__CLASS__, 'apply_credit_order_charge'), 10, 1);
+		add_action('woocommerce_order_status_completed', array(__CLASS__, 'apply_credit_order_charge'), 10, 1);
+		add_action('woocommerce_order_status_on-hold', array(__CLASS__, 'apply_credit_order_charge'), 10, 1);
+		add_action('woocommerce_order_status_cancelled', array(__CLASS__, 'reverse_credit_order_charge'), 10, 1);
+		add_action('woocommerce_order_status_failed', array(__CLASS__, 'reverse_credit_order_charge'), 10, 1);
 
 		// Hook into refunds on credit-paid orders to decrease the outstanding balance.
 		add_action('woocommerce_order_refunded', array(__CLASS__, 'handle_credit_order_refund'), 10, 2);
@@ -436,32 +441,8 @@ class CWD_V2_Credit_Logic
 			}
 		}
 
-		// Check external CPT posts for this user if no positive limit found yet
-		if ($max_limit <= 0) {
-			global $wpdb;
-			$u = get_userdata($user_id);
-			$email = $u ? $u->user_email : '';
-			$cpt_limit = (float) $wpdb->get_var($wpdb->prepare(
-				"SELECT pm.meta_value FROM {$wpdb->postmeta} pm
-				 INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
-				 WHERE p.post_type = 'credits'
-				   AND pm.meta_key IN ('_credit_limit', 'credit_limit', 'fpc_credit_limit', '_fpc_credit_limit')
-				   AND (p.post_author = %d OR p.post_title LIKE %s OR p.ID IN (
-				       SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key IN ('_user_id', 'user_id', 'email', '_email', 'user_email') AND (meta_value = %s OR meta_value = %s)
-				   ))
-				 ORDER BY CAST(pm.meta_value AS DECIMAL(10,2)) DESC LIMIT 1",
-				$user_id,
-				'%' . $wpdb->esc_like($u ? $u->user_login : '') . '%',
-				(string) $user_id,
-				$email
-			));
-			if ($cpt_limit > $max_limit) {
-				$max_limit = $cpt_limit;
-			}
-		}
-
-		// Check trade applications table for approved limit if still 0
-		if ($max_limit <= 0 && class_exists('CWD_V2_Trade_Applications')) {
+		// Always check latest approved application in trade applications table
+		if (class_exists('CWD_V2_Trade_Applications')) {
 			global $wpdb;
 			$apps_table = CWD_V2_Trade_Applications::get_table_name();
 			$u = get_userdata($user_id);
@@ -474,14 +455,56 @@ class CWD_V2_Credit_Logic
 				$email,
 				'approved'
 			));
-			if ($app_limit > $max_limit) {
+			if ($app_limit > 0 && $app_limit > $max_limit) {
 				$max_limit = $app_limit;
 			}
 		}
 
-		// If a higher limit was discovered in legacy keys, self-heal _credit_limit up to that amount (never reduce)
+		// Always check external CPT posts in 'credits' / 'wc_cs_credits' / 'fpc_credits'
+		global $wpdb;
+		$u = get_userdata($user_id);
+		$email = $u ? $u->user_email : '';
+		$login = $u ? $u->user_login : '';
+		$cpt_limit = (float) $wpdb->get_var($wpdb->prepare(
+			"SELECT pm.meta_value FROM {$wpdb->postmeta} pm
+			 INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
+			 WHERE p.post_type IN ('wc_cs_credits', 'credits', 'fpc_credits')
+			   AND p.post_status != 'trash'
+			   AND pm.meta_key IN (
+			       'approved_credits', '_approved_credits', 'wc_cs_approved_credits',
+			       'credit_limit', '_credit_limit', 'wc_cs_credit_limit', '_wc_cs_credit_limit',
+			       'fpc_credit_limit', '_fpc_credit_limit', '31596', '41978'
+			   )
+			   AND CAST(pm.meta_value AS DECIMAL(10,2)) > 0
+			   AND (
+			       p.post_author = %d
+			       OR p.post_title = %s
+			       OR p.post_title = %s
+			       OR p.ID IN (
+			           SELECT post_id FROM {$wpdb->postmeta}
+			           WHERE meta_key IN (
+			               '_user_id', 'user_id', 'wc_cs_user_id', '_wc_cs_user_id',
+			               'customer_id', '_customer_id', 'customer_user', '_customer_user',
+			               'email', '_email', 'user_email', '_user_email', 'wc_cs_user_email', '_wc_cs_user_email'
+			           ) AND (meta_value = %s OR meta_value = %s OR meta_value = %s)
+			       )
+			   )
+			 ORDER BY CAST(pm.meta_value AS DECIMAL(10,2)) DESC LIMIT 1",
+			$user_id,
+			$login,
+			$email,
+			(string) $user_id,
+			$email,
+			$login
+		));
+		if ($cpt_limit > 0 && $cpt_limit > $max_limit) {
+			$max_limit = $cpt_limit;
+		}
+
+		// If a higher limit was discovered in trade applications or legacy keys, self-heal and sync
 		if ($max_limit > $existing_limit) {
 			update_user_meta($user_id, '_credit_limit', $max_limit);
+			self::sync_user_credit_limit($user_id, $max_limit);
 		}
 
 		return max(0.0, $max_limit);
@@ -500,15 +523,39 @@ class CWD_V2_Credit_Logic
 			return 0.0;
 		}
 
-		$balance = (float) get_user_meta($user_id, '_credit_balance', true);
-		if ($balance <= 0) {
-			$keys = array('_fp_used_credit', '_user_credit_balance', 'credit_balance', 'total_outstanding', '_total_outstanding');
-			foreach ($keys as $k) {
-				$val = (float) get_user_meta($user_id, $k, true);
-				if ($val > 0) {
-					$balance = $val;
+		if (metadata_exists('user', $user_id, '_credit_balance')) {
+			return max(0.0, (float) get_user_meta($user_id, '_credit_balance', true));
+		}
+
+		$balance = 0.0;
+		$keys = array(
+			'total_outstanding_amount', '_total_outstanding_amount',
+			'wc_cs_total_outstanding_amount', '_wc_cs_total_outstanding_amount',
+			'_fp_used_credit', '_user_credit_balance', 'credit_balance',
+			'total_outstanding', '_total_outstanding'
+		);
+		foreach ($keys as $k) {
+			$val = (float) get_user_meta($user_id, $k, true);
+			if ($val > 0) {
+				$balance = $val;
+				update_user_meta($user_id, '_credit_balance', $balance);
+				break;
+			}
+		}
+
+		// Fallback to unpaid invoices in cwd_v2_invoices table if balance is 0
+		if ($balance <= 0 && class_exists('CWD_V2_Invoices')) {
+			global $wpdb;
+			$invoices_table = CWD_V2_Invoices::table_name();
+			if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $invoices_table)) === $invoices_table) {
+				$unpaid_invoices_total = (float) $wpdb->get_var($wpdb->prepare(
+					"SELECT SUM(GREATEST(0, amount_total - amount_paid)) FROM {$invoices_table}
+					 WHERE user_id = %d AND status NOT IN ('paid', 'void')",
+					$user_id
+				));
+				if ($unpaid_invoices_total > 0) {
+					$balance = $unpaid_invoices_total;
 					update_user_meta($user_id, '_credit_balance', $balance);
-					break;
 				}
 			}
 		}
@@ -518,19 +565,41 @@ class CWD_V2_Credit_Logic
 			global $wpdb;
 			$u = get_userdata($user_id);
 			$email = $u ? $u->user_email : '';
+			$login = $u ? $u->user_login : '';
 			$cpt_balance = (float) $wpdb->get_var($wpdb->prepare(
 				"SELECT pm.meta_value FROM {$wpdb->postmeta} pm
 				 INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
-				 WHERE p.post_type IN ('credits', 'wc_cs_credits', 'fpc_credits')
-				   AND pm.meta_key IN ('total_outstanding', '_total_outstanding', 'wc_cs_total_outstanding', '_wc_cs_total_outstanding', 'outstanding_credits')
+				 WHERE p.post_type IN ('wc_cs_credits', 'credits', 'fpc_credits')
+				   AND pm.meta_key IN (
+				       'total_outstanding_amount', '_total_outstanding_amount',
+				       'wc_cs_total_outstanding_amount', '_wc_cs_total_outstanding_amount',
+				       'total_outstanding', '_total_outstanding',
+				       'wc_cs_total_outstanding', '_wc_cs_total_outstanding',
+				       'outstanding_credits', 'wc_cs_outstanding_credits',
+				       'used_credits', '_used_credits'
+				   )
 				   AND CAST(pm.meta_value AS DECIMAL(10,2)) > 0
-				   AND (p.post_author = %d OR p.ID IN (
-				       SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key IN ('_user_id', 'user_id', 'fpc_user_id', 'customer_id', 'email', 'user_email') AND (meta_value = %s OR meta_value = %s)
-				   ))
+				   AND (
+				       p.post_author = %d
+				       OR p.post_title = %s
+				       OR p.post_title = %s
+				       OR p.ID IN (
+				           SELECT post_id FROM {$wpdb->postmeta}
+				           WHERE meta_key IN (
+				               '_user_id', 'user_id', 'wc_cs_user_id', '_wc_cs_user_id',
+				               'customer_id', '_customer_id', 'customer_user', '_customer_user',
+				               'fpc_user_id', 'user_email', '_user_email', 'wc_cs_user_email',
+				               '_wc_cs_user_email', 'email', '_email'
+				           ) AND (meta_value = %s OR meta_value = %s OR meta_value = %s)
+				       )
+				   )
 				 ORDER BY CAST(pm.meta_value AS DECIMAL(10,2)) DESC LIMIT 1",
 				$user_id,
+				$login,
+				$email,
 				(string) $user_id,
-				$email
+				$email,
+				$login
 			));
 			if ($cpt_balance > 0) {
 				$balance = $cpt_balance;
@@ -542,7 +611,7 @@ class CWD_V2_Credit_Logic
 	}
 
 	/**
-	 * Sync credit limit across all relevant meta keys
+	 * Sync credit limit across all relevant meta keys and CPT post
 	 *
 	 * @param int $user_id
 	 * @param float $limit
@@ -562,11 +631,20 @@ class CWD_V2_Credit_Logic
 			'_approved_credits', 'approved_credits',
 			'_approved_credit', 'approved_credit',
 			'_wc_cs_approved_credits', 'wc_cs_approved_credits',
-			'_available_credits', 'available_credits',
-			'_wc_cs_available_credits', 'wc_cs_available_credits',
 		);
 		foreach ($keys as $k) {
 			update_user_meta($user_id, $k, $limit);
+		}
+
+		$current_balance = (float) get_user_meta($user_id, '_credit_balance', true);
+		$available = max(0.0, $limit - $current_balance);
+		$avail_keys = array(
+			'_available_credits', 'available_credits',
+			'_wc_cs_available_credits', 'wc_cs_available_credits',
+			'fpc_available_credits', 'available_credit'
+		);
+		foreach ($avail_keys as $ak) {
+			update_user_meta($user_id, $ak, $available);
 		}
 
 		// Also update the credit post in Credits > Credits
@@ -576,7 +654,7 @@ class CWD_V2_Credit_Logic
 	}
 
 	/**
-	 * Sync credit balance across all relevant meta keys
+	 * Sync credit balance across all relevant meta keys and external CPT post
 	 *
 	 * @param int $user_id
 	 * @param float $balance
@@ -590,10 +668,105 @@ class CWD_V2_Credit_Logic
 		}
 
 		update_user_meta($user_id, '_credit_balance', $balance);
-		$keys = array('_fp_used_credit', '_user_credit_balance', 'credit_balance');
+		$keys = array(
+			'_fp_used_credit', '_user_credit_balance', 'credit_balance',
+			'total_outstanding', '_total_outstanding', 'wc_cs_total_outstanding',
+			'_wc_cs_total_outstanding', 'outstanding_credits', 'wc_cs_outstanding_credits',
+			'total_outstanding_amount', '_total_outstanding_amount',
+			'wc_cs_total_outstanding_amount', '_wc_cs_total_outstanding_amount',
+			'used_credits', '_used_credits', '_credit_used'
+		);
 		foreach ($keys as $k) {
 			update_user_meta($user_id, $k, $balance);
 		}
+
+		$limit = self::get_user_credit_limit($user_id);
+		$avail = max(0.0, round($limit - $balance, 2));
+		$avail_keys = array(
+			'_available_credits', 'available_credits',
+			'_wc_cs_available_credits', 'wc_cs_available_credits',
+			'fpc_available_credits', 'available_credit'
+		);
+		foreach ($avail_keys as $ak) {
+			update_user_meta($user_id, $ak, $avail);
+		}
+
+		// Update external CPT posts in 'credits' / 'wc_cs_credits' / 'fpc_credits'
+		global $wpdb;
+		$u = get_userdata($user_id);
+		$email = $u ? $u->user_email : '';
+		$login = $u ? $u->user_login : '';
+		$post_ids = $wpdb->get_col($wpdb->prepare(
+			"SELECT DISTINCT p.ID FROM {$wpdb->posts} p
+			 LEFT JOIN {$wpdb->postmeta} pm ON pm.post_id = p.ID
+			 WHERE p.post_type IN ('credits', 'wc_cs_credits', 'fpc_credits')
+			   AND (p.post_author = %d OR (pm.meta_key IN ('_user_id', 'user_id', 'wc_cs_user_id', '_wc_cs_user_id', 'fpc_user_id', 'customer_id', 'email', 'user_email', 'wc_cs_user_email') AND (pm.meta_value = %s OR pm.meta_value = %s OR pm.meta_value = %s)))",
+			$user_id,
+			(string) $user_id,
+			$email,
+			$login
+		));
+
+		if (! empty($post_ids)) {
+			foreach ($post_ids as $pid) {
+				update_post_meta((int) $pid, 'total_outstanding_amount', $balance);
+				update_post_meta((int) $pid, '_total_outstanding_amount', $balance);
+				update_post_meta((int) $pid, 'wc_cs_total_outstanding_amount', $balance);
+				update_post_meta((int) $pid, '_wc_cs_total_outstanding_amount', $balance);
+				update_post_meta((int) $pid, 'total_outstanding', $balance);
+				update_post_meta((int) $pid, '_total_outstanding', $balance);
+				update_post_meta((int) $pid, 'wc_cs_total_outstanding', $balance);
+				update_post_meta((int) $pid, '_wc_cs_total_outstanding', $balance);
+				update_post_meta((int) $pid, 'outstanding_credits', $balance);
+				update_post_meta((int) $pid, 'wc_cs_outstanding_credits', $balance);
+				update_post_meta((int) $pid, 'used_credits', $balance);
+				update_post_meta((int) $pid, '_used_credits', $balance);
+				update_post_meta((int) $pid, 'available_credits', $avail);
+				update_post_meta((int) $pid, '_available_credits', $avail);
+				update_post_meta((int) $pid, 'wc_cs_available_credits', $avail);
+				update_post_meta((int) $pid, '_wc_cs_available_credits', $avail);
+				update_post_meta((int) $pid, 'fpc_available_credits', $avail);
+				clean_post_cache((int) $pid);
+			}
+		}
+	}
+
+	/**
+	 * Recalculate live outstanding credit balance from unpaid invoices & orders, and sync
+	 *
+	 * @param int $user_id
+	 * @return float
+	 */
+	public static function recalculate_and_sync_user_credit_balance($user_id)
+	{
+		$user_id = (int) $user_id;
+		if (! $user_id) {
+			return 0.0;
+		}
+
+		global $wpdb;
+		$total_unpaid = 0.0;
+
+		// 1. Calculate unpaid invoices from invoices table
+		if (class_exists('CWD_V2_Invoices')) {
+			$invoices_table = CWD_V2_Invoices::table_name();
+			if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $invoices_table)) === $invoices_table) {
+				$inv_total = (float) $wpdb->get_var($wpdb->prepare(
+					"SELECT SUM(GREATEST(0, amount_total - amount_paid)) FROM {$invoices_table}
+					 WHERE user_id = %d AND status NOT IN ('paid', 'void')",
+					$user_id
+				));
+				$total_unpaid += $inv_total;
+			}
+		}
+
+		// 2. If no invoices, use stored balance or fallback
+		if ($total_unpaid <= 0) {
+			$total_unpaid = (float) get_user_meta($user_id, '_credit_balance', true);
+		}
+
+		self::sync_user_credit_balance($user_id, $total_unpaid);
+		return $total_unpaid;
 	}
 
 	public static function apply_credit_order_charge($order_id)
@@ -603,38 +776,89 @@ class CWD_V2_Credit_Logic
 			return;
 		}
 
-		$method           = $order->get_payment_method();
-		$paid_with_credit = $order->get_meta('_paid_with_credit');
-		$is_credit_order  = in_array($method, array('cwd_v2_credit_account', 'credits'), true) || ('yes' === $paid_with_credit);
+		// Prevent duplicate deduction
+		if ($order->get_meta('_cwd_v2_credit_charge_processed')) {
+			return;
+		}
 
-		if (! $is_credit_order || $order->get_meta('_cwd_v2_credit_charge_processed')) {
+		$method = strtolower((string) $order->get_payment_method());
+		$is_credit_method = in_array($method, array('cwd_v2_credit_account', 'credits', 'wc_cs', 'wc_cs_credits', 'fpc_credits', 'wc_credit_gateway', 'credits_gateway', 'woocommerce_credits', 'trade_credit'), true)
+			|| (strpos($method, 'credit') !== false && strpos($method, 'card') === false && strpos($method, 'stripe') === false);
+
+		$paid_with_credit = $order->get_meta('_paid_with_credit');
+		$credits_used_meta = (float) ($order->get_meta('_wc_cs_credits_used')
+			?: ($order->get_meta('wc_cs_credits_used')
+			?: ($order->get_meta('_wc_cs_credit_amount')
+			?: ($order->get_meta('wc_cs_credit_amount')
+			?: ($order->get_meta('_credits_used')
+			?: ($order->get_meta('credits_used')
+			?: ($order->get_meta('_fpc_credit_amount')
+			?: $order->get_meta('fpc_credits_used'))))))));
+
+		$has_credit_fee = false;
+		$fee_credit_amount = 0.0;
+		foreach ($order->get_fees() as $fee) {
+			if (preg_match('/credit/i', $fee->get_name())) {
+				$has_credit_fee = true;
+				$fee_credit_amount += abs((float) $fee->get_total());
+			}
+		}
+
+		$is_credit_order = $is_credit_method || ('yes' === $paid_with_credit) || ($credits_used_meta > 0) || $has_credit_fee;
+		if (! $is_credit_order) {
 			return;
 		}
 
 		$user_id = (int) $order->get_user_id();
-		$amount  = round((float) $order->get_total(), 2);
-		if (! $user_id || $amount <= 0) {
+		if (! $user_id) {
+			return;
+		}
+
+		$order_total = round((float) $order->get_total(), 2);
+		$amount = $order_total;
+		if (! $is_credit_method && $credits_used_meta > 0) {
+			$amount = round($credits_used_meta, 2);
+		} elseif (! $is_credit_method && $fee_credit_amount > 0) {
+			$amount = round($fee_credit_amount, 2);
+		}
+
+		if ($amount <= 0) {
 			return;
 		}
 
 		$current_balance = self::get_user_credit_balance($user_id);
-		$new_balance     = $current_balance + $amount;
+		$new_balance     = round($current_balance + $amount, 2);
 
-		// Update and sync balance across all meta keys
+		// Flag order as processed immediately
+		$order->update_meta_data('_cwd_v2_credit_charge_processed', 'yes');
+		$order->update_meta_data('_paid_with_credit', 'yes');
+		$order->update_meta_data('_credit_charged_amount', $amount);
+		$order->update_meta_data('_credit_balance_prior_order', $current_balance);
+		$order->update_meta_data('_credit_balance_after_order', $new_balance);
+		$order->save();
+
+		// Update and sync balance across all meta keys, tables, and external CPT
 		self::sync_user_credit_balance($user_id, $new_balance);
 
 		// Record in transaction ledger
-		CWD_V2_Account_Ledger::record(
-			$user_id,
-			CWD_V2_Account_Ledger::TYPE_CHARGE,
-			$amount,
-			'order',
-			$order_id,
-			sprintf(__('Order #%d placed on credit account', 'custom-woo-dashboard'), $order_id)
-		);
+		if (class_exists('CWD_V2_Account_Ledger')) {
+			CWD_V2_Account_Ledger::record(
+				$user_id,
+				CWD_V2_Account_Ledger::TYPE_CHARGE,
+				$amount,
+				'order',
+				$order_id,
+				sprintf(__('Order #%d placed on credit account', 'custom-woo-dashboard'), $order_id)
+			);
+		}
 
-		$order->update_meta_data('_cwd_v2_credit_charge_processed', 'yes');
-		$order->save();
+		// Ensure unpaid invoice is immediately generated in CWD_V2_Invoices
+		if (class_exists('CWD_V2_Invoices')) {
+			CWD_V2_Invoices::generate_invoice_for_order($order_id);
+		}
+
+		do_action('cwd_v2_credit_charged', $user_id, $amount, $new_balance, $order_id);
+		do_action('wc_cs_credit_debited', $user_id, $amount, $new_balance, $order_id);
 	}
 
 	public static function reverse_credit_order_charge($order_id)
@@ -644,32 +868,38 @@ class CWD_V2_Credit_Logic
 			return;
 		}
 
-		$method           = $order->get_payment_method();
+		$method = strtolower((string) $order->get_payment_method());
+		$is_credit_method = in_array($method, array('cwd_v2_credit_account', 'credits', 'wc_cs', 'wc_cs_credits', 'fpc_credits', 'wc_credit_gateway', 'credits_gateway', 'woocommerce_credits', 'trade_credit'), true)
+			|| (strpos($method, 'credit') !== false && strpos($method, 'card') === false && strpos($method, 'stripe') === false);
+
 		$paid_with_credit = $order->get_meta('_paid_with_credit');
-		$is_credit_order  = in_array($method, array('cwd_v2_credit_account', 'credits'), true) || ('yes' === $paid_with_credit);
+		$is_credit_order  = $is_credit_method || ('yes' === $paid_with_credit) || $order->get_meta('_credit_charged_amount');
 
 		if (! $is_credit_order || ! $order->get_meta('_cwd_v2_credit_charge_processed') || $order->get_meta('_cwd_v2_credit_charge_reversed')) {
 			return;
 		}
 
 		$user_id = (int) $order->get_user_id();
-		$amount  = round((float) $order->get_total(), 2);
+		$charged = (float) $order->get_meta('_credit_charged_amount');
+		$amount  = $charged > 0 ? $charged : round((float) $order->get_total(), 2);
 		if (! $user_id || $amount <= 0) {
 			return;
 		}
 
 		$current_balance = self::get_user_credit_balance($user_id);
-		$new_balance     = max(0.0, $current_balance - $amount);
+		$new_balance     = max(0.0, round($current_balance - $amount, 2));
 		self::sync_user_credit_balance($user_id, $new_balance);
 
-		CWD_V2_Account_Ledger::record(
-			$user_id,
-			CWD_V2_Account_Ledger::TYPE_REFUND,
-			$amount,
-			'order',
-			$order_id,
-			sprintf(__('Credit charge reversed for order #%d', 'custom-woo-dashboard'), $order_id)
-		);
+		if (class_exists('CWD_V2_Account_Ledger')) {
+			CWD_V2_Account_Ledger::record(
+				$user_id,
+				CWD_V2_Account_Ledger::TYPE_REFUND,
+				$amount,
+				'order',
+				$order_id,
+				sprintf(__('Credit charge reversed for order #%d', 'custom-woo-dashboard'), $order_id)
+			);
+		}
 
 		$order->update_meta_data('_cwd_v2_credit_charge_reversed', 'yes');
 		$order->save();

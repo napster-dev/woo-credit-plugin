@@ -13,6 +13,7 @@ if (! defined('ABSPATH')) {
 
 define('CWD_V2_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CWD_V2_PLUGIN_URL', plugin_dir_url(__FILE__));
+define('CWD_V2_VERSION', '2.2.2');
 
 // Include activator right away for the hook
 require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-activator.php';
@@ -49,6 +50,9 @@ if (! function_exists('cwd_v2_init_plugin')) {
 			CWD_V2_REST_API::init();
 			CWD_V2_Trade_Applications::init();
 			CWD_V2_Credits_Bridge::init();
+
+			// Enqueue dashboard styles across all front-end pages
+			add_action('wp_enqueue_scripts', 'cwd_v2_enqueue_frontend_styles', 20);
 
 			// Register trade application settings
 			add_action('admin_init', array('CWD_V2_Trade_Applications', 'register_settings'));
@@ -124,3 +128,17 @@ if (! function_exists('cwd_v2_register_credit_gateway_blocks_support')) {
 		);
 	}
 }
+
+if (! function_exists('cwd_v2_enqueue_frontend_styles')) {
+	function cwd_v2_enqueue_frontend_styles()
+	{
+		// Only enqueue on account, checkout, cart, or single product pages to keep all other shop pages fast
+		if (is_account_page() || is_checkout() || is_cart() || is_singular('product')) {
+			wp_enqueue_style('cwd-v2-dashboard-style', CWD_V2_PLUGIN_URL . 'assets/css/style.css', array(), CWD_V2_VERSION);
+		}
+	}
+}
+
+
+
+
