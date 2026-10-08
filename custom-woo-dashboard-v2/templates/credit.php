@@ -458,7 +458,7 @@ wc_print_notices();
 		if ( $credit_balance > 0 && $due_ts && $due_ts < current_time( 'timestamp' ) ) {
 			// Overdue balance
 			$is_overdue  = true;
-			$due_display = sprintf( esc_html__( '⚠️ %s', 'custom-woo-dashboard' ), date_i18n( 'd M Y', $due_ts ) );
+			$due_display = date_i18n( 'd M Y', $due_ts );
 			$due_desc    = esc_html__( 'Payment overdue - please settle balance', 'custom-woo-dashboard' );
 			$due_css     = 'color: #dc2626; font-size: 19px; font-weight: 800;';
 		} elseif ( $credit_balance > 0 && $due_ts ) {

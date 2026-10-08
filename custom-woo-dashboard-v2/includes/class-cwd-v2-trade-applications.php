@@ -1459,26 +1459,70 @@ class CWD_V2_Trade_Applications
 			</form>
 		</div>
 
+		<style>
+		.cwd-table-responsive {
+			width: 100%;
+			background: #ffffff;
+			border: 1px solid #e2e8f0;
+			border-radius: 8px;
+			box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+			overflow-x: auto;
+			-webkit-overflow-scrolling: touch;
+			margin-bottom: 24px;
+		}
+		.cwd-table-responsive::-webkit-scrollbar {
+			height: 6px;
+			width: 6px;
+		}
+		.cwd-table-responsive::-webkit-scrollbar-track {
+			background: #f8fafc;
+		}
+		.cwd-table-responsive::-webkit-scrollbar-thumb {
+			background: #cbd5e1;
+			border-radius: 3px;
+		}
+		.cwd-trade-accounts-table,
+		.cwd-applications-queue-table {
+			width: 100% !important;
+			border-collapse: collapse !important;
+			border: none !important;
+			margin: 0 !important;
+			table-layout: auto !important;
+		}
+		.cwd-trade-accounts-table thead th,
+		.cwd-applications-queue-table thead th {
+			position: sticky;
+			top: 0;
+			background: #f8fafc;
+			z-index: 2;
+			box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+			font-size: 12px;
+			padding: 10px 10px;
+		}
+		.cwd-trade-accounts-table tbody td,
+		.cwd-applications-queue-table tbody td {
+			padding: 10px 10px;
+		}
+		</style>
+
 		<!-- User-Centric Accounts Responsive Table -->
-		<div class="cwd-table-responsive" style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); overflow-x: auto; -webkit-overflow-scrolling: touch; margin-bottom: 24px;">
-			<table class="wp-list-table widefat striped cwd-trade-accounts-table" style="width: 100%; min-width: 1180px; border-collapse: collapse; border: none; margin: 0; table-layout: auto;">
+		<div class="cwd-table-responsive">
+			<table class="wp-list-table widefat striped cwd-trade-accounts-table">
 				<thead>
 					<tr style="background: #f8fafc; border-bottom: 1px solid #e2e8f0;">
-						<th style="font-weight: 700; width: 20%; min-width: 200px; padding: 12px 14px; text-align: left; vertical-align: middle; white-space: nowrap;"><?php esc_html_e('Customer / User', 'custom-woo-dashboard'); ?></th>
-						<th style="font-weight: 700; width: 16%; min-width: 150px; padding: 12px 14px; text-align: left; vertical-align: middle; white-space: nowrap;"><?php esc_html_e('Company Name', 'custom-woo-dashboard'); ?></th>
-						<th style="font-weight: 700; width: 10%; min-width: 110px; padding: 12px 12px; text-align: left; vertical-align: middle; white-space: nowrap;"><?php esc_html_e('Trade #', 'custom-woo-dashboard'); ?></th>
-						<th style="font-weight: 700; width: 12%; min-width: 120px; padding: 12px 12px; text-align: left; vertical-align: middle; white-space: nowrap;"><?php esc_html_e('Account Type', 'custom-woo-dashboard'); ?></th>
-						<th style="font-weight: 700; width: 10%; min-width: 110px; padding: 12px 12px; text-align: right; vertical-align: middle; white-space: nowrap;"><?php esc_html_e('Credit Limit', 'custom-woo-dashboard'); ?></th>
-						<th style="font-weight: 700; width: 10%; min-width: 110px; padding: 12px 12px; text-align: right; vertical-align: middle; white-space: nowrap;"><?php esc_html_e('Credit Used', 'custom-woo-dashboard'); ?></th>
-						<th style="font-weight: 700; width: 10%; min-width: 110px; padding: 12px 12px; text-align: right; vertical-align: middle; white-space: nowrap;"><?php esc_html_e('Available', 'custom-woo-dashboard'); ?></th>
-						<th style="font-weight: 700; width: 11%; min-width: 120px; padding: 12px 12px; text-align: center; vertical-align: middle; white-space: nowrap;"><?php esc_html_e('Due Date', 'custom-woo-dashboard'); ?></th>
-						<th style="font-weight: 700; width: 11%; min-width: 120px; padding: 12px 12px; text-align: center; vertical-align: middle; white-space: nowrap;"><?php esc_html_e('Status & Requests', 'custom-woo-dashboard'); ?></th>
-						<th style="font-weight: 700; width: 10%; min-width: 120px; padding: 12px 14px; text-align: right; vertical-align: middle; white-space: nowrap;"><?php esc_html_e('Actions', 'custom-woo-dashboard'); ?></th>
+						<th style="font-weight: 700; width: 23%; text-align: left; vertical-align: middle;"><?php esc_html_e('Customer & Company', 'custom-woo-dashboard'); ?></th>
+						<th style="font-weight: 700; width: 14%; text-align: left; vertical-align: middle;"><?php esc_html_e('Trade Account', 'custom-woo-dashboard'); ?></th>
+						<th style="font-weight: 700; width: 10%; text-align: right; vertical-align: middle;"><?php esc_html_e('Credit Limit', 'custom-woo-dashboard'); ?></th>
+						<th style="font-weight: 700; width: 11%; text-align: right; vertical-align: middle;"><?php esc_html_e('Balance Owed', 'custom-woo-dashboard'); ?></th>
+						<th style="font-weight: 700; width: 10%; text-align: right; vertical-align: middle;"><?php esc_html_e('Available', 'custom-woo-dashboard'); ?></th>
+						<th style="font-weight: 700; width: 13%; text-align: center; vertical-align: middle;"><?php esc_html_e('Terms & Schedule', 'custom-woo-dashboard'); ?></th>
+						<th style="font-weight: 700; width: 10%; text-align: center; vertical-align: middle;"><?php esc_html_e('Status', 'custom-woo-dashboard'); ?></th>
+						<th style="font-weight: 700; width: 9%; text-align: right; vertical-align: middle;"><?php esc_html_e('Actions', 'custom-woo-dashboard'); ?></th>
 					</tr>
 				</thead>
 				<tbody>
 					<?php if (empty($accounts)) : ?>
-						<tr><td colspan="10" style="text-align: center; padding: 36px; color: #64748b;"><?php esc_html_e('No trade credit customers or applicants found matching criteria.', 'custom-woo-dashboard'); ?></td></tr>
+						<tr><td colspan="8" style="text-align: center; padding: 36px; color: #64748b;"><?php esc_html_e('No trade credit customers or applicants found matching criteria.', 'custom-woo-dashboard'); ?></td></tr>
 					<?php else : ?>
 						<?php foreach ($accounts as $acc) : ?>
 							<?php
@@ -1491,35 +1535,25 @@ class CWD_V2_Trade_Applications
 							}
 							?>
 							<tr style="border-bottom: 1px solid #f1f5f9;">
-								<!-- Customer / User -->
-								<td style="padding: 12px 14px; vertical-align: middle;">
+								<!-- Customer & Company -->
+								<td style="vertical-align: middle;">
 									<strong style="color: #0f172a; font-size: 13px;"><?php echo esc_html($acc['name']); ?></strong>
+									<?php if (! empty($acc['company']) && $acc['company'] !== '--' && strcasecmp(trim($acc['company']), trim($acc['name'])) !== 0) : ?>
+										<div style="font-size: 11px; color: #334155; font-weight: 600; margin-top: 1px;"><?php echo esc_html($acc['company']); ?></div>
+									<?php endif; ?>
 									<div style="font-size: 11px; color: #64748b; margin-top: 2px;">
 										<a href="mailto:<?php echo esc_attr($acc['email']); ?>" style="color: #0284c7; text-decoration: none;"><?php echo esc_html($acc['email']); ?></a>
 									</div>
-									<?php if (! empty($acc['phone'])) : ?>
+									<?php if (! empty($acc['phone']) && $acc['phone'] !== 'n/a') : ?>
 										<div style="font-size: 11px; color: #94a3b8; margin-top: 1px;"><?php echo esc_html($acc['phone']); ?></div>
 									<?php endif; ?>
 								</td>
 
-								<!-- Company -->
-								<td style="padding: 12px 14px; vertical-align: middle;">
-									<?php if (! empty($acc['company']) && $acc['company'] !== '--') : ?>
-										<strong style="color: #1e293b; font-size: 13px;"><?php echo esc_html($acc['company']); ?></strong>
-									<?php else : ?>
-										<span style="color: #94a3b8; font-weight: normal;">&mdash;</span>
-									<?php endif; ?>
-								</td>
-
-								<!-- Trade Account # -->
-								<td style="padding: 12px 12px; vertical-align: middle;">
-									<code style="font-family: monospace; font-size: 11px; font-weight: 700; color: #0284c7; background: #f0f9ff; padding: 3px 7px; border-radius: 4px; border: 1px solid #bae6fd; white-space: nowrap;">
+								<!-- Trade Account # & Type -->
+								<td style="vertical-align: middle;">
+									<code style="font-family: monospace; font-size: 11px; font-weight: 700; color: #0284c7; background: #f0f9ff; padding: 2px 6px; border-radius: 4px; border: 1px solid #bae6fd; white-space: nowrap;">
 										<?php echo esc_html($acc['account_number']); ?>
 									</code>
-								</td>
-
-								<!-- Account Type & Terms -->
-								<td style="padding: 12px 12px; vertical-align: middle;">
 									<?php
 									$type_bg = '#f1f5f9';
 									$type_color = '#475569';
@@ -1531,67 +1565,65 @@ class CWD_V2_Trade_Applications
 										$type_color = '#92400e';
 									}
 									?>
-									<span style="display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 700; white-space: nowrap; background: <?php echo esc_attr($type_bg); ?>; color: <?php echo esc_attr($type_color); ?>;">
-										<?php echo esc_html($acc['account_type']); ?>
-									</span>
-									<div style="font-size: 11px; color: #64748b; margin-top: 3px;"><?php echo esc_html($acc['terms']); ?></div>
+									<div style="margin-top: 3px;">
+										<span style="display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: 700; white-space: nowrap; background: <?php echo esc_attr($type_bg); ?>; color: <?php echo esc_attr($type_color); ?>;">
+											<?php echo esc_html($acc['account_type']); ?>
+										</span>
+									</div>
 								</td>
 
 								<!-- Credit Limit -->
-								<td style="padding: 12px 12px; text-align: right; vertical-align: middle;">
+								<td style="text-align: right; vertical-align: middle;">
 									<strong style="color: #166534; font-size: 13px; font-variant-numeric: tabular-nums;"><?php echo wp_kses_post(wc_price($acc['credit_limit'])); ?></strong>
 								</td>
 
 								<!-- Credit Used (Outstanding + Progress Bar) -->
-								<td style="padding: 12px 12px; text-align: right; vertical-align: middle;">
+								<td style="text-align: right; vertical-align: middle;">
 									<strong style="color: <?php echo $acc['credit_used'] > 0 ? '#991b1b' : '#64748b'; ?>; font-size: 13px; font-variant-numeric: tabular-nums;">
 										<?php echo wp_kses_post(wc_price($acc['credit_used'])); ?>
 									</strong>
 									<?php if ($acc['credit_used'] > 0 && $acc['credit_limit'] > 0) : ?>
-										<div style="background: #e2e8f0; border-radius: 3px; height: 4px; width: 100%; margin-top: 4px; overflow: hidden;" title="<?php echo esc_attr($used_pct . '% used'); ?>">
+										<div style="background: #e2e8f0; border-radius: 3px; height: 3px; width: 100%; margin-top: 3px; overflow: hidden;" title="<?php echo esc_attr($used_pct . '% used'); ?>">
 											<div style="background: <?php echo esc_attr($bar_color); ?>; width: <?php echo esc_attr($used_pct); ?>%; height: 100%;"></div>
 										</div>
-										<div style="font-size: 10px; color: #64748b; margin-top: 2px;"><?php echo esc_html($used_pct . '% used'); ?></div>
+										<div style="font-size: 10px; color: #64748b; margin-top: 1px;"><?php echo esc_html($used_pct . '% used'); ?></div>
 									<?php endif; ?>
 								</td>
 
 								<!-- Available Credit -->
-								<td style="padding: 12px 12px; text-align: right; vertical-align: middle;">
+								<td style="text-align: right; vertical-align: middle;">
 									<strong style="color: #0f172a; font-size: 13px; font-variant-numeric: tabular-nums;"><?php echo wp_kses_post(wc_price($acc['credit_available'])); ?></strong>
 								</td>
 
-								<!-- Due Date -->
-								<td style="padding: 12px 12px; text-align: center; vertical-align: middle;">
+								<!-- Terms & Schedule -->
+								<td style="text-align: center; vertical-align: middle;">
+									<div style="font-size: 11px; color: #475569; font-weight: 600;"><?php echo esc_html($acc['terms'] ?: __('30 Days EOM', 'custom-woo-dashboard')); ?></div>
 									<?php
-									if ($acc['due_date']) {
+									if ($acc['due_date'] && $acc['credit_used'] > 0) {
 										$due_time = strtotime($acc['due_date']);
 										$date_formatted = date_i18n('d M Y', $due_time);
 										if ($acc['is_overdue']) {
-											echo '<span style="display: inline-block; background: #fee2e2; color: #dc2626; border: 1px solid #fca5a5; padding: 2px 7px; border-radius: 4px; font-weight: 700; font-size: 11px; white-space: nowrap;">⚠️ ' . esc_html__('Overdue', 'custom-woo-dashboard') . '<br><small>' . esc_html($date_formatted) . '</small></span>';
+											echo '<div style="margin-top: 3px;"><span style="display: inline-block; background: #fee2e2; color: #dc2626; border: 1px solid #fca5a5; padding: 2px 6px; border-radius: 4px; font-weight: 700; font-size: 10.5px; white-space: nowrap;">' . esc_html__('Overdue: ', 'custom-woo-dashboard') . esc_html($date_formatted) . '</span></div>';
 										} else {
 											$days_diff = round(($due_time - current_time('timestamp')) / DAY_IN_SECONDS);
 											$due_note = ($days_diff <= 7 && $days_diff >= 0) ? ' (' . sprintf(__('%dd left', 'custom-woo-dashboard'), $days_diff) . ')' : '';
-											echo '<span style="font-weight: 600; color: #0f172a; font-size: 12px; white-space: nowrap;">' . esc_html($date_formatted) . '</span><span style="font-size: 10px; color: #64748b; display: block;">' . esc_html($due_note) . '</span>';
+											echo '<div style="font-size: 11px; color: #0f172a; font-weight: 500; margin-top: 2px;">' . esc_html($date_formatted) . '<small style="color: #64748b;">' . esc_html($due_note) . '</small></div>';
 										}
-									} elseif ($acc['credit_used'] <= 0) {
-										echo '<span style="color: #166534; font-weight: 600; font-size: 11px; display: inline-flex; align-items: center; justify-content: center; gap: 3px; white-space: nowrap;"><span class="dashicons dashicons-yes" style="font-size: 14px; width: 14px; height: 14px;"></span> ' . esc_html__('Nil Balance', 'custom-woo-dashboard') . '</span>';
-									} else {
-										echo '<span style="color: #64748b; font-size: 11px; white-space: nowrap;">' . esc_html($acc['terms'] ?: __('30 Days EOM', 'custom-woo-dashboard')) . '</span>';
 									}
 									?>
 								</td>
 
 								<!-- Status & Pending Requests -->
-								<td style="padding: 12px 12px; text-align: center; vertical-align: middle;">
+								<td style="text-align: center; vertical-align: middle;">
 									<?php if (! empty($acc['pending_request'])) : ?>
 										<?php
 										$preq = $acc['pending_request'];
 										$is_increase = ((int) $preq->forminator_form_id === 0);
 										$badge_title = $is_increase ? sprintf(__('Increase: %s', 'custom-woo-dashboard'), wc_price($preq->requested_limit)) : sprintf(__('App: %s', 'custom-woo-dashboard'), wc_price($preq->requested_limit));
 										?>
-										<a href="<?php echo esc_url(admin_url('admin.php?page=cwd-v2-trade-applications&view=' . $preq->id)); ?>" class="button button-small" style="background: #fef3c7; border-color: #f59e0b; color: #92400e; font-weight: 700; font-size: 11px; padding: 2px 8px; height: auto; white-space: nowrap;">
+										<a href="<?php echo esc_url(admin_url('admin.php?page=cwd-v2-trade-applications&view=' . $preq->id)); ?>" class="button button-small" style="background: #fef3c7; border-color: #f59e0b; color: #92400e; font-weight: 700; font-size: 11px; padding: 2px 7px; height: auto; white-space: nowrap;">
 											<span class="dashicons dashicons-bell" style="font-size: 12px; width: 12px; height: 12px; line-height: 14px; vertical-align: middle;"></span>
-											<?php echo wp_kses_post($badge_title); ?> &rarr;
+											<?php echo wp_kses_post($badge_title); ?>
 										</a>
 									<?php else : ?>
 										<?php
@@ -1610,11 +1642,11 @@ class CWD_V2_Trade_Applications
 								</td>
 
 								<!-- Actions -->
-								<td style="padding: 12px 14px; text-align: right; vertical-align: middle; white-space: nowrap;">
+								<td style="text-align: right; vertical-align: middle; white-space: nowrap;">
 									<div style="display: inline-flex; align-items: center; justify-content: flex-end; gap: 4px;">
 										<?php if ($acc['user_id'] > 0) : ?>
 											<details style="display: inline-block; position: relative;">
-												<summary class="button button-small" style="font-size: 11px; cursor: pointer;">
+												<summary class="button button-small" style="font-size: 11px; cursor: pointer; padding: 1px 6px;">
 													<?php esc_html_e('Limit', 'custom-woo-dashboard'); ?>
 												</summary>
 												<div style="position: absolute; right: 0; top: 100%; margin-top: 4px; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 12px; z-index: 100; box-shadow: 0 4px 12px rgba(0,0,0,0.15); width: 220px; text-align: left;">
@@ -1632,7 +1664,7 @@ class CWD_V2_Trade_Applications
 												</div>
 											</details>
 
-											<a href="<?php echo esc_url(get_edit_user_link($acc['user_id'])); ?>" class="button button-small" style="font-size: 11px;" target="_blank">
+											<a href="<?php echo esc_url(get_edit_user_link($acc['user_id'])); ?>" class="button button-small" style="font-size: 11px; padding: 1px 6px;" target="_blank">
 												<?php esc_html_e('Profile', 'custom-woo-dashboard'); ?>
 											</a>
 										<?php elseif (! empty($acc['raw_app'])) : ?>
@@ -1698,19 +1730,19 @@ class CWD_V2_Trade_Applications
 			</form>
 		</div>
 
-		<div class="cwd-table-responsive" style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); overflow-x: auto; -webkit-overflow-scrolling: touch; margin-bottom: 24px;">
-			<table class="wp-list-table widefat striped cwd-applications-queue-table" style="width: 100%; min-width: 1100px; border-collapse: collapse; border: none; margin: 0; table-layout: auto;">
+		<div class="cwd-table-responsive">
+			<table class="wp-list-table widefat striped cwd-applications-queue-table">
 				<thead>
 					<tr style="background: #f8fafc; border-bottom: 1px solid #e2e8f0;">
-						<th style="width: 60px; font-weight: 700; padding: 12px 14px; text-align: left; vertical-align: middle; white-space: nowrap;"><?php esc_html_e('ID', 'custom-woo-dashboard'); ?></th>
-						<th style="font-weight: 700; padding: 12px 14px; text-align: left; vertical-align: middle; white-space: nowrap;"><?php esc_html_e('Date', 'custom-woo-dashboard'); ?></th>
-						<th style="font-weight: 700; padding: 12px 14px; text-align: left; vertical-align: middle; white-space: nowrap;"><?php esc_html_e('Company', 'custom-woo-dashboard'); ?></th>
-						<th style="font-weight: 700; padding: 12px 14px; text-align: left; vertical-align: middle; white-space: nowrap;"><?php esc_html_e('Applicant', 'custom-woo-dashboard'); ?></th>
-						<th style="font-weight: 700; padding: 12px 14px; text-align: left; vertical-align: middle; white-space: nowrap;"><?php esc_html_e('Email', 'custom-woo-dashboard'); ?></th>
-						<th style="font-weight: 700; padding: 12px 14px; text-align: right; vertical-align: middle; white-space: nowrap;"><?php esc_html_e('Requested Facility', 'custom-woo-dashboard'); ?></th>
-						<th style="font-weight: 700; padding: 12px 14px; text-align: right; vertical-align: middle; white-space: nowrap;"><?php esc_html_e('Approved Limit', 'custom-woo-dashboard'); ?></th>
-						<th style="font-weight: 700; width: 120px; padding: 12px 14px; text-align: center; vertical-align: middle; white-space: nowrap;"><?php esc_html_e('Status', 'custom-woo-dashboard'); ?></th>
-						<th style="width: 110px; font-weight: 700; padding: 12px 14px; text-align: right; vertical-align: middle; white-space: nowrap;"><?php esc_html_e('Action', 'custom-woo-dashboard'); ?></th>
+						<th style="width: 50px; font-weight: 700; text-align: left; vertical-align: middle;"><?php esc_html_e('ID', 'custom-woo-dashboard'); ?></th>
+						<th style="width: 120px; font-weight: 700; text-align: left; vertical-align: middle;"><?php esc_html_e('Date', 'custom-woo-dashboard'); ?></th>
+						<th style="font-weight: 700; text-align: left; vertical-align: middle;"><?php esc_html_e('Company', 'custom-woo-dashboard'); ?></th>
+						<th style="font-weight: 700; text-align: left; vertical-align: middle;"><?php esc_html_e('Applicant', 'custom-woo-dashboard'); ?></th>
+						<th style="font-weight: 700; text-align: left; vertical-align: middle;"><?php esc_html_e('Email', 'custom-woo-dashboard'); ?></th>
+						<th style="width: 110px; font-weight: 700; text-align: right; vertical-align: middle;"><?php esc_html_e('Requested', 'custom-woo-dashboard'); ?></th>
+						<th style="width: 110px; font-weight: 700; text-align: right; vertical-align: middle;"><?php esc_html_e('Approved', 'custom-woo-dashboard'); ?></th>
+						<th style="width: 90px; font-weight: 700; text-align: center; vertical-align: middle;"><?php esc_html_e('Status', 'custom-woo-dashboard'); ?></th>
+						<th style="width: 80px; font-weight: 700; text-align: right; vertical-align: middle;"><?php esc_html_e('Action', 'custom-woo-dashboard'); ?></th>
 					</tr>
 				</thead>
 				<tbody>
@@ -2138,7 +2170,7 @@ class CWD_V2_Trade_Applications
 
 								<div style="margin-bottom: 16px;">
 									<label for="internal_note" style="display: block; font-size: 13px; font-weight: 600; color: #334155; margin-bottom: 4px;">
-										<?php esc_html_e('🔒 Internal Staff Note (Private - Staff Only)', 'custom-woo-dashboard'); ?>
+										<?php esc_html_e('Internal Staff Note (Private - Staff Only)', 'custom-woo-dashboard'); ?>
 									</label>
 									<textarea name="internal_note" id="internal_note" rows="2" style="width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px; font-size: 13px; background: #f8fafc;" placeholder="<?php esc_attr_e('Private internal staff note...', 'custom-woo-dashboard'); ?>"></textarea>
 								</div>
@@ -2169,7 +2201,7 @@ class CWD_V2_Trade_Applications
 
 								<div style="margin-bottom: 14px;">
 									<label for="reject_internal_note" style="display: block; font-size: 13px; font-weight: 600; color: #334155; margin-bottom: 4px;">
-										<?php esc_html_e('🔒 Internal Staff Note (Private - Staff Only)', 'custom-woo-dashboard'); ?>
+										<?php esc_html_e('Internal Staff Note (Private - Staff Only)', 'custom-woo-dashboard'); ?>
 									</label>
 									<textarea name="internal_note" id="reject_internal_note" rows="2" style="width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px; font-size: 13px; background: #f8fafc;" placeholder="<?php esc_attr_e('Private internal staff note...', 'custom-woo-dashboard'); ?>"></textarea>
 								</div>
@@ -2211,7 +2243,7 @@ class CWD_V2_Trade_Applications
 								<?php endif; ?>
 								<?php if ($internal_note) : ?>
 									<tr>
-										<th style="padding: 6px 0;"><?php esc_html_e('🔒 Private Staff Note', 'custom-woo-dashboard'); ?></th>
+										<th style="padding: 6px 0;"><?php esc_html_e('Private Staff Note', 'custom-woo-dashboard'); ?></th>
 										<td style="padding: 6px 0; font-style: italic; color: #475569; background: #f8fafc; padding: 6px 10px; border-radius: 4px; border-left: 3px solid #0284c7;"><?php echo esc_html($internal_note); ?></td>
 									</tr>
 								<?php endif; ?>
