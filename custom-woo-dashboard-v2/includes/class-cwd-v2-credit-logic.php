@@ -512,6 +512,32 @@ class CWD_V2_Credit_Logic
 				}
 			}
 		}
+
+		// Fallback to external Credits CPT postmeta if still 0
+		if ($balance <= 0) {
+			global $wpdb;
+			$u = get_userdata($user_id);
+			$email = $u ? $u->user_email : '';
+			$cpt_balance = (float) $wpdb->get_var($wpdb->prepare(
+				"SELECT pm.meta_value FROM {$wpdb->postmeta} pm
+				 INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
+				 WHERE p.post_type IN ('credits', 'wc_cs_credits', 'fpc_credits')
+				   AND pm.meta_key IN ('total_outstanding', '_total_outstanding', 'wc_cs_total_outstanding', '_wc_cs_total_outstanding', 'outstanding_credits')
+				   AND CAST(pm.meta_value AS DECIMAL(10,2)) > 0
+				   AND (p.post_author = %d OR p.ID IN (
+				       SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key IN ('_user_id', 'user_id', 'fpc_user_id', 'customer_id', 'email', 'user_email') AND (meta_value = %s OR meta_value = %s)
+				   ))
+				 ORDER BY CAST(pm.meta_value AS DECIMAL(10,2)) DESC LIMIT 1",
+				$user_id,
+				(string) $user_id,
+				$email
+			));
+			if ($cpt_balance > 0) {
+				$balance = $cpt_balance;
+				update_user_meta($user_id, '_credit_balance', $balance);
+			}
+		}
+
 		return max(0.0, $balance);
 	}
 
