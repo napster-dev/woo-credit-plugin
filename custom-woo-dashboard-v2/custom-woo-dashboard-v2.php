@@ -13,11 +13,18 @@ if (! defined('ABSPATH')) {
 
 define('CWD_V2_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CWD_V2_PLUGIN_URL', plugin_dir_url(__FILE__));
-define('CWD_V2_VERSION', '2.2.2');
+define('CWD_V2_VERSION', '2.2.12');
 
 // Include activator right away for the hook
 require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-activator.php';
 register_activation_hook(__FILE__, array('CWD_V2_Activator', 'activate'));
+
+// Ensure WooCommerce phone field is set to required
+add_action('init', function () {
+	if (get_option('woocommerce_checkout_phone_field') !== 'required') {
+		update_option('woocommerce_checkout_phone_field', 'required');
+	}
+}, 5);
 
 // Init Plugin when plugins are loaded
 add_action('plugins_loaded', 'cwd_v2_init_plugin');
@@ -38,6 +45,8 @@ if (! function_exists('cwd_v2_init_plugin')) {
 			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-rest-api.php';
 			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-trade-applications.php';
 			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-credits-bridge.php';
+			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-trade-number-migrator.php';
+			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-blink-express.php';
 
 			CWD_V2_Activator::register_roles();
 			CWD_V2_Shortcode::init();
@@ -50,6 +59,7 @@ if (! function_exists('cwd_v2_init_plugin')) {
 			CWD_V2_REST_API::init();
 			CWD_V2_Trade_Applications::init();
 			CWD_V2_Credits_Bridge::init();
+			CWD_V2_Blink_Express::init();
 
 			// Enqueue dashboard styles across all front-end pages
 			add_action('wp_enqueue_scripts', 'cwd_v2_enqueue_frontend_styles', 20);

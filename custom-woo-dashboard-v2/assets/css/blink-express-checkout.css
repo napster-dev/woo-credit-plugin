@@ -1,0 +1,296 @@
+/* Blink Express Checkout (Inside Payment Section) Styling */
+.cwd-blink-express-container {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 20px 0 22px 0 !important;
+    padding: 0 !important;
+    background: transparent !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    box-sizing: border-box !important;
+    clear: both !important;
+    display: block !important;
+}
+
+/* Hide (optional) badge and tag on phone number field */
+.wc-block-components-text-input:has(#phone) label .wc-block-components-text-input__optional,
+.wc-block-components-text-input:has(#billing-phone) label .wc-block-components-text-input__optional,
+.wc-block-components-text-input:has(input[type="tel"]) label .wc-block-components-text-input__optional,
+.woocommerce-billing-fields .form-row:has(#billing_phone) label .optional {
+    display: none !important;
+}
+
+/* Subtle Divider with "OR PAY WITH" */
+.cwd-blink-express-header {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    margin: 0 0 16px 0 !important;
+    width: 100% !important;
+}
+
+.cwd-blink-divider-line {
+    flex: 1 !important;
+    height: 1px !important;
+    background: #e2e8f0 !important;
+    border: none !important;
+}
+
+.cwd-blink-express-title {
+    padding: 0 16px !important;
+    font-size: 11px !important;
+    font-weight: 700 !important;
+    color: #64748b !important;
+    text-transform: uppercase !important;
+    letter-spacing: 1.2px !important;
+    white-space: nowrap !important;
+}
+
+/* Button Row: Centered Side-by-Side with 16px gap */
+.cwd-blink-express-grid {
+    display: flex !important;
+    flex-direction: row !important;
+    justify-content: center !important;
+    align-items: center !important;
+    gap: 16px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    background: transparent !important;
+    box-sizing: border-box !important;
+}
+
+/* Each Button Slot: Standalone 240px wide, 48px height rounded black pill */
+.cwd-blink-btn-slot {
+    flex: 0 1 240px !important;
+    width: 240px !important;
+    max-width: 260px !important;
+    min-width: 180px !important;
+    height: 48px !important;
+    min-height: 48px !important;
+    max-height: 48px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    box-sizing: border-box !important;
+    position: relative !important;
+    background: #000000 !important;
+    border-radius: 6px !important;
+    overflow: hidden !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15) !important;
+    transition: opacity 0.2s ease, transform 0.15s ease !important;
+}
+
+.cwd-blink-btn-slot:hover {
+    opacity: 0.92 !important;
+}
+
+/* Form and wrapper reset */
+.cwd-blink-btn-slot form,
+.cwd-blink-btn-slot .cwd-blink-pay-form {
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 48px !important;
+    max-height: 48px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: transparent !important;
+    box-sizing: border-box !important;
+    border: none !important;
+}
+
+/* Hide empty wrapper elements injected by Blink so they don't break layout */
+.cwd-blink-btn-slot #blinkGooglePay,
+.cwd-blink-btn-slot .fieldgroup-container,
+.cwd-blink-btn-slot .mb-4 {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    position: absolute !important;
+    overflow: hidden !important;
+}
+
+/* Google Pay #container */
+.cwd-blink-btn-slot #container {
+    width: 100% !important;
+    height: 48px !important;
+    min-height: 48px !important;
+    max-height: 48px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    background: transparent !important;
+    border-radius: 6px !important;
+    overflow: hidden !important;
+    box-sizing: border-box !important;
+}
+
+/* Google Pay Button & Elements */
+.cwd-blink-btn-slot #container > button,
+.cwd-blink-btn-slot #container > div,
+.cwd-blink-btn-slot #container > iframe,
+.cwd-blink-btn-slot .gpay-button {
+    width: 100% !important;
+    height: 48px !important;
+    min-height: 48px !important;
+    max-height: 48px !important;
+    border-radius: 6px !important;
+    cursor: pointer !important;
+    box-sizing: border-box !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    border: none !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    overflow: hidden !important;
+    letter-spacing: normal !important;
+    text-transform: none !important;
+    line-height: normal !important;
+    background-color: #000000 !important;
+    background-position: center center !important;
+    box-shadow: none !important;
+}
+
+.cwd-blink-btn-slot .gpay-button-fill,
+.cwd-blink-btn-slot .gpay-card-info-container {
+    width: 100% !important;
+    height: 100% !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-sizing: border-box !important;
+    vertical-align: middle !important;
+}
+
+.cwd-blink-btn-slot .gpay-card-info-container * {
+    vertical-align: middle !important;
+    display: inline-flex !important;
+    align-items: center !important;
+}
+
+/* Apple Pay wrapper and button */
+.cwd-blink-btn-slot #blinkApplePay {
+    width: 100% !important;
+    height: 48px !important;
+    min-height: 48px !important;
+    max-height: 48px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: transparent !important;
+    box-sizing: border-box !important;
+}
+
+.cwd-blink-btn-slot apple-pay-button,
+.cwd-blink-btn-slot #apple-pay-btn,
+apple-pay-button#apple-pay-btn {
+    --apple-pay-button-width: 100% !important;
+    --apple-pay-button-height: 48px !important;
+    --apple-pay-button-border-radius: 6px !important;
+    --apple-pay-button-padding: 0px !important;
+    --apple-pay-button-box-sizing: border-box !important;
+    width: 100% !important;
+    height: 48px !important;
+    min-height: 48px !important;
+    max-height: 48px !important;
+    border-radius: 6px !important;
+    cursor: pointer !important;
+    box-sizing: border-box !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    overflow: hidden !important;
+    -webkit-appearance: -apple-pay-button !important;
+    border: none !important;
+}
+
+/* Theme button reset override */
+.cwd-blink-btn-slot button,
+.cwd-blink-btn-slot .gpay-button,
+.cwd-blink-btn-slot apple-pay-button,
+.cwd-native-pay-btn {
+    appearance: none !important;
+    -webkit-appearance: none !important;
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    line-height: normal !important;
+    text-transform: none !important;
+    letter-spacing: normal !important;
+    vertical-align: middle !important;
+}
+
+/* Native placeholder buttons */
+.cwd-native-pay-btn {
+    width: 100% !important;
+    height: 48px !important;
+    min-height: 48px !important;
+    max-height: 48px !important;
+    border-radius: 6px !important;
+    border: none !important;
+    cursor: pointer !important;
+    font-size: 15px !important;
+    font-weight: 600 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 8px !important;
+    box-sizing: border-box !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #000000 !important;
+    color: #ffffff !important;
+}
+
+.cwd-native-pay-btn svg {
+    display: inline-block !important;
+    vertical-align: middle !important;
+    margin: 0 auto !important;
+}
+
+.cwd-gpay-native-btn {
+    background: #000000 !important;
+    color: #ffffff !important;
+}
+
+.cwd-applepay-native-btn {
+    background: #000000 !important;
+    color: #ffffff !important;
+}
+
+/* Mobile Responsive */
+@media (max-width: 520px) {
+    .cwd-blink-express-grid {
+        flex-direction: column !important;
+        gap: 12px !important;
+        width: 100% !important;
+    }
+    .cwd-blink-btn-slot {
+        flex: 1 1 100% !important;
+        width: 100% !important;
+        max-width: 100% !important;
+    }
+    .cwd-blink-btn-slot #container button,
+    .cwd-blink-btn-slot apple-pay-button,
+    .cwd-native-pay-btn {
+        max-width: 100% !important;
+    }
+}

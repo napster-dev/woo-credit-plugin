@@ -79,9 +79,9 @@ final class CWD_V2_Blocks_Payment_Gateway extends AbstractPaymentMethodType
 			'credit_balance'      => $credit_balance,
 			'available_credit'    => $available_credit,
 			'due_date'            => $due_date,
-			'formatted_limit'     => wp_strip_all_tags(wc_price($credit_limit)),
-			'formatted_balance'   => wp_strip_all_tags(wc_price($credit_balance)),
-			'formatted_available' => wp_strip_all_tags(wc_price($available_credit)),
+			'formatted_limit'     => html_entity_decode(wp_strip_all_tags(wc_price($credit_limit)), ENT_QUOTES, 'UTF-8'),
+			'formatted_balance'   => html_entity_decode(wp_strip_all_tags(wc_price($credit_balance)), ENT_QUOTES, 'UTF-8'),
+			'formatted_available' => html_entity_decode(wp_strip_all_tags(wc_price($available_credit)), ENT_QUOTES, 'UTF-8'),
 		);
 	}
 }

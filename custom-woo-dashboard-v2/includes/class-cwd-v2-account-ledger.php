@@ -24,6 +24,13 @@ class CWD_V2_Account_Ledger {
 	}
 
 	/**
+	 * Alias for table_name()
+	 */
+	public static function get_table_name() {
+		return self::table_name();
+	}
+
+	/**
 	 * Create transactions ledger table
 	 */
 	public static function create_table() {

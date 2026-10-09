@@ -341,7 +341,7 @@ class CWD_V2_Credits_Bridge
 		if (! get_user_meta($user_id, 'ews_account_number', true)) {
 			$last_num = (int) get_option('cwd_v2_last_trade_number', 0);
 			$last_num++;
-			$trade_number = 'EWS-T' . str_pad($last_num, 4, '0', STR_PAD_LEFT);
+			$trade_number = 'EWS-' . str_pad($last_num, 6, '0', STR_PAD_LEFT);
 			update_user_meta($user_id, 'ews_account_number', $trade_number);
 			update_option('cwd_v2_last_trade_number', $last_num);
 		}
