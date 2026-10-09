@@ -2024,6 +2024,34 @@ class CWD_V2_Trade_Applications
 							</p>
 						</td>
 					</tr>
+					<tr>
+						<th colspan="2" style="padding-top: 24px; padding-bottom: 8px;">
+							<div style="border-top: 1px solid #e2e8f0; padding-top: 18px;">
+								<h4 style="margin: 0; font-size: 14px; font-weight: 700; color: #1e293b; display: flex; align-items: center; gap: 6px;">
+									<span class="dashicons dashicons-rest-api" style="color: #0284c7;"></span>
+									<?php esc_html_e('Odoo ERP Integration & Webhook Security', 'custom-woo-dashboard'); ?>
+								</h4>
+								<p style="margin: 4px 0 0; font-size: 12px; color: #64748b; font-weight: normal;">
+									<?php esc_html_e('Shared secret key used to authenticate inbound Odoo webhooks (Shipment Tracking, Backorder state transitions, Invoice sync, and Outbox events). Matches la_woocommerce.backorder_odoo_secret or la_woocommerce.dashboard_sync_secret in Odoo.', 'custom-woo-dashboard'); ?>
+								</p>
+							</div>
+						</th>
+					</tr>
+					<tr>
+						<th scope="row"><label for="cwd_odoo_secret_key"><?php esc_html_e('Odoo Shared Secret Key', 'custom-woo-dashboard'); ?></label></th>
+						<td>
+							<input type="password" name="cwd_odoo_secret_key" id="cwd_odoo_secret_key" value="<?php echo esc_attr(get_option('cwd_odoo_secret_key', '')); ?>" class="regular-text" autocomplete="off" />
+							<p class="description">
+								<?php
+								if (defined('CWD_ODOO_SECRET_KEY')) {
+									esc_html_e('Overridden by CWD_ODOO_SECRET_KEY constant in wp-config.php.', 'custom-woo-dashboard');
+								} else {
+									esc_html_e('In Odoo, set this value in la_woocommerce.backorder_odoo_secret or la_woocommerce.dashboard_sync_secret.', 'custom-woo-dashboard');
+								}
+								?>
+							</p>
+						</td>
+					</tr>
 				</table>
 				<div style="margin-top: 20px;">
 					<?php submit_button(__('Save Settings', 'custom-woo-dashboard')); ?>
@@ -2578,6 +2606,11 @@ class CWD_V2_Trade_Applications
 			'default'           => '',
 		));
 		register_setting('cwd_v2_trade_settings', 'cwd_v2_blink_secret_key', array(
+			'type'              => 'string',
+			'sanitize_callback' => 'sanitize_text_field',
+			'default'           => '',
+		));
+		register_setting('cwd_v2_trade_settings', 'cwd_odoo_secret_key', array(
 			'type'              => 'string',
 			'sanitize_callback' => 'sanitize_text_field',
 			'default'           => '',

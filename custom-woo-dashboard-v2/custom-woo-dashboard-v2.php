@@ -13,7 +13,7 @@ if (! defined('ABSPATH')) {
 
 define('CWD_V2_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CWD_V2_PLUGIN_URL', plugin_dir_url(__FILE__));
-define('CWD_V2_VERSION', '2.2.12');
+define('CWD_V2_VERSION', '2.2.14');
 
 // Include activator right away for the hook
 require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-activator.php';
@@ -47,6 +47,7 @@ if (! function_exists('cwd_v2_init_plugin')) {
 			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-credits-bridge.php';
 			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-trade-number-migrator.php';
 			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-blink-express.php';
+			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-shipment-tracking.php';
 
 			CWD_V2_Activator::register_roles();
 			CWD_V2_Shortcode::init();
@@ -60,6 +61,7 @@ if (! function_exists('cwd_v2_init_plugin')) {
 			CWD_V2_Trade_Applications::init();
 			CWD_V2_Credits_Bridge::init();
 			CWD_V2_Blink_Express::init();
+			CWD_V2_Shipment_Tracking::init();
 
 			// Enqueue dashboard styles across all front-end pages
 			add_action('wp_enqueue_scripts', 'cwd_v2_enqueue_frontend_styles', 20);

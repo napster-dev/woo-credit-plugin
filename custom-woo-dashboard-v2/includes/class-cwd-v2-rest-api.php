@@ -68,9 +68,26 @@ class CWD_V2_REST_API
 	/**
 	 * Authorization callback for credit meta in REST API
 	 */
-	public static function rest_meta_auth_callback()
+	public static function rest_meta_auth_callback($request = null)
 	{
-		return current_user_can('manage_woocommerce') || current_user_can('manage_options');
+		if (current_user_can('manage_woocommerce') || current_user_can('manage_options')) {
+			return true;
+		}
+
+		if ($request instanceof WP_REST_Request) {
+			$auth_header = $request->get_header('X-Odoo-Secret') 
+				?: $request->get_header('X-CWD-SECRET-KEY') 
+				?: $request->get_header('X-ODOO-SECRET') 
+				?: $request->get_param('secret_key');
+
+			$secret_key = defined('CWD_ODOO_SECRET_KEY') ? CWD_ODOO_SECRET_KEY : get_option('cwd_odoo_secret_key', '');
+
+			if (! empty($secret_key) && ! empty($auth_header) && hash_equals((string) $secret_key, (string) $auth_header)) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**
