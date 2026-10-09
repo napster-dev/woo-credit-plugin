@@ -85,8 +85,9 @@ class CWD_V2_Shortcode
 
 		echo '<div class="cwd-v2-dashboard-container">';
 
-		// Enqueue styles
-		wp_enqueue_style('cwd-v2-dashboard-style', CWD_V2_PLUGIN_URL . 'assets/css/style.css', array(), '1.0.2');
+		// Enqueue styles with version constant
+		$ver = defined('CWD_V2_VERSION') ? CWD_V2_VERSION : '2.2.2';
+		wp_enqueue_style('cwd-v2-dashboard-style', CWD_V2_PLUGIN_URL . 'assets/css/style.css', array(), $ver);
 
 		if ($is_endpoint) {
 			// We are on an endpoint page (e.g., Orders, Account Details)

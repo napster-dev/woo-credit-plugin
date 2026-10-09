@@ -1,20 +1,18 @@
 <?php
 
 /**
- * Unified Credit System Bridge
+ * Two-way Unified Bridge between Trade Applications and the WooCommerce Credits plugin (wc_cs / Credits for WooCommerce).
  *
- * Implements native integration between WooCommerce, customer trade applications,
- * the WooCommerce Credit System (Credits for WooCommerce / wc_cs), and Odoo.
- *
- * Key guarantees:
- * 1. Authors credit posts as each customer's user ID so Credits > Credits list displays
- *    real usernames (not "accounts") and clicking "View more" opens the record without modal prompts.
- * 2. Populates all 11 Basic Details fields using the user's REAL submitted application data
- *    from Forminator / trade applications, preserving existing values and never hardcoding defaults.
- * 3. Populates all wc_cs_form_field IDs (31596, 31595, 31583, 31584, 31588, 31589, 31590, 23162, 25894, 25895, 23163)
- *    and semantic meta keys so the "Basic Details" metabox renders cleanly.
- * 4. Listens on load-post.php to ensure all metadata is intact before rendering.
- * 5. Syncs live credit limits and balances bidirectionally with Odoo.
+ * Ensures:
+ * 1. Trade applications submitted on the site (via Forminator or customer dashboard)
+ *    are immediately forwarded and registered in the Credits plugin with full submitted details.
+ * 2. Approvals, status updates, or credit limit changes made inside Credits > Credits
+ *    instantly update the Trade Applications table, activate the customer role, and sync to Odoo.
+ * 3. Approvals made inside WooCommerce > Trade Applications instantly update and activate
+ *    the customer inside the Credits plugin.
+ * 4. Credit posts are strictly authored as the customer user ID with all user ID meta keys set,
+ *    preventing the "Register Credits to New User" modal popup and correctly displaying customer logins.
+ * 5. All 11 Basic Details fields are dynamically populated from each customer's actual submitted application.
  */
 
 if (! defined('ABSPATH')) {
@@ -31,7 +29,7 @@ class CWD_V2_Credits_Bridge
 	private static $is_syncing = false;
 
 	/**
-	 * Known user meta keys used by Credits plugins
+	 * Known user meta keys used by Credits plugins (Flintop / FantasticPlugins / WooCommerce Credits)
 	 *
 	 * @var array
 	 */
@@ -65,49 +63,45 @@ class CWD_V2_Credits_Bridge
 	 */
 	public static function init()
 	{
-		// 1. Hook into user meta changes (fires when Odoo or Woo updates credit limits)
+		// 1. Hook into WordPress user meta updates (fires whenever an admin or plugin updates credit meta)
 		add_action('updated_user_meta', array(__CLASS__, 'on_user_meta_updated'), 10, 4);
 		add_action('added_user_meta', array(__CLASS__, 'on_user_meta_updated'), 10, 4);
 
-		// 2. Hook into role changes
+		// 2. Hook into role changes (if user is granted credit_account role elsewhere)
 		add_action('set_user_role', array(__CLASS__, 'on_user_role_changed'), 10, 3);
 
-		// 3. Hook into Credit post saves in wp-admin
+		// 3. Hook into post status changes and saves in wp-admin
+		add_action('transition_post_status', array(__CLASS__, 'on_post_status_transition'), 10, 3);
 		add_action('save_post', array(__CLASS__, 'on_post_saved'), 20, 2);
 
-		// 4. Hook on post.php edit load: ensures all 11 Basic Details fields are populated before screen renders
+		// 4. Hook into postmeta updates on credit posts (catches metabox/inline credit limit and status updates)
+		add_action('updated_post_meta', array(__CLASS__, 'on_post_meta_updated'), 10, 4);
+		add_action('added_post_meta', array(__CLASS__, 'on_post_meta_updated'), 10, 4);
+
+		// 5. Hook into post editing load to ensure all 11 Basic Details are present and prevent modal redirection
 		add_action('load-post.php', array(__CLASS__, 'on_load_post_edit'));
 
-		// 5. Hook into Forminator submission to create/update credit post immediately
+		// 6. Suppress "Register Credits to New User" popup modal on edit screen and inject customer identification
+		add_action('admin_head', array(__CLASS__, 'inject_credits_edit_screen_assets'));
+		add_action('edit_form_top', array(__CLASS__, 'inject_credit_post_hidden_user_fields'));
+
+		// 7. Hook into Forminator submission to create/update credit post immediately
 		add_action('forminator_form_after_save_entry', array(__CLASS__, 'on_forminator_submission'), 20, 2);
-
-		// 6. Hook on admin_init for safe self-healing
-		add_action('admin_init', array(__CLASS__, 'maybe_reconcile_admin_requests'));
-
-		// 7. Initial self-healing on boot
-		self::repair_and_sync_all();
 	}
 
-	/**
-	 * Self-healing routine to link every credit user with their post
-	 */
-	public static function maybe_reconcile_admin_requests()
-	{
-		if (! current_user_can('manage_woocommerce') && ! current_user_can('manage_options')) {
-			return;
-		}
-
-		$last_run = (int) get_transient('cwd_v2_credits_reconcile_last');
-		if ($last_run && (time() - $last_run) < 30) {
-			return;
-		}
-		set_transient('cwd_v2_credits_reconcile_last', time(), 30);
-
-		self::repair_and_sync_all();
-	}
 
 	/**
-	 * Forward a newly submitted trade application into the Credits plugin
+	 * Forward a newly submitted trade application into the Credits plugin ecosystem.
+	 *
+	 * @param int         $app_id           Trade application ID
+	 * @param int|null    $user_id          WordPress user ID (if exists)
+	 * @param string      $applicant_email  Email of applicant
+	 * @param string      $applicant_name   Full name of applicant
+	 * @param string      $company_name     Company name
+	 * @param string      $phone            Contact phone
+	 * @param float       $requested_limit  Requested credit limit
+	 * @param array       $form_data        Submitted form data
+	 * @return int|null   User ID associated with application
 	 */
 	public static function forward_application_to_credits_plugin($app_id, $user_id, $applicant_email, $applicant_name, $company_name, $phone, $requested_limit, $form_data = array())
 	{
@@ -118,7 +112,7 @@ class CWD_V2_Credits_Bridge
 		self::$is_syncing = true;
 		global $wpdb;
 
-		// 1. Ensure user exists
+		// 1. Ensure a WordPress user exists so the Credits plugin can track them
 		if (! $user_id) {
 			$existing_user = get_user_by('email', sanitize_email($applicant_email));
 			if ($existing_user) {
@@ -147,15 +141,25 @@ class CWD_V2_Credits_Bridge
 		}
 
 		if ($user_id) {
-			// Update application with user_id in applications table
+			// Update application with user_id in trade applications table
 			if ($app_id && class_exists('CWD_V2_Trade_Applications')) {
 				$apps_table = CWD_V2_Trade_Applications::get_table_name();
 				$wpdb->update($apps_table, array('user_id' => $user_id), array('id' => $app_id), array('%d'), array('%d'));
 			}
 
+			// Check if this is an existing active credit account or credit limit increase request
+			$is_existing_active_account = false;
 			$existing_limit = (float) get_user_meta($user_id, '_credit_limit', true);
-			$is_active      = ($existing_limit > 0);
+			if ($existing_limit > 0) {
+				$is_existing_active_account = true;
+			}
+			$u_obj = get_userdata($user_id);
+			if ($u_obj && in_array('credit_account', (array) $u_obj->roles, true)) {
+				$is_existing_active_account = true;
+			}
+			$is_increase_request = (isset($form_data['application_type']) && 'credit_limit_increase' === $form_data['application_type']);
 
+			// Store company & phone in billing meta if not already populated
 			if ($company_name && ! get_user_meta($user_id, 'billing_company', true)) {
 				update_user_meta($user_id, 'billing_company', sanitize_text_field($company_name));
 			}
@@ -163,26 +167,32 @@ class CWD_V2_Credits_Bridge
 				update_user_meta($user_id, 'billing_phone', sanitize_text_field($phone));
 			}
 
-			if (! $is_active) {
+			// ONLY set status to pending if this is a brand new application for a non-credit user.
+			// NEVER demote an existing active credit customer to pending when requesting an increase!
+			if (! $is_existing_active_account && ! $is_increase_request) {
 				foreach (self::$credit_status_keys as $status_key) {
 					update_user_meta($user_id, $status_key, 'pending');
 				}
 			}
 
+			// Set requested limit & trace metadata
 			update_user_meta($user_id, '_requested_credit_limit', (float) $requested_limit);
+			update_user_meta($user_id, '_fpc_requested_limit', (float) $requested_limit);
+			update_user_meta($user_id, '_trade_application_id', (int) $app_id);
 
-			$target_status = $is_active ? 'active' : 'pending';
-			$target_limit  = $is_active ? $existing_limit : (float) $requested_limit;
+			$target_status = ($is_existing_active_account || $is_increase_request) ? 'active' : 'pending';
+			$target_limit  = ($is_existing_active_account || $is_increase_request) ? $existing_limit : (float) $requested_limit;
 
-			self::sync_to_external_credits_cpt(
-				$user_id,
-				$target_status,
-				$target_limit,
-				$applicant_name,
-				$applicant_email,
-				$company_name,
-				$form_data
-			);
+			// Dynamically forward to external Credits database tables if present
+			self::sync_to_external_credits_tables($user_id, $target_status, $target_limit, $applicant_email, $company_name);
+
+			// Dynamically forward to custom post types with all 11 form fields
+			self::sync_to_external_credits_cpt($user_id, $target_status, $target_limit, $applicant_name, $applicant_email, $company_name, $form_data);
+
+			// Standardized action hooks
+			do_action('cwd_v2_trade_application_received', $app_id, $user_id, $requested_limit);
+			do_action('credits_application_submitted', $user_id, $requested_limit, $form_data);
+			do_action('fpc_new_credit_application', $user_id, $requested_limit);
 		}
 
 		self::$is_syncing = false;
@@ -190,7 +200,215 @@ class CWD_V2_Credits_Bridge
 	}
 
 	/**
-	 * Hook on post.php edit load: ensures postmeta is complete before screen loads to prevent redirection
+	 * Synchronize Trade Applications when an approval occurs in the Credits plugin.
+	 *
+	 * @param int         $user_id          User ID that was approved
+	 * @param float|null  $approved_limit   Approved credit limit
+	 * @param string      $source_reason    Source/reason description
+	 * @return bool
+	 */
+	public static function sync_trade_application_from_credits_approval($user_id, $approved_limit = null, $source_reason = 'Credits plugin')
+	{
+		$user_id = (int) $user_id;
+		if (! $user_id || ! class_exists('CWD_V2_Trade_Applications')) {
+			return false;
+		}
+
+		$user = get_userdata($user_id);
+		if (! $user) {
+			return false;
+		}
+
+		if (self::$is_syncing) {
+			return true;
+		}
+		self::$is_syncing = true;
+
+		global $wpdb;
+		$apps_table = CWD_V2_Trade_Applications::get_table_name();
+		CWD_V2_Trade_Applications::ensure_table_exists();
+
+		// Fetch any pending application for this user
+		$pending_apps = $wpdb->get_results($wpdb->prepare(
+			"SELECT * FROM {$apps_table} WHERE (user_id = %d OR applicant_email = %s) AND status = %s ORDER BY id DESC",
+			$user_id,
+			$user->user_email,
+			CWD_V2_Trade_Applications::STATUS_PENDING
+		));
+
+		// Resolve approved credit limit
+		if ($approved_limit === null || (float) $approved_limit <= 0) {
+			$approved_limit = (float) get_user_meta($user_id, '_credit_limit', true);
+			if ($approved_limit <= 0 && class_exists('CWD_V2_Credit_Logic')) {
+				$approved_limit = CWD_V2_Credit_Logic::get_user_credit_limit($user_id);
+			}
+		}
+
+		$now = current_time('mysql');
+
+		if (! empty($pending_apps)) {
+			foreach ($pending_apps as $app) {
+				$is_increase = ((int) $app->forminator_form_id === 0);
+
+				// Credit limit increase requests must NEVER be auto-approved unless an admin explicitly approves
+				// an amount equal to or greater than the requested limit!
+				if ($is_increase) {
+					if ($approved_limit === null || (float) $approved_limit < (float) $app->requested_limit) {
+						continue; // Keep pending!
+					}
+				}
+
+				$limit_to_set = ($approved_limit > 0) ? $approved_limit : $app->requested_limit;
+				$wpdb->update(
+					$apps_table,
+					array(
+						'status'         => CWD_V2_Trade_Applications::STATUS_APPROVED,
+						'approved_limit' => $limit_to_set,
+						'admin_note'     => sprintf(__('Approved and synchronized via %s', 'custom-woo-dashboard'), $source_reason),
+						'reviewed_at'    => $now,
+						'user_id'        => $user_id,
+						'updated_at'     => $now,
+					),
+					array('id' => $app->id),
+					array('%s', '%f', '%s', '%s', '%d', '%s'),
+					array('%d')
+				);
+			}
+		} else {
+			// Update existing applications for this user so approved_limit is always current
+			$wpdb->query($wpdb->prepare(
+				"UPDATE {$apps_table} 
+				 SET status = %s, approved_limit = %f, user_id = %d, updated_at = %s 
+				 WHERE (user_id = %d OR (applicant_email = %s AND applicant_email != ''))",
+				CWD_V2_Trade_Applications::STATUS_APPROVED,
+				$approved_limit,
+				$user_id,
+				$now,
+				$user_id,
+				$user->user_email
+			));
+
+			// If no trade application record exists at all, create an approved record so customer dashboard sees it
+			$has_any = (int) $wpdb->get_var($wpdb->prepare(
+				"SELECT COUNT(*) FROM {$apps_table} WHERE user_id = %d OR applicant_email = %s",
+				$user_id,
+				$user->user_email
+			));
+
+			if ($has_any === 0 && $approved_limit > 0) {
+				$applicant_name = trim($user->first_name . ' ' . $user->last_name) ?: $user->display_name;
+				$company_name   = get_user_meta($user_id, 'billing_company', true) ?: '';
+				$phone          = get_user_meta($user_id, 'billing_phone', true) ?: '';
+
+				$wpdb->insert(
+					$apps_table,
+					array(
+						'forminator_form_id'  => 0,
+						'forminator_entry_id' => 0,
+						'applicant_email'     => $user->user_email,
+						'applicant_name'      => $applicant_name,
+						'company_name'        => $company_name,
+						'phone'               => $phone,
+						'requested_limit'     => $approved_limit,
+						'form_data'           => wp_json_encode(array('source' => 'credits_plugin_direct_registration')),
+						'status'              => CWD_V2_Trade_Applications::STATUS_APPROVED,
+						'approved_limit'      => $approved_limit,
+						'admin_note'          => sprintf(__('Created and approved via %s', 'custom-woo-dashboard'), $source_reason),
+						'reviewed_at'         => $now,
+						'user_id'             => $user_id,
+						'created_at'          => $now,
+						'updated_at'          => $now,
+					),
+					array('%d', '%d', '%s', '%s', '%s', '%s', '%f', '%s', '%s', '%f', '%s', '%s', '%d', '%s', '%s')
+				);
+			}
+		}
+
+		// Ensure credit_account role
+		if (! in_array('credit_account', (array) $user->roles, true) && $approved_limit > 0) {
+			$user->add_role('credit_account');
+		}
+
+		// Sync credit limit across all keys
+		if ($approved_limit !== null && class_exists('CWD_V2_Credit_Logic')) {
+			CWD_V2_Credit_Logic::sync_user_credit_limit($user_id, $approved_limit);
+			if (! metadata_exists('user', $user_id, '_credit_balance')) {
+				CWD_V2_Credit_Logic::sync_user_credit_balance($user_id, 0);
+			}
+		}
+
+		// Ensure EWS trade account number
+		if (! get_user_meta($user_id, 'ews_account_number', true)) {
+			$last_num = (int) get_option('cwd_v2_last_trade_number', 0);
+			$last_num++;
+			$trade_number = 'EWS-' . str_pad($last_num, 6, '0', STR_PAD_LEFT);
+			update_user_meta($user_id, 'ews_account_number', $trade_number);
+			update_option('cwd_v2_last_trade_number', $last_num);
+		}
+
+		self::$is_syncing = false;
+		return true;
+	}
+
+	/**
+	 * Synchronize the Credits plugin when an approval occurs in WooCommerce > Trade Applications.
+	 *
+	 * @param int   $app_id          Trade application ID
+	 * @param int   $user_id         User ID
+	 * @param float $approved_limit  Approved credit limit
+	 */
+	public static function sync_credits_plugin_from_trade_approval($app_id, $user_id, $approved_limit)
+	{
+		$user_id = (int) $user_id;
+		if (! $user_id) {
+			return;
+		}
+
+		if (self::$is_syncing) {
+			return;
+		}
+		self::$is_syncing = true;
+
+		$user = get_userdata($user_id);
+		if (! $user) {
+			self::$is_syncing = false;
+			return;
+		}
+
+		// 1. Sync all Credits plugin status meta keys to 'active'
+		foreach (self::$credit_status_keys as $status_key) {
+			update_user_meta($user_id, $status_key, 'active');
+		}
+
+		// 2. Sync all credit limit keys
+		if (class_exists('CWD_V2_Credit_Logic')) {
+			CWD_V2_Credit_Logic::sync_user_credit_limit($user_id, $approved_limit);
+			if (! metadata_exists('user', $user_id, '_credit_balance')) {
+				CWD_V2_Credit_Logic::sync_user_credit_balance($user_id, 0);
+			}
+		}
+
+		// 3. Ensure role
+		if (! in_array('credit_account', (array) $user->roles, true)) {
+			$user->add_role('credit_account');
+		}
+
+		// 4. Update external custom tables to active
+		self::sync_to_external_credits_tables($user_id, 'active', (float) $approved_limit, $user->user_email);
+
+		// 5. Update external custom post types to publish
+		self::sync_to_external_credits_cpt($user_id, 'active', (float) $approved_limit, $user->display_name, $user->user_email);
+
+		// 6. Fire action hooks
+		do_action('credits_user_activated', $user_id, $approved_limit);
+		do_action('fpc_user_credit_approved', $user_id, $approved_limit);
+		do_action('credits_credit_limit_updated', $user_id, $approved_limit);
+
+		self::$is_syncing = false;
+	}
+
+	/**
+	 * Hook on post.php edit load: ensures postmeta is complete before screen loads to prevent modal redirection
 	 */
 	public static function on_load_post_edit()
 	{
@@ -238,6 +456,81 @@ class CWD_V2_Credits_Bridge
 	}
 
 	/**
+	 * Inject admin CSS and JS on post.php for credits to suppress the "Register Credits to New User" modal
+	 */
+	public static function inject_credits_edit_screen_assets()
+	{
+		global $pagenow, $post;
+		if ('post.php' !== $pagenow || ! $post || ! in_array($post->post_type, array('credits', 'wc_cs_credits', 'fpc_credits'), true)) {
+			return;
+		}
+
+		?>
+		<style type="text/css">
+			/* Suppress "Register Credits to New User" modal popup on existing post edit screen */
+			.post-php.post-type-credits .wc_cs_modal[style*="display"],
+			.post-php.post-type-credits .fpc_modal[style*="display"],
+			.post-php.post-type-credits .ui-dialog[aria-describedby*="user"] {
+				display: none !important;
+			}
+		</style>
+		<script type="text/javascript">
+			jQuery(function($) {
+				function suppressNewUserModal() {
+					// Detect and dismiss any modal asking to search or register credits to a new user
+					$('div, section').filter(function() {
+						var $el = $(this);
+						if ($el.children().length > 0) {
+							var txt = $el.find('h1, h2, h3, h4, .title, p, div').first().text();
+							return txt && (txt.indexOf('Register Credits to New User') !== -1 || txt.indexOf('Search for a user') !== -1);
+						}
+						return false;
+					}).closest('.modal, .wc_cs_modal, .fpc_modal, .ui-dialog, div[style*="z-index"]').each(function() {
+						$(this).hide().css('display', 'none !important');
+						$('.modal-backdrop, .wc_cs_modal_backdrop, .ui-widget-overlay').hide().css('display', 'none !important');
+					});
+				}
+				suppressNewUserModal();
+				setTimeout(suppressNewUserModal, 50);
+				setTimeout(suppressNewUserModal, 200);
+				setTimeout(suppressNewUserModal, 600);
+				setTimeout(suppressNewUserModal, 1500);
+				$(document).ajaxComplete(suppressNewUserModal);
+			});
+		</script>
+		<?php
+	}
+
+	/**
+	 * Inject hidden user identification fields on credit post edit screen so third-party scripts recognize user
+	 */
+	public static function inject_credit_post_hidden_user_fields($post)
+	{
+		if (! $post || ! in_array($post->post_type, array('credits', 'wc_cs_credits', 'fpc_credits'), true)) {
+			return;
+		}
+
+		$user_id = self::resolve_user_id_for_credit_post($post);
+		if ($user_id) {
+			$u = get_userdata($user_id);
+			$email = $u ? $u->user_email : '';
+			$username = $u ? $u->user_login : '';
+			?>
+			<input type="hidden" name="wc_cs_user_id" id="wc_cs_user_id" value="<?php echo esc_attr($user_id); ?>" />
+			<input type="hidden" name="_wc_cs_user_id" value="<?php echo esc_attr($user_id); ?>" />
+			<input type="hidden" name="user_id" id="user_id" value="<?php echo esc_attr($user_id); ?>" />
+			<input type="hidden" name="_user_id" value="<?php echo esc_attr($user_id); ?>" />
+			<input type="hidden" name="customer_id" id="customer_id" value="<?php echo esc_attr($user_id); ?>" />
+			<input type="hidden" name="fpc_user_id" id="fpc_user_id" value="<?php echo esc_attr($user_id); ?>" />
+			<input type="hidden" name="credit_user_id" id="credit_user_id" value="<?php echo esc_attr($user_id); ?>" />
+			<input type="hidden" name="wc_cs_user_email" value="<?php echo esc_attr($email); ?>" />
+			<input type="hidden" name="user_email" value="<?php echo esc_attr($email); ?>" />
+			<input type="hidden" name="username" value="<?php echo esc_attr($username); ?>" />
+			<?php
+		}
+	}
+
+	/**
 	 * Helper: Resolve WordPress user ID associated with a credit post
 	 *
 	 * @param WP_Post|object $post
@@ -253,7 +546,12 @@ class CWD_V2_Credits_Bridge
 		global $wpdb;
 
 		// 1. Postmeta user ID keys
-		$id_keys = array('_user_id', 'user_id', 'fpc_user_id', '_fpc_user_id', '_customer_id', 'customer_id', 'fpc_user', '_fpc_user');
+		$id_keys = array(
+			'user_id', '_user_id', 'wc_cs_user_id', '_wc_cs_user_id',
+			'customer_id', '_customer_id', 'customer_user', '_customer_user',
+			'fpc_user_id', '_fpc_user_id', 'fpc_user', '_fpc_user',
+			'credit_user_id', '_credit_user_id'
+		);
 		foreach ($id_keys as $k) {
 			$uid = (int) get_post_meta($post_id, $k, true);
 			if ($uid > 0 && get_userdata($uid)) {
@@ -262,12 +560,19 @@ class CWD_V2_Credits_Bridge
 		}
 
 		// 2. Post author if customer assigned
-		if ((int) $post->post_author > 1 && get_userdata((int) $post->post_author)) {
-			return (int) $post->post_author;
+		if ((int) $post->post_author > 0 && get_userdata((int) $post->post_author)) {
+			$u = get_userdata((int) $post->post_author);
+			if ($u && ! in_array('administrator', (array) $u->roles, true)) {
+				return (int) $post->post_author;
+			}
 		}
 
 		// 3. Postmeta email keys
-		$email_keys = array('email', 'user_email', '_email', '_user_email', 'fpc_user_email', '_fpc_user_email', 'fpc_email', 'applicant_email', '_applicant_email');
+		$email_keys = array(
+			'user_email', '_user_email', 'wc_cs_user_email', '_wc_cs_user_email',
+			'email', '_email', 'fpc_user_email', '_fpc_user_email',
+			'fpc_email', 'applicant_email', '_applicant_email'
+		);
 		foreach ($email_keys as $k) {
 			$em = sanitize_email(get_post_meta($post_id, $k, true));
 			if ($em) {
@@ -286,17 +591,31 @@ class CWD_V2_Credits_Bridge
 			}
 		}
 
-		// 5. Check if post_title is username
+		// 5. Check if post_title or post_name is username
 		if ($post->post_title) {
 			$u = get_user_by('login', trim($post->post_title));
 			if ($u) {
 				return $u->ID;
 			}
 		}
+		if (! empty($post->post_name)) {
+			$u = get_user_by('login', trim($post->post_name));
+			if ($u) {
+				return $u->ID;
+			}
+		}
+		if (! empty($post->post_excerpt)) {
+			$ex = trim($post->post_excerpt);
+			$u = is_email($ex) ? get_user_by('email', $ex) : get_user_by('login', $ex);
+			if ($u) {
+				return $u->ID;
+			}
+		}
 
 		// 6. Match company name in trade applications
-		$company = get_post_meta($post_id, 'company_name', true) ?: get_post_meta($post_id, '23162', true) ?: $post->post_title;
-		if ($company) {
+		$company = get_post_meta($post_id, 'company_name', true) ?: (get_post_meta($post_id, 'company', true) ?: $post->post_title);
+		$dummy_companies = array('5+', '100', 'trade / wholesale', 'trade', 'wholesale', 'n/a', 'na', 'none', 'null');
+		if ($company && ! in_array(strtolower(trim($company)), $dummy_companies, true)) {
 			$apps_table = $wpdb->prefix . 'cwd_v2_trade_applications';
 			if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $apps_table)) === $apps_table) {
 				$uid = (int) $wpdb->get_var($wpdb->prepare(
@@ -318,14 +637,19 @@ class CWD_V2_Credits_Bridge
 			}
 		}
 
+		// Fallback to post_author if exists
+		if ((int) $post->post_author > 0 && get_userdata((int) $post->post_author)) {
+			return (int) $post->post_author;
+		}
+
 		return 0;
 	}
 
 	/**
 	 * Core synchronization method linking a user to their 'credits' post.
 	 *
-	 * Uses customer authorship so the Credits list displays the real username
-	 * and opens edit without search modal prompts.
+	 * Authors the post as the customer user ID with all metadata set so the Credits list
+	 * displays real usernames and directly opens the edit screen.
 	 *
 	 * @param int    $user_id          User ID
 	 * @param string $status           'active' or 'pending'
@@ -519,20 +843,40 @@ class CWD_V2_Credits_Bridge
 				return $default;
 			};
 
-			$monthly_spend    = $get_field_val(array('31595', '41979', 'estimated_monthly_spend', 'monthly_spend', 'estimated_spend'), '/spend/i', '100');
-			$business_sector  = $get_field_val(array('31583', '41980', 'type_of_business_sector', 'business_sector', 'industry', 'business_type'), '/(sector|industry|business_?type)/i', 'Trade / Wholesale');
-			$trading_duration = $get_field_val(array('31584', '41981', 'how_long_trading', 'trading_duration', 'trading_length', 'company_trading_time', 'years_trading'), '/(trading|how_?long|duration)/i', '5+');
-			$trade_ref_name   = $get_field_val(array('31588', 'trade_reference_1_name', 'trade_ref_name'), '/ref.*name/i', 'n/a');
-			$trade_ref_addr   = $get_field_val(array('31589', 'trade_reference_1_address', 'trade_ref_address'), '/ref.*addr/i', 'n/a');
-			$trade_ref_tel    = $get_field_val(array('31590', 'trade_reference_1_tel', 'trade_ref_tel'), '/ref.*(tel|phone)/i', 'n/a');
+			$monthly_spend    = $get_field_val(array('31595', '41979', 'estimated_monthly_spend', 'monthly_spend', 'estimated_spend'), '/spend/i', '');
+			$business_sector  = $get_field_val(array('31583', '41980', 'type_of_business_sector', 'business_sector', 'industry', 'business_type'), '/(sector|industry|business_?type)/i', '');
+			$trading_duration = $get_field_val(array('31584', '41981', 'how_long_trading', 'trading_duration', 'trading_length', 'company_trading_time', 'years_trading'), '/(trading|how_?long|duration)/i', '');
+			$trade_ref_name   = $get_field_val(array('31588', 'trade_reference_1_name', 'trade_ref_name'), '/ref.*name/i', '');
+			$trade_ref_addr   = $get_field_val(array('31589', 'trade_reference_1_address', 'trade_ref_address'), '/ref.*addr/i', '');
+			$trade_ref_tel    = $get_field_val(array('31590', 'trade_reference_1_tel', 'trade_ref_tel'), '/ref.*(tel|phone)/i', '');
 			$company_name     = $company ?: $get_field_val(array('23162', 'company_name', 'company', 'billing_company'), '/company/i', $name);
-			$company_reg      = $get_field_val(array('25894', '41982', 'company_reg_number', 'company_registration_number', 'reg_number'), '/(company_?reg|reg.*number)/i', 'n/a');
-			$vat_reg          = $get_field_val(array('25895', '41983', 'vat_reg_number', 'vat_number', 'tax_number'), '/vat/i', 'n/a');
-			$parent_company   = $get_field_val(array('23163', '41984', 'parent_company_name', 'parent_company'), '/parent/i', 'n/a');
+			$company_reg      = $get_field_val(array('25894', '41982', 'company_reg_number', 'company_registration_number', 'reg_number'), '/(company_?reg|reg.*number)/i', '');
+			$vat_reg          = $get_field_val(array('25895', '41983', 'vat_reg_number', 'vat_number', 'tax_number'), '/vat/i', '');
+			$parent_company   = $get_field_val(array('23163', '41984', 'parent_company_name', 'parent_company'), '/parent/i', '');
+
+			// Retrieve the user's actual live balance (amount owed) and compute available credits dynamically
+			$has_explicit_user_balance = metadata_exists('user', $user_id, '_credit_balance');
+			$live_user_balance = class_exists('CWD_V2_Credit_Logic')
+				? CWD_V2_Credit_Logic::get_user_credit_balance($user_id)
+				: (float) get_user_meta($user_id, '_credit_balance', true);
+
+			if ($has_explicit_user_balance) {
+				$user_balance = max(0.0, $live_user_balance);
+			} else {
+				$existing_post_balance = (float) get_post_meta($target_post_id, 'total_outstanding', true)
+					?: (float) get_post_meta($target_post_id, '_total_outstanding', true)
+					?: (float) get_post_meta($target_post_id, 'wc_cs_total_outstanding', true);
+				$user_balance = max($existing_post_balance, $live_user_balance);
+				if ($user_balance > 0) {
+					update_user_meta($user_id, '_credit_balance', $user_balance);
+				}
+			}
+
+			$avail_credit = max(0.0, (float) $limit - $user_balance);
 
 			// Populate comprehensive meta keys covering all FantasticPlugins / WooCommerce Credits standards
 			$meta_map = array(
-				// User & Identity
+				// User & Identity (crucial: sets all user identifiers so the "Register Credits to New User" modal never appears)
 				'_user_id'                               => $user_id,
 				'user_id'                                => $user_id,
 				'fpc_user_id'                            => $user_id,
@@ -541,6 +885,8 @@ class CWD_V2_Credits_Bridge
 				'_customer_id'                           => $user_id,
 				'fpc_user'                               => $user_id,
 				'_fpc_user'                              => $user_id,
+				'credit_user_id'                         => $user_id,
+				'_credit_user_id'                        => $user_id,
 				'user_email'                             => $email,
 				'_user_email'                            => $email,
 				'email'                                  => $email,
@@ -572,13 +918,43 @@ class CWD_V2_Credits_Bridge
 				'credit_amount'                          => (float) $limit,
 				'_credit_amount'                         => (float) $limit,
 				'fpc_credit_amount'                      => (float) $limit,
-				'available_credits'                      => (float) $limit,
-				'_available_credits'                     => (float) $limit,
-				'fpc_available_credits'                  => (float) $limit,
-				'available_credit'                       => (float) $limit,
-				'total_outstanding'                      => 0.0,
-				'_total_outstanding'                     => 0.0,
-				'outstanding_credits'                    => 0.0,
+				'available_credits'                      => $avail_credit,
+				'_available_credits'                     => $avail_credit,
+				'fpc_available_credits'                  => $avail_credit,
+				'available_credit'                       => $avail_credit,
+				'total_outstanding'                      => $user_balance,
+				'_total_outstanding'                     => $user_balance,
+				'outstanding_credits'                    => $user_balance,
+				'approved_credits'                       => (float) $limit,
+				'_approved_credits'                      => (float) $limit,
+				'approved_credit'                        => (float) $limit,
+				'_approved_credit'                       => (float) $limit,
+
+				// wc_cs direct keys
+				'wc_cs_user_id'                          => $user_id,
+				'_wc_cs_user_id'                         => $user_id,
+				'wc_cs_user'                             => $user_id,
+				'_wc_cs_user'                            => $user_id,
+				'wc_cs_customer_id'                      => $user_id,
+				'_wc_cs_customer_id'                     => $user_id,
+				'wc_cs_user_email'                       => $email,
+				'_wc_cs_user_email'                      => $email,
+				'wc_cs_approved_credits'                 => (float) $limit,
+				'_wc_cs_approved_credits'                => (float) $limit,
+				'wc_cs_approved_credit'                  => (float) $limit,
+				'_wc_cs_approved_credit'                 => (float) $limit,
+				'wc_cs_credit_limit'                     => (float) $limit,
+				'_wc_cs_credit_limit'                    => (float) $limit,
+				'wc_cs_available_credits'                => $avail_credit,
+				'_wc_cs_available_credits'               => $avail_credit,
+				'wc_cs_total_outstanding'                => $user_balance,
+				'_wc_cs_total_outstanding'               => $user_balance,
+				'wc_cs_outstanding_credits'              => $user_balance,
+				'_wc_cs_outstanding_credits'             => $user_balance,
+				'wc_cs_status'                           => ('publish' === $post_status) ? 'active' : 'pending',
+				'_wc_cs_status'                          => ('publish' === $post_status) ? 'active' : 'pending',
+				'wc_cs_credit_status'                    => ('publish' === $post_status) ? 'active' : 'pending',
+				'_wc_cs_credit_status'                   => ('publish' === $post_status) ? 'active' : 'pending',
 
 				// 1. Credit Limit £ (ID 31596 / alias 41978)
 				'31596'                                  => (float) $limit,
@@ -785,6 +1161,49 @@ class CWD_V2_Credits_Bridge
 				update_post_meta($target_post_id, $mkey, $mval);
 			}
 
+			// Dynamically discover and populate all registered wc_cs_form_field posts from the live database
+			$dynamic_fields = $wpdb->get_results(
+				"SELECT ID, post_title FROM {$wpdb->posts} WHERE post_type = 'wc_cs_form_field' AND post_status = 'publish'"
+			);
+			if (! empty($dynamic_fields)) {
+				foreach ($dynamic_fields as $df) {
+					$fid   = (int) $df->ID;
+					$title = strtolower((string) $df->post_title);
+					$fval  = '';
+					if (preg_match('/(limit|facility)/i', $title)) {
+						$fval = (float) $limit;
+					} elseif (preg_match('/spend/i', $title)) {
+						$fval = $monthly_spend;
+					} elseif (preg_match('/(sector|industry|business)/i', $title)) {
+						$fval = $business_sector;
+					} elseif (preg_match('/(trading|how.*long|duration)/i', $title)) {
+						$fval = $trading_duration;
+					} elseif (preg_match('/ref.*name/i', $title)) {
+						$fval = $trade_ref_name;
+					} elseif (preg_match('/ref.*addr/i', $title)) {
+						$fval = $trade_ref_addr;
+					} elseif (preg_match('/ref.*(tel|phone)/i', $title)) {
+						$fval = $trade_ref_tel;
+					} elseif (preg_match('/(company_?reg|reg.*number)/i', $title)) {
+						$fval = $company_reg;
+					} elseif (preg_match('/vat/i', $title)) {
+						$fval = $vat_reg;
+					} elseif (preg_match('/parent/i', $title)) {
+						$fval = $parent_company;
+					} elseif (preg_match('/company/i', $title)) {
+						$fval = $company_name;
+					}
+
+					if ('' !== $fval && null !== $fval) {
+						update_post_meta($target_post_id, (string) $fid, $fval);
+						update_post_meta($target_post_id, "wc_cs_field_{$fid}", $fval);
+						update_post_meta($target_post_id, "wc_cs_form_field_{$fid}", $fval);
+						update_post_meta($target_post_id, "field_{$fid}", $fval);
+						update_post_meta($target_post_id, "_{$fid}", $fval);
+					}
+				}
+			}
+
 			// Copy any additional custom meta keys discovered from sample post
 			if (! empty($sample_metas)) {
 				foreach ($sample_metas as $k => $v) {
@@ -819,7 +1238,7 @@ class CWD_V2_Credits_Bridge
 		if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $apps_table)) === $apps_table) {
 			$row = $wpdb->get_row($wpdb->prepare(
 				"SELECT form_data, applicant_name, company_name, phone, requested_limit, forminator_form_id FROM {$apps_table}
-				 WHERE user_id = %d OR applicant_email = %s
+				 WHERE user_id = %d OR LOWER(applicant_email) = LOWER(%s)
 				 ORDER BY id DESC LIMIT 1",
 				(int) $user_id,
 				(string) $email
@@ -856,7 +1275,7 @@ class CWD_V2_Credits_Bridge
 		$frmt_table = $wpdb->prefix . 'frmt_form_entry_meta';
 		if ($email && $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $frmt_table)) === $frmt_table) {
 			$entry_ids = $wpdb->get_col($wpdb->prepare(
-				"SELECT DISTINCT entry_id FROM {$frmt_table} WHERE meta_value = %s ORDER BY entry_id DESC LIMIT 1",
+				"SELECT DISTINCT entry_id FROM {$frmt_table} WHERE LOWER(meta_value) = LOWER(%s) ORDER BY entry_id DESC LIMIT 1",
 				$email
 			));
 			if (! empty($entry_ids)) {
@@ -870,7 +1289,322 @@ class CWD_V2_Credits_Bridge
 			}
 		}
 
+		// 3. User profile meta fallbacks
+		if ($user_id > 0) {
+			if (empty($results['company_name'])) {
+				$b_comp = get_user_meta($user_id, 'billing_company', true);
+				if ($b_comp) {
+					$results['company_name'] = $b_comp;
+					$results['company']      = $b_comp;
+				}
+			}
+			if (empty($results['phone'])) {
+				$b_phone = get_user_meta($user_id, 'billing_phone', true);
+				if ($b_phone) {
+					$results['phone'] = $b_phone;
+				}
+			}
+		}
+
 		return $results;
+	}
+
+	/**
+	 * Dynamic table synchronization with any external Credits tables
+	 */
+	private static function sync_to_external_credits_tables($user_id, $status = 'pending', $limit = 0.0, $email = '', $company = '')
+	{
+		global $wpdb;
+		$tables = $wpdb->get_col("SHOW TABLES LIKE '%credit%'");
+		$fpc_tables = $wpdb->get_col("SHOW TABLES LIKE '%fpc%'");
+		$candidates = array_unique(array_merge($tables, $fpc_tables));
+
+		foreach ($candidates as $table) {
+			// Skip internal tables
+			if (strpos($table, 'cwd_v2') !== false || strpos($table, 'woocommerce') !== false || strpos($table, 'posts') !== false || strpos($table, 'comments') !== false) {
+				continue;
+			}
+
+			$columns = $wpdb->get_col("DESCRIBE {$table}");
+			if (empty($columns)) {
+				continue;
+			}
+
+			$has_user_col = in_array('user_id', $columns, true) ? 'user_id' : (in_array('customer_id', $columns, true) ? 'customer_id' : false);
+			if (! $has_user_col) {
+				continue;
+			}
+
+			// Check if row exists for user
+			$row_exists = (bool) $wpdb->get_var($wpdb->prepare("SELECT 1 FROM {$table} WHERE {$has_user_col} = %d LIMIT 1", $user_id));
+
+			$status_val = ('active' === $status) ? (in_array('status', $columns, true) ? 'active' : 1) : (in_array('status', $columns, true) ? 'pending' : 0);
+
+			if ($row_exists) {
+				$update_data = array();
+				$update_format = array();
+				if (in_array('status', $columns, true)) {
+					$update_data['status'] = $status_val;
+					$update_format[] = is_numeric($status_val) ? '%d' : '%s';
+				}
+				if ($limit > 0) {
+					foreach (array('credit_limit', 'limit', 'credit_amount', 'amount') as $lcol) {
+						if (in_array($lcol, $columns, true)) {
+							$update_data[$lcol] = (float) $limit;
+							$update_format[] = '%f';
+							break;
+						}
+					}
+				}
+				if (! empty($update_data)) {
+					$wpdb->update($table, $update_data, array($has_user_col => $user_id), $update_format, array('%d'));
+				}
+			} else {
+				$insert_data = array($has_user_col => $user_id);
+				$insert_format = array('%d');
+				if (in_array('status', $columns, true)) {
+					$insert_data['status'] = $status_val;
+					$insert_format[] = is_numeric($status_val) ? '%d' : '%s';
+				}
+				if ($limit > 0) {
+					foreach (array('credit_limit', 'limit', 'credit_amount', 'amount') as $lcol) {
+						if (in_array($lcol, $columns, true)) {
+							$insert_data[$lcol] = (float) $limit;
+							$insert_format[] = '%f';
+							break;
+						}
+					}
+				}
+				if (in_array('email', $columns, true) && $email) {
+					$insert_data['email'] = sanitize_email($email);
+					$insert_format[] = '%s';
+				}
+				if (in_array('created_at', $columns, true)) {
+					$insert_data['created_at'] = current_time('mysql');
+					$insert_format[] = '%s';
+				}
+				$wpdb->insert($table, $insert_data, $insert_format);
+			}
+		}
+	}
+
+	/**
+	 * Intercept WordPress user meta changes in real time
+	 */
+	public static function on_user_meta_updated($meta_id, $object_id, $meta_key, $_meta_value)
+	{
+		if (self::$is_syncing) {
+			return;
+		}
+
+		$user_id = (int) $object_id;
+		if (! $user_id) {
+			return;
+		}
+
+		// Check if the updated key is a credit status key
+		if (in_array($meta_key, self::$credit_status_keys, true)) {
+			$val = is_string($_meta_value) ? strtolower(trim($_meta_value)) : '';
+			if (in_array($val, array('active', 'approved', 'publish'), true)) {
+				self::sync_trade_application_from_credits_approval($user_id, null, 'Credits plugin (' . $meta_key . ' = active)');
+			} elseif (in_array($val, array('rejected', 'declined'), true)) {
+				self::mark_trade_application_rejected($user_id, 'Rejected via Credits plugin');
+			}
+			return;
+		}
+
+		// Check if the updated key is a credit limit key
+		if (in_array($meta_key, self::$credit_limit_keys, true)) {
+			$limit = (float) $_meta_value;
+			if ($limit > 0) {
+				self::sync_trade_application_from_credits_approval($user_id, $limit, 'Credits plugin (' . $meta_key . ' limit updated)');
+			}
+			return;
+		}
+
+		// Check if the updated key is a credit balance key
+		$balance_keys = array('_credit_balance', 'credit_balance', 'total_outstanding', '_total_outstanding', 'total_outstanding_amount', '_total_outstanding_amount');
+		if (in_array($meta_key, $balance_keys, true)) {
+			$bal = max(0.0, (float) $_meta_value);
+			if (class_exists('CWD_V2_Credit_Logic')) {
+				self::$is_syncing = true;
+				try {
+					CWD_V2_Credit_Logic::sync_user_credit_balance($user_id, $bal);
+				} finally {
+					self::$is_syncing = false;
+				}
+			}
+		}
+	}
+
+	/**
+	 * Intercept role changes
+	 */
+	public static function on_user_role_changed($user_id, $role, $old_roles)
+	{
+		if (self::$is_syncing) {
+			return;
+		}
+		if ('credit_account' === $role) {
+			self::sync_trade_application_from_credits_approval($user_id, null, 'credit_account role change');
+		}
+	}
+
+	/**
+	 * Intercept postmeta updates on credit posts (catches metabox/inline credit limit and status updates)
+	 */
+	public static function on_post_meta_updated($meta_id, $object_id, $meta_key, $_meta_value)
+	{
+		if (self::$is_syncing) {
+			return;
+		}
+
+		$post = get_post((int) $object_id);
+		if (! $post || ! in_array($post->post_type, array('credits', 'wc_cs_credits', 'fpc_credits'), true)) {
+			return;
+		}
+
+		$status_meta_keys  = array('_credit_status', 'credit_status', '_status', 'status', 'fpc_status', '_fpc_status', '_wc_cs_status', 'wc_cs_status', '_wc_cs_credit_status', 'wc_cs_credit_status');
+		$limit_meta_keys   = array('_credit_limit', 'credit_limit', 'fpc_credit_limit', '_fpc_credit_limit', 'approved_credits', '_approved_credits', 'wc_cs_credit_limit', '_wc_cs_credit_limit', 'wc_cs_approved_credits', '_wc_cs_approved_credits');
+		$balance_meta_keys = array('total_outstanding_amount', '_total_outstanding_amount', 'wc_cs_total_outstanding_amount', '_wc_cs_total_outstanding_amount', 'total_outstanding', '_total_outstanding', 'wc_cs_total_outstanding', '_wc_cs_total_outstanding', 'outstanding_credits', 'wc_cs_outstanding_credits', 'used_credits', '_used_credits');
+
+		if (! in_array($meta_key, $status_meta_keys, true) && ! in_array($meta_key, $limit_meta_keys, true) && ! in_array($meta_key, $balance_meta_keys, true)) {
+			return;
+		}
+
+		$user_id = self::resolve_user_id_for_credit_post($post);
+		if (! $user_id) {
+			return;
+		}
+
+		if (in_array($meta_key, $status_meta_keys, true)) {
+			$val = is_string($_meta_value) ? strtolower(trim($_meta_value)) : '';
+			if (in_array($val, array('active', 'approved', 'publish'), true)) {
+				self::sync_trade_application_from_credits_approval($user_id, null, 'Credits post meta (' . $meta_key . ' = ' . $val . ')');
+			} elseif (in_array($val, array('rejected', 'declined'), true)) {
+				self::mark_trade_application_rejected($user_id, 'Rejected via Credits post meta');
+			}
+		}
+
+		if (in_array($meta_key, $limit_meta_keys, true)) {
+			$limit = (float) $_meta_value;
+			if ($limit > 0) {
+				self::sync_trade_application_from_credits_approval($user_id, $limit, 'Credits post meta (' . $meta_key . ' = ' . $limit . ')');
+			}
+		}
+
+		if (in_array($meta_key, $balance_meta_keys, true)) {
+			$bal = max(0.0, (float) $_meta_value);
+			if (class_exists('CWD_V2_Credit_Logic')) {
+				self::$is_syncing = true;
+				try {
+					CWD_V2_Credit_Logic::sync_user_credit_balance($user_id, $bal);
+				} finally {
+					self::$is_syncing = false;
+				}
+			}
+		}
+	}
+
+	/**
+	 * Intercept custom post status transitions (e.g. admin publishing or approving a credit post)
+	 */
+	public static function on_post_status_transition($new_status, $old_status, $post)
+	{
+		if (self::$is_syncing || ! $post) {
+			return;
+		}
+
+		$post_type = $post->post_type;
+		if (in_array($post_type, array('credits', 'wc_cs_credits', 'fpc_credits'), true)) {
+			$user_id = self::resolve_user_id_for_credit_post($post);
+			if (! $user_id) {
+				return;
+			}
+
+			if (in_array($new_status, array('publish', 'active', 'approved'), true)) {
+				self::sync_trade_application_from_credits_approval($user_id, null, 'Credits post status (' . $post_type . ' -> ' . $new_status . ')');
+			} elseif (in_array($new_status, array('trash', 'rejected'), true)) {
+				self::mark_trade_application_rejected($user_id, 'Credits post status (' . $post_type . ' -> ' . $new_status . ')');
+			}
+		}
+	}
+
+	/**
+	 * Intercept save_post for credit custom post types
+	 */
+	public static function on_post_saved($post_id, $post)
+	{
+		if (self::$is_syncing || ! $post || (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) || wp_is_post_revision($post_id) || wp_is_post_autosave($post_id)) {
+			return;
+		}
+
+		if (in_array($post->post_type, array('credits', 'wc_cs_credits', 'fpc_credits'), true)) {
+			$user_id = self::resolve_user_id_for_credit_post($post);
+			if (! $user_id) {
+				return;
+			}
+
+			// Ensure post_author is customer user ID
+			if ((int) $post->post_author !== (int) $user_id) {
+				global $wpdb;
+				$wpdb->update($wpdb->posts, array('post_author' => (int) $user_id), array('ID' => $post_id), array('%d'), array('%d'));
+				clean_post_cache($post_id);
+			}
+
+			$limit = (float) get_post_meta($post_id, 'credit_limit', true)
+				?: ((float) get_post_meta($post_id, '_credit_limit', true)
+				?: (float) get_post_meta($post_id, 'approved_credits', true));
+
+			if ($limit <= 0 && isset($_POST['credit_limit']) && is_numeric($_POST['credit_limit'])) {
+				$limit = (float) $_POST['credit_limit'];
+			}
+			if ($limit <= 0 && isset($_POST['approved_credits']) && is_numeric($_POST['approved_credits'])) {
+				$limit = (float) $_POST['approved_credits'];
+			}
+
+			$status_val = strtolower($post->post_status);
+			if (isset($_POST['credit_status'])) {
+				$status_val = strtolower(sanitize_text_field(wp_unslash($_POST['credit_status'])));
+			} elseif (isset($_POST['status'])) {
+				$status_val = strtolower(sanitize_text_field(wp_unslash($_POST['status'])));
+			} elseif (isset($_POST['wc_cs_status'])) {
+				$status_val = strtolower(sanitize_text_field(wp_unslash($_POST['wc_cs_status'])));
+			}
+
+			if (in_array($status_val, array('rejected', 'declined'), true)) {
+				self::mark_trade_application_rejected($user_id, 'Rejected in Credits post');
+			} elseif (in_array($status_val, array('publish', 'active', 'approved'), true) || $limit > 0) {
+				self::sync_trade_application_from_credits_approval($user_id, ($limit > 0 ? $limit : null), 'Credits post save');
+			}
+		}
+	}
+
+	/**
+	 * Mark pending applications as rejected
+	 */
+	private static function mark_trade_application_rejected($user_id, $reason = '')
+	{
+		if (! class_exists('CWD_V2_Trade_Applications')) {
+			return;
+		}
+		global $wpdb;
+		$apps_table = CWD_V2_Trade_Applications::get_table_name();
+		$wpdb->update(
+			$apps_table,
+			array(
+				'status'      => CWD_V2_Trade_Applications::STATUS_REJECTED,
+				'admin_note'  => $reason ?: __('Application declined', 'custom-woo-dashboard'),
+				'reviewed_at' => current_time('mysql'),
+				'updated_at'  => current_time('mysql'),
+			),
+			array(
+				'user_id' => $user_id,
+				'status'  => CWD_V2_Trade_Applications::STATUS_PENDING,
+			),
+			array('%s', '%s', '%s', '%s'),
+			array('%d', '%s')
+		);
 	}
 
 	/**
@@ -882,129 +1616,439 @@ class CWD_V2_Credits_Bridge
 	 */
 	public static function repair_and_sync_all()
 	{
-		global $wpdb;
+		if (self::$is_syncing) {
+			return;
+		}
+		self::$is_syncing = true;
+		@set_time_limit(120);
 
-		// 1. Repair ALL existing posts in CPT 'credits'
-		$all_credit_posts = $wpdb->get_results(
-			"SELECT ID, post_title, post_author, post_status FROM {$wpdb->posts}
-			 WHERE post_type IN ('credits', 'wc_cs_credits', 'fpc_credits') AND post_status != 'trash'"
-		);
+		try {
+			global $wpdb;
 
-		$synced_uids = array();
+			// 1. Discover and synchronize ALL existing posts in CPT 'credits' / 'wc_cs_credits' / 'fpc_credits'
+			$all_credit_posts = $wpdb->get_results(
+				"SELECT ID, post_title, post_author, post_status FROM {$wpdb->posts}
+				 WHERE post_type IN ('credits', 'wc_cs_credits', 'fpc_credits') AND post_status != 'trash'"
+			);
 
-		if (! empty($all_credit_posts)) {
-			foreach ($all_credit_posts as $cp) {
-				$post_id = (int) $cp->ID;
+			$synced_uids = array();
 
-				// Resolve customer for this post
-				$uid = self::resolve_user_id_for_credit_post($cp);
-				if (! $uid) {
-					continue;
-				}
+			if (! empty($all_credit_posts)) {
+				foreach ($all_credit_posts as $cp) {
+					$post_id = (int) $cp->ID;
 
-				// Ensure customer authorship so Credits list displays the real customer
-				if ((int) $cp->post_author !== (int) $uid) {
-					$wpdb->update($wpdb->posts, array('post_author' => (int) $uid), array('ID' => $post_id), array('%d'), array('%d'));
-					clean_post_cache($post_id);
-				}
+					// Resolve customer for this post
+					$uid = self::resolve_user_id_for_credit_post($cp);
+					if (! $uid) {
+						// Attempt to find user by email meta or title
+						$email = get_post_meta($post_id, 'email', true)
+							?: (get_post_meta($post_id, 'user_email', true)
+							?: (get_post_meta($post_id, '_email', true)
+							?: (get_post_meta($post_id, 'fpc_user_email', true)
+							?: get_post_meta($post_id, 'wc_cs_user_email', true))));
+						if ($email && is_email($email)) {
+							$user_by_email = get_user_by('email', sanitize_email($email));
+							if ($user_by_email) {
+								$uid = $user_by_email->ID;
+							}
+						}
+					}
 
-				$synced_uids[] = $uid;
-				$u = get_userdata($uid);
-				if (! $u) {
-					continue;
-				}
+					if (! $uid) {
+						continue;
+					}
 
-				$limit = (float) get_post_meta($post_id, 'credit_limit', true)
-					?: (float) get_post_meta($post_id, '_credit_limit', true)
-					?: (float) get_user_meta($uid, '_credit_limit', true);
+					// Ensure customer authorship so Credits list displays the real customer
+					if ((int) $cp->post_author !== (int) $uid) {
+						$wpdb->update($wpdb->posts, array('post_author' => (int) $uid), array('ID' => $post_id), array('%d'), array('%d'));
+						clean_post_cache($post_id);
+					}
 
-				$company = get_post_meta($post_id, 'company_name', true)
-					?: get_post_meta($post_id, 'company', true)
-					?: get_user_meta($uid, 'billing_company', true);
+					$synced_uids[] = $uid;
+					$u = get_userdata($uid);
+					if (! $u) {
+						continue;
+					}
 
-				// Ensure customer has credit_account role if post is active
-				if ('publish' === $cp->post_status || $limit > 0) {
+					// Retrieve Credit Limit from Credit Plugin postmeta
+					$post_limit = 0.0;
+					$limit_keys = array(
+						'approved_credits', '_approved_credits', 'wc_cs_approved_credits',
+						'credit_limit', '_credit_limit', 'wc_cs_credit_limit', '_wc_cs_credit_limit',
+						'31596', '41978', 'fpc_credit_limit'
+					);
+					foreach ($limit_keys as $lk) {
+						$val = (float) get_post_meta($post_id, $lk, true);
+						if ($val > 0) {
+							$post_limit = $val;
+							break;
+						}
+					}
+
+					// Check latest approved application limit
+					$app_limit = 0.0;
+					$apps_table = $wpdb->prefix . 'cwd_v2_trade_applications';
+					if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $apps_table)) === $apps_table) {
+						$app_limit = (float) $wpdb->get_var($wpdb->prepare(
+							"SELECT approved_limit FROM {$apps_table} WHERE (user_id = %d OR applicant_email = %s) AND status = 'approved' AND approved_limit > 0 ORDER BY id DESC LIMIT 1",
+							$uid,
+							$u->user_email
+						));
+					}
+
+					$user_existing_limit = (float) get_user_meta($uid, '_credit_limit', true);
+					$limit = max($user_existing_limit, max($post_limit, $app_limit));
+
+					// Retrieve Outstanding Balance from Credit Plugin postmeta
+					$post_outstanding = 0.0;
+					$bal_keys = array(
+						'total_outstanding_amount', '_total_outstanding_amount',
+						'wc_cs_total_outstanding_amount', '_wc_cs_total_outstanding_amount',
+						'total_outstanding', '_total_outstanding',
+						'wc_cs_total_outstanding', '_wc_cs_total_outstanding',
+						'outstanding_credits', 'wc_cs_outstanding_credits',
+						'used_credits', '_used_credits'
+					);
+					foreach ($bal_keys as $bk) {
+						$val = (float) get_post_meta($post_id, $bk, true);
+						if ($val > 0) {
+							$post_outstanding = $val;
+							break;
+						}
+					}
+
+					$user_balance = (float) get_user_meta($uid, '_credit_balance', true);
+					$final_balance = ($post_outstanding > 0) ? $post_outstanding : $user_balance;
+
+					// ALWAYS permanently store outstanding balance into WordPress database independently
+					if ($final_balance > 0) {
+						update_user_meta($uid, '_credit_balance', $final_balance);
+						if (class_exists('CWD_V2_Account_Ledger')) {
+							$ledger_table = CWD_V2_Account_Ledger::get_table_name();
+							if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $ledger_table)) === $ledger_table) {
+								$has_ledger = (int) $wpdb->get_var($wpdb->prepare(
+									"SELECT COUNT(*) FROM {$ledger_table} WHERE user_id = %d",
+									$uid
+								));
+								if ($has_ledger === 0) {
+									CWD_V2_Account_Ledger::record(
+										$uid,
+										CWD_V2_Account_Ledger::TYPE_CHARGE,
+										$final_balance,
+										'opening_balance',
+										0,
+										'Opening balance imported from Credits Plugin'
+									);
+								}
+							}
+						}
+					}
+
+					// Check if the Credit Plugin post is an APPROVED credit account
+					$status_meta = strtolower(trim((string) (
+						get_post_meta($post_id, 'credit_status', true)
+						?: (get_post_meta($post_id, '_credit_status', true)
+						?: (get_post_meta($post_id, 'wc_cs_status', true)
+						?: (get_post_meta($post_id, '_wc_cs_status', true)
+						?: (get_post_meta($post_id, 'fpc_status', true)
+						?: get_post_meta($post_id, '_status', true)))))
+					)));
+
+					// Explicitly check for rejected/declined/trash status
+					if (in_array($status_meta, array('rejected', 'declined', 'trash'), true) || 'trash' === $cp->post_status) {
+						update_user_meta($uid, '_credit_status', 'rejected');
+						if (! in_array('administrator', (array) $u->roles, true) && ! in_array('shop_manager', (array) $u->roles, true)) {
+							$u->remove_role('credit_account');
+						}
+						continue;
+					}
+
+					// Only consider approved if positive limit AND active/publish status or approved in trade applications table
+					$is_approved_credit_user = ($limit > 0) && (
+						in_array($status_meta, array('active', 'approved', 'publish'), true)
+						|| ('publish' === $cp->post_status && ! in_array($status_meta, array('pending', 'draft', 'rejected', 'declined'), true))
+						|| $app_limit > 0
+					);
+
+					if (! $is_approved_credit_user) {
+						// User is NOT an approved credit account: DO NOT assign credit_account role
+						if (! in_array('administrator', (array) $u->roles, true) && ! in_array('shop_manager', (array) $u->roles, true)) {
+							$u->remove_role('credit_account');
+						}
+						if ('pending' === $status_meta || 'pending' === $cp->post_status) {
+							update_user_meta($uid, '_credit_status', 'pending');
+						} else {
+							update_user_meta($uid, '_credit_status', 'inactive');
+						}
+						continue;
+					}
+
+					// User IS an approved credit user: assign credit_account role
 					if (! in_array('credit_account', (array) $u->roles, true)) {
 						$u->add_role('credit_account');
 					}
 					foreach (self::$credit_status_keys as $skey) {
 						update_user_meta($uid, $skey, 'active');
 					}
+
+					// Permanent independent storage: synchronize credit limit into user meta
+					if (class_exists('CWD_V2_Credit_Logic')) {
+						CWD_V2_Credit_Logic::sync_user_credit_limit($uid, $limit);
+						CWD_V2_Credit_Logic::sync_user_credit_balance($uid, $final_balance);
+					} else {
+						update_user_meta($uid, '_credit_limit', $limit);
+						update_user_meta($uid, '_credit_balance', $final_balance);
+					}
+
+					$company = get_post_meta($post_id, 'company_name', true)
+						?: (get_post_meta($post_id, 'company', true)
+						?: get_user_meta($uid, 'billing_company', true));
+					$phone   = get_post_meta($post_id, 'phone', true)
+						?: (get_post_meta($post_id, 'billing_phone', true)
+						?: get_user_meta($uid, 'billing_phone', true));
+					$terms   = get_post_meta($post_id, 'payment_terms', true)
+						?: (get_user_meta($uid, '_credit_payment_terms', true) ?: 'Net 30 Days');
+
+					$dummy_companies = array('5+', '100', 'trade / wholesale', 'trade', 'wholesale', 'n/a', 'na', 'none', 'null', '--', '-', '0');
+					if (in_array(strtolower(trim((string) $company)), $dummy_companies, true)) {
+						$company = '';
+						delete_user_meta($uid, 'billing_company', '5+');
+						delete_user_meta($uid, 'billing_company', '100');
+					}
+
+					if ($company) {
+						update_user_meta($uid, 'billing_company', $company);
+					}
+					if ($phone) {
+						update_user_meta($uid, 'billing_phone', $phone);
+					}
+					update_user_meta($uid, '_credit_payment_terms', $terms);
+
+					// Permanently store approved record in cwd_v2_trade_applications so data survives Credit Plugin deletion
+					if ($apps_table && $limit > 0) {
+						$has_approved_app = (int) $wpdb->get_var($wpdb->prepare(
+							"SELECT COUNT(*) FROM {$apps_table} WHERE (user_id = %d OR applicant_email = %s) AND status = 'approved'",
+							$uid,
+							$u->user_email
+						));
+						if ($has_approved_app === 0) {
+							$now = current_time('mysql');
+							$wpdb->insert(
+								$apps_table,
+								array(
+									'forminator_form_id'  => 0,
+									'forminator_entry_id' => 0,
+									'applicant_email'     => $u->user_email,
+									'applicant_name'      => $u->display_name,
+									'company_name'        => $company ?: '',
+									'phone'               => $phone ?: '',
+									'requested_limit'     => $limit,
+									'form_data'           => wp_json_encode(array('source' => 'credits_plugin_import')),
+									'status'              => 'approved',
+									'approved_limit'      => $limit,
+									'admin_note'          => 'Approved credit account imported from Credits Plugin',
+									'reviewed_at'         => $now,
+									'user_id'             => $uid,
+									'created_at'          => $now,
+									'updated_at'          => $now,
+								),
+								array('%d', '%d', '%s', '%s', '%s', '%s', '%f', '%s', '%s', '%f', '%s', '%s', '%d', '%s', '%s')
+							);
+						}
+					}
+
+					// Update essential user identification & balance keys directly without heavy re-sync loop
+					update_post_meta($post_id, 'user_id', (int) $uid);
+					update_post_meta($post_id, '_user_id', (int) $uid);
+					update_post_meta($post_id, 'wc_cs_user_id', (int) $uid);
+					update_post_meta($post_id, '_wc_cs_user_id', (int) $uid);
+					update_post_meta($post_id, 'customer_id', (int) $uid);
+					update_post_meta($post_id, 'fpc_user_id', (int) $uid);
+					update_post_meta($post_id, 'wc_cs_user_email', $u->user_email);
+					update_post_meta($post_id, 'user_email', $u->user_email);
+					update_post_meta($post_id, 'total_outstanding_amount', $final_balance);
+					update_post_meta($post_id, '_total_outstanding_amount', $final_balance);
+					update_post_meta($post_id, 'wc_cs_total_outstanding_amount', $final_balance);
+					update_post_meta($post_id, '_wc_cs_total_outstanding_amount', $final_balance);
+					update_post_meta($post_id, 'total_outstanding', $final_balance);
+					update_post_meta($post_id, '_total_outstanding', $final_balance);
+					update_post_meta($post_id, 'wc_cs_total_outstanding', $final_balance);
+					update_post_meta($post_id, 'outstanding_credits', $final_balance);
+					update_post_meta($post_id, 'wc_cs_outstanding_credits', $final_balance);
+					update_post_meta($post_id, 'available_credits', max(0.0, $limit - $final_balance));
+					update_post_meta($post_id, '_available_credits', max(0.0, $limit - $final_balance));
+					update_post_meta($post_id, 'wc_cs_available_credits', max(0.0, $limit - $final_balance));
+					clean_post_cache($post_id);
 				}
+			}
+
+			// 2. Discover any additional approved credit users without an existing post
+			$user_ids = array();
+
+			// Only include users who already have credit_account role or approved application
+			$credit_users = get_users(array('role' => 'credit_account', 'fields' => 'ID'));
+			foreach ($credit_users as $uid) {
+				$user_ids[] = (int) $uid;
+			}
+
+			$apps_table = $wpdb->prefix . 'cwd_v2_trade_applications';
+			if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $apps_table)) === $apps_table) {
+				// Strictly select users with APPROVED applications and positive limit
+				$app_uids = $wpdb->get_col("SELECT DISTINCT user_id FROM {$apps_table} WHERE user_id > 0 AND status = 'approved' AND approved_limit > 0");
+				foreach ($app_uids as $uid) {
+					$user_ids[] = (int) $uid;
+				}
+			}
+
+			$user_ids = array_unique(array_filter($user_ids));
+
+			foreach ($user_ids as $uid) {
+				if (in_array($uid, $synced_uids, true)) {
+					continue;
+				}
+				$u = get_userdata($uid);
+				if (! $u) {
+					continue;
+				}
+
+				$status = (string) get_user_meta($uid, '_credit_status', true);
+				if (in_array($status, array('rejected', 'declined'), true)) {
+					if (! in_array('administrator', (array) $u->roles, true) && ! in_array('shop_manager', (array) $u->roles, true)) {
+						$u->remove_role('credit_account');
+					}
+					continue;
+				}
+
+				$limit = class_exists('CWD_V2_Credit_Logic')
+					? CWD_V2_Credit_Logic::get_user_credit_limit($uid)
+					: (float) get_user_meta($uid, '_credit_limit', true);
+
+				if ($limit <= 0) {
+					// Strip credit_account role if user has zero limit and no approved application
+					if (! in_array('administrator', (array) $u->roles, true) && ! in_array('shop_manager', (array) $u->roles, true)) {
+						$u->remove_role('credit_account');
+					}
+					continue;
+				}
+
+				// Ensure approved role
+				if (! in_array('credit_account', (array) $u->roles, true)) {
+					$u->add_role('credit_account');
+				}
+				update_user_meta($uid, '_credit_status', 'active');
 
 				self::sync_to_external_credits_cpt(
 					$uid,
-					('publish' === $cp->post_status || $limit > 0) ? 'active' : 'pending',
+					'active',
 					$limit,
 					$u->display_name,
 					$u->user_email,
-					$company,
-					array(),
-					$post_id
+					get_user_meta($uid, 'billing_company', true)
 				);
 			}
-		}
-
-		// 2. Discover any additional credit users without an existing post
-		$user_ids = array();
-
-		$credit_users = get_users(array('role' => 'credit_account', 'fields' => 'ID'));
-		foreach ($credit_users as $uid) {
-			$user_ids[] = (int) $uid;
-		}
-
-		$apps_table = $wpdb->prefix . 'cwd_v2_trade_applications';
-		if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $apps_table)) === $apps_table) {
-			$app_uids = $wpdb->get_col("SELECT DISTINCT user_id FROM {$apps_table} WHERE user_id > 0");
-			foreach ($app_uids as $uid) {
-				$user_ids[] = (int) $uid;
+		} catch (\Throwable $e) {
+			if (defined('WP_DEBUG') && WP_DEBUG) {
+				error_log('CWD_V2 repair_and_sync_all error: ' . $e->getMessage());
 			}
-		}
-
-		$meta_uids = $wpdb->get_col("SELECT DISTINCT user_id FROM {$wpdb->usermeta} WHERE meta_key = '_credit_limit' AND meta_value > 0");
-		foreach ($meta_uids as $uid) {
-			$user_ids[] = (int) $uid;
-		}
-
-		$user_ids = array_unique(array_filter($user_ids));
-
-		foreach ($user_ids as $uid) {
-			if (in_array($uid, $synced_uids, true)) {
-				continue;
-			}
-			$u = get_userdata($uid);
-			if (! $u) {
-				continue;
-			}
-			$limit = class_exists('CWD_V2_Credit_Logic')
-				? CWD_V2_Credit_Logic::get_user_credit_limit($uid)
-				: (float) get_user_meta($uid, '_credit_limit', true);
-			$status = ($limit > 0 || in_array('credit_account', (array) $u->roles, true)) ? 'active' : 'pending';
-
-			self::sync_to_external_credits_cpt(
-				$uid,
-				$status,
-				$limit,
-				$u->display_name,
-				$u->user_email,
-				get_user_meta($uid, 'billing_company', true)
-			);
+		} finally {
+			self::$is_syncing = false;
 		}
 	}
 
 	/**
-	 * Sync user to credits post (called directly from Odoo REST endpoint)
+	 * Reconcile pending trade applications against the Credits plugin state.
+	 * Credit limit increase requests are NEVER auto-approved.
+	 *
+	 * @param int $user_id Optional user ID to reconcile. 0 = all pending.
 	 */
-	public static function sync_user_to_credits_post($user_id)
+	public static function reconcile_pending_applications($user_id = 0)
+	{
+		if (! class_exists('CWD_V2_Trade_Applications')) {
+			return;
+		}
+
+		global $wpdb;
+		$apps_table = CWD_V2_Trade_Applications::get_table_name();
+		CWD_V2_Trade_Applications::ensure_table_exists();
+
+		if ($user_id > 0) {
+			$pending = $wpdb->get_results($wpdb->prepare(
+				"SELECT * FROM {$apps_table} WHERE user_id = %d AND status = %s",
+				$user_id,
+				CWD_V2_Trade_Applications::STATUS_PENDING
+			));
+		} else {
+			$pending = $wpdb->get_results($wpdb->prepare(
+				"SELECT * FROM {$apps_table} WHERE status = %s ORDER BY id DESC LIMIT 50",
+				CWD_V2_Trade_Applications::STATUS_PENDING
+			));
+		}
+
+		if (empty($pending)) {
+			return;
+		}
+
+		foreach ($pending as $app) {
+			$uid = (int) $app->user_id;
+			if (! $uid && ! empty($app->applicant_email)) {
+				$u = get_user_by('email', $app->applicant_email);
+				if ($u) {
+					$uid = $u->ID;
+					$wpdb->update($apps_table, array('user_id' => $uid), array('id' => $app->id), array('%d'), array('%d'));
+				}
+			}
+
+			if (! $uid) {
+				continue;
+			}
+
+			// Credit limit increase requests must NEVER be auto-reconciled!
+			// They require explicit administrator approval.
+			if ((int) $app->forminator_form_id === 0) {
+				continue;
+			}
+
+			// For initial applications: only approve if an administrator explicitly published a 'credits' CPT post
+			$cpt_post = $wpdb->get_row($wpdb->prepare(
+				"SELECT ID, post_status FROM {$wpdb->posts}
+				 WHERE post_type = 'credits'
+				   AND post_status = 'publish'
+				   AND (post_author = %d OR ID IN (SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key IN ('_user_id', 'user_id', 'customer_id') AND meta_value = %s))
+				 ORDER BY ID DESC LIMIT 1",
+				$uid,
+				(string) $uid
+			));
+
+			if ($cpt_post) {
+				$detected_limit = (float) get_post_meta($cpt_post->ID, 'credit_limit', true) ?: (float) get_post_meta($cpt_post->ID, '_credit_limit', true);
+				if ($detected_limit > 0) {
+					self::sync_trade_application_from_credits_approval(
+						$uid,
+						$detected_limit,
+						'Credits Plugin Admin Approval'
+					);
+				}
+			}
+		}
+	}
+
+	/**
+	 * Sync user to credits post (called directly from Odoo REST endpoint or sync_user_credit_limit)
+	 */
+	public static function sync_user_to_credits_post($user_id, $limit = null)
 	{
 		$user = get_userdata((int) $user_id);
 		if (! $user) {
 			return;
 		}
 
-		$limit = class_exists('CWD_V2_Credit_Logic')
-			? CWD_V2_Credit_Logic::get_user_credit_limit($user_id)
-			: (float) get_user_meta($user_id, '_credit_limit', true);
+		if ($limit === null) {
+			$limit = class_exists('CWD_V2_Credit_Logic')
+				? CWD_V2_Credit_Logic::get_user_credit_limit($user_id)
+				: (float) get_user_meta($user_id, '_credit_limit', true);
+		} else {
+			$limit = max(0.0, (float) $limit);
+		}
 
 		$status = ($limit > 0 || in_array('credit_account', (array) $user->roles, true)) ? 'active' : 'pending';
 
@@ -1069,72 +2113,5 @@ class CWD_V2_Credits_Bridge
 			$limit,
 			$flat
 		);
-	}
-
-	/**
-	 * Listen for post save in wp-admin
-	 */
-	public static function on_post_saved($post_id, $post)
-	{
-		if (self::$is_syncing || wp_is_post_revision($post_id) || wp_is_post_autosave($post_id)) {
-			return;
-		}
-
-		if (! $post || ! in_array($post->post_type, array('credits', 'fpc_credits', 'wc_cs_credits'), true)) {
-			return;
-		}
-
-		$user_id = (int) (get_post_meta($post_id, 'user_id', true) ?: get_post_meta($post_id, '_user_id', true));
-		if (! $user_id) {
-			return;
-		}
-
-		$user = get_userdata($user_id);
-		if (! $user) {
-			return;
-		}
-
-		$limit = (float) get_post_meta($post_id, 'credit_limit', true) ?: (float) get_post_meta($post_id, '_credit_limit', true);
-
-		if ('publish' === $post->post_status || $limit > 0) {
-			if (! in_array('credit_account', (array) $user->roles, true)) {
-				$user->add_role('credit_account');
-			}
-			if ($limit > 0 && class_exists('CWD_V2_Credit_Logic')) {
-				CWD_V2_Credit_Logic::sync_user_credit_limit($user_id, $limit);
-			}
-		}
-	}
-
-	/**
-	 * Listen for user meta changes
-	 */
-	public static function on_user_meta_updated($meta_id, $object_id, $meta_key, $_meta_value)
-	{
-		if (self::$is_syncing) {
-			return;
-		}
-
-		$user_id = (int) $object_id;
-		if (! $user_id) {
-			return;
-		}
-
-		if (in_array($meta_key, self::$credit_limit_keys, true)) {
-			$limit = (float) $_meta_value;
-			if ($limit > 0) {
-				self::sync_user_to_credits_post($user_id);
-			}
-		}
-	}
-
-	/**
-	 * Listen for role changes
-	 */
-	public static function on_user_role_changed($user_id, $role, $old_roles)
-	{
-		if ('credit_account' === $role) {
-			self::sync_user_to_credits_post((int) $user_id);
-		}
 	}
 }

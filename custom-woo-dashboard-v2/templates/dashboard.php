@@ -30,8 +30,8 @@ $initial = strtoupper(substr($display_name, 0, 1));
 			</div>
 		</div>
 		<div class="cwd-v2-card-footer">
-			<a href="<?php echo esc_url(wc_get_endpoint_url('edit-account')); ?>"><?php _e('Edit Profile', 'custom-woo-dashboard'); ?></a>
-			<a href="<?php echo esc_url(wc_get_endpoint_url('change-password')); ?>"><?php _e('Change Password', 'custom-woo-dashboard'); ?></a>
+			<a href="<?php echo esc_url(wc_get_endpoint_url('edit-account')); ?>"><?php _e('View Account Details', 'custom-woo-dashboard'); ?></a>
+			<a href="<?php echo esc_url(wc_get_endpoint_url('edit-address')); ?>"><?php _e('Billing & Delivery Details', 'custom-woo-dashboard'); ?></a>
 		</div>
 	</div>
 
@@ -120,25 +120,6 @@ $initial = strtoupper(substr($display_name, 0, 1));
 		</div>
 	</div>
 
-	<!-- Account Details Card -->
-	<div class="cwd-v2-card">
-		<div class="cwd-v2-card-content">
-			<div class="cwd-v2-icon cwd-v2-icon-account">
-				<svg viewBox="0 0 24 24" aria-hidden="true">
-					<circle cx="12" cy="8" r="3" />
-					<path d="M5 20a7 7 0 0 1 14 0M8 3h8" />
-				</svg>
-			</div>
-			<div class="cwd-v2-card-text">
-				<h3><?php _e('Account Details', 'custom-woo-dashboard'); ?></h3>
-				<p><?php _e('View your account information.', 'custom-woo-dashboard'); ?></p>
-			</div>
-		</div>
-		<div class="cwd-v2-card-footer">
-			<a href="<?php echo esc_url(wc_get_endpoint_url('edit-account')); ?>"><?php _e('View Account Details', 'custom-woo-dashboard'); ?></a>
-			<a href="<?php echo esc_url(wc_get_endpoint_url('edit-address')); ?>"><?php _e('Billing & Delivery Details', 'custom-woo-dashboard'); ?></a>
-		</div>
-	</div>
 
 	<!-- Credit Dashboard Card -->
 	<div class="cwd-v2-card cwd-v2-credit-card">

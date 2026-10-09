@@ -119,7 +119,7 @@ class CWD_V2_Admin_Profile
 					</th>
 					<td>
 						<input type="text" name="cwd_ews_account_number" id="cwd_ews_account_number" value="<?php echo esc_attr($account_number); ?>" class="regular-text" style="max-width: 250px;" />
-						<p class="description"><?php esc_html_e('Odoo trade partner account reference (e.g. EWS-T0001).', 'custom-woo-dashboard'); ?></p>
+						<p class="description"><?php esc_html_e('Odoo trade partner account reference (e.g. EWS-000001).', 'custom-woo-dashboard'); ?></p>
 					</td>
 				</tr>
 			</table>

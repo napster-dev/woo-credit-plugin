@@ -8,7 +8,21 @@
 	const { decodeEntities } = window.wp.htmlEntities || { decodeEntities: function (s) { return s; } };
 	const { __ } = window.wp.i18n || { __: function (s) { return s; } };
 
-	const settings = window.wcSettings ? window.wcSettings.getSetting('cwd_v2_credit_account_data', {}) : {};
+	const getSetting = (window.wc && window.wc.wcSettings && typeof window.wc.wcSettings.getSetting === 'function')
+		? window.wc.wcSettings.getSetting
+		: ((window.wcSettings && typeof window.wcSettings.getSetting === 'function')
+			? window.wcSettings.getSetting
+			: function (key, fallback) {
+				if (window.wc && window.wc.wcSettings && typeof window.wc.wcSettings[key] !== 'undefined') {
+					return window.wc.wcSettings[key];
+				}
+				if (window.wcSettings && typeof window.wcSettings[key] !== 'undefined') {
+					return window.wcSettings[key];
+				}
+				return fallback || {};
+			});
+
+	const settings = getSetting('cwd_v2_credit_account_data', {});
 
 	const defaultTitle = __('Pay on Credit Account', 'custom-woo-dashboard');
 	const defaultDesc = __('Your order will be charged to your trade credit account and settled according to your payment terms.', 'custom-woo-dashboard');
@@ -17,9 +31,9 @@
 	const description = decodeEntities(settings.description || defaultDesc);
 
 	const Content = function () {
-		const availableFormatted = settings.formatted_available || '£0.00';
-		const limitFormatted = settings.formatted_limit || '£0.00';
-		const balanceFormatted = settings.formatted_balance || '£0.00';
+		const availableFormatted = decodeEntities(settings.formatted_available || '£0.00');
+		const limitFormatted = decodeEntities(settings.formatted_limit || '£0.00');
+		const balanceFormatted = decodeEntities(settings.formatted_balance || '£0.00');
 
 		return el(
 			'div',
