@@ -63,12 +63,26 @@ $available_credit = max( 0, $credit_limit - $credit_balance );
 
 
 // Fetch credit purchase history (orders made with credit payment gateways)
-$args = array(
-	'customer_id'    => $user_id,
-	'payment_method' => array( 'cwd_v2_credit_account', 'credits', 'wc_cs', 'wc_cs_credits', 'fpc_credits', 'trade_credit' ),
-	'limit'          => 10,
-);
-$credit_orders = wc_get_orders( $args );
+$recent_orders_raw = wc_get_orders( array(
+	'customer_id' => $user_id,
+	'limit'       => 30,
+	'orderby'     => 'date',
+	'order'       => 'DESC',
+	'status'      => array( 'processing', 'completed', 'on-hold', 'pending' ),
+) );
+
+$credit_orders       = array();
+$credit_method_slugs = array( 'cwd_v2_credit_account', 'credits', 'wc_cs', 'wc_cs_credits', 'fpc_credits', 'trade_credit' );
+
+foreach ( $recent_orders_raw as $cand_order ) {
+	$pm = strtolower( (string) $cand_order->get_payment_method() );
+	$is_credit_ord = in_array( $pm, $credit_method_slugs, true )
+		|| ( 'yes' === $cand_order->get_meta( '_paid_with_credit' ) )
+		|| ( (float) $cand_order->get_meta( '_credit_charged_amount' ) > 0 );
+	if ( $is_credit_ord ) {
+		$credit_orders[] = $cand_order;
+	}
+}
 
 // Print notices
 wc_print_notices();
@@ -525,7 +539,7 @@ wc_print_notices();
 						<?php wp_nonce_field( 'cwd_v2_pay_credit_action', 'cwd_v2_pay_credit_nonce' ); ?>
 						<div style="margin-bottom: 16px;">
 							<label for="cwd_v2_pay_amount" style="display: block; font-size: 12.5px; font-weight: 600; color: #334155; margin-bottom: 6px;">
-								<?php esc_html_e( 'Amount to Pay', 'custom-woo-dashboard' ); ?> (<?php echo esc_html( get_woocommerce_currency_symbol() ); ?>)
+								<?php esc_html_e( 'Amount to Pay', 'custom-woo-dashboard' ); ?> (<?php echo esc_html( html_entity_decode( get_woocommerce_currency_symbol(), ENT_QUOTES, 'UTF-8' ) ); ?>)
 							</label>
 							<input type="number" step="0.01" min="0.01" max="<?php echo esc_attr( $credit_balance ); ?>" name="cwd_v2_pay_amount" id="cwd_v2_pay_amount" value="<?php echo esc_attr( $credit_balance ); ?>" required style="width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 10px 12px; font-size: 14px; box-sizing: border-box; background: #ffffff;" />
 						</div>
@@ -607,7 +621,7 @@ wc_print_notices();
 							<input type="hidden" name="cwd_v2_request_increase" value="1" />
 							<div style="margin-bottom: 12px;">
 								<label for="cwd_v2_requested_amount" style="display: block; font-size: 12.5px; font-weight: 600; color: #334155; margin-bottom: 6px;">
-									<?php esc_html_e( 'Requested New Limit', 'custom-woo-dashboard' ); ?> (<?php echo esc_html( get_woocommerce_currency_symbol() ); ?>)
+									<?php esc_html_e( 'Requested New Limit', 'custom-woo-dashboard' ); ?> (<?php echo esc_html( html_entity_decode( get_woocommerce_currency_symbol(), ENT_QUOTES, 'UTF-8' ) ); ?>)
 								</label>
 								<input type="number" step="any" min="1" name="cwd_v2_requested_amount" id="cwd_v2_requested_amount" placeholder="<?php esc_attr_e( 'Enter requested new limit', 'custom-woo-dashboard' ); ?>" required style="width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 10px 12px; font-size: 14px; box-sizing: border-box; background: #ffffff;" />
 							</div>
@@ -642,7 +656,7 @@ wc_print_notices();
 							</div>
 							<div style="margin-bottom: 12px;">
 								<label for="cwd_v2_requested_limit" style="display: block; font-size: 12.5px; font-weight: 600; color: #334155; margin-bottom: 4px;">
-									<?php esc_html_e( 'Requested Credit Facility', 'custom-woo-dashboard' ); ?> (<?php echo esc_html( get_woocommerce_currency_symbol() ); ?>) *
+									<?php esc_html_e( 'Requested Credit Facility', 'custom-woo-dashboard' ); ?> (<?php echo esc_html( html_entity_decode( get_woocommerce_currency_symbol(), ENT_QUOTES, 'UTF-8' ) ); ?>) *
 								</label>
 								<input type="number" step="any" min="1" name="cwd_v2_requested_limit" id="cwd_v2_requested_limit" placeholder="<?php esc_attr_e( 'Enter requested facility limit', 'custom-woo-dashboard' ); ?>" required style="width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 9px 12px; font-size: 13.5px; box-sizing: border-box; background: #ffffff;" />
 							</div>
@@ -743,58 +757,198 @@ wc_print_notices();
 		<?php endif; ?>
 	</div>
 
-	<!-- Credit Purchase History Table -->
+	<!-- Credit Purchase History & Payoff Table -->
 	<div class="cwd-v2-section-box">
 		<div class="cwd-v2-section-top">
 			<div>
-				<h3><?php esc_html_e( 'Recent Trade Credit Orders', 'custom-woo-dashboard' ); ?></h3>
-				<p><?php esc_html_e( 'Showing last 10 credit purchases', 'custom-woo-dashboard' ); ?></p>
+				<h3><?php esc_html_e( 'Trade Credit Orders & Early Payoff', 'custom-woo-dashboard' ); ?></h3>
+				<p><?php esc_html_e( 'Select open credit orders below to pay them off immediately. Any unselected orders will be settled on your monthly schedule.', 'custom-woo-dashboard' ); ?></p>
 			</div>
 		</div>
 
 		<?php if ( ! empty( $credit_orders ) ) : ?>
-			<div class="cwd-v2-table-wrapper">
-				<table class="cwd-v2-data-table">
-					<thead>
-						<tr>
-							<th><?php esc_html_e( 'Order', 'woocommerce' ); ?></th>
-							<th><?php esc_html_e( 'Date', 'woocommerce' ); ?></th>
-							<th><?php esc_html_e( 'Status', 'woocommerce' ); ?></th>
-							<th class="th-num"><?php esc_html_e( 'Total', 'woocommerce' ); ?></th>
-							<th style="text-align: right;"><?php esc_html_e( 'Action', 'woocommerce' ); ?></th>
-						</tr>
-					</thead>
-					<tbody>
-						<?php foreach ( $credit_orders as $order ) : ?>
+			<form method="post" action="" id="cwd-v2-pay-orders-form">
+				<?php wp_nonce_field( 'cwd_v2_pay_credit_action', 'cwd_v2_pay_credit_nonce' ); ?>
+				<input type="hidden" name="cwd_v2_pay_credit_balance" value="1" />
+				<input type="hidden" name="cwd_v2_pay_selected_orders" value="1" />
+				<input type="hidden" name="cwd_v2_pay_amount" id="cwd-orders-hidden-amount" value="0.00" />
+
+				<div class="cwd-v2-table-wrapper">
+					<table class="cwd-v2-data-table">
+						<thead>
 							<tr>
-								<td style="font-weight: 600; color: #0f172a; white-space: nowrap;">
-									<a href="<?php echo esc_url( $order->get_view_order_url() ); ?>" style="color: #0f172a; text-decoration: none; font-weight: 600;">
-										#<?php echo esc_html( $order->get_order_number() ); ?>
-									</a>
-								</td>
-								<td style="color: #64748b; white-space: nowrap;">
-									<time datetime="<?php echo esc_attr( $order->get_date_created()->date( 'c' ) ); ?>">
-										<?php echo esc_html( wc_format_datetime( $order->get_date_created() ) ); ?>
-									</time>
-								</td>
-								<td style="white-space: nowrap;">
-									<span class="cwd-v2-status-pill" style="background: #f1f5f9; color: #334155; border: 1px solid #e2e8f0;">
-										<?php echo esc_html( wc_get_order_status_name( $order->get_status() ) ); ?>
-									</span>
-								</td>
-								<td class="td-num" style="font-weight: 600; color: #0f172a; white-space: nowrap;">
-									<?php echo wp_kses_post( $order->get_formatted_order_total() ); ?>
-								</td>
-								<td style="text-align: right; white-space: nowrap;">
-									<a href="<?php echo esc_url( $order->get_view_order_url() ); ?>" class="cwd-v2-btn-view">
-										<?php esc_html_e( 'View', 'woocommerce' ); ?>
-									</a>
-								</td>
+								<th style="width: 44px; text-align: center; vertical-align: middle;">
+									<input type="checkbox" id="cwd-select-all-orders" title="<?php esc_attr_e( 'Select all unsettled orders', 'custom-woo-dashboard' ); ?>" style="cursor: pointer; width: 16px; height: 16px; accent-color: #0284c7; margin: 0; vertical-align: middle;" />
+								</th>
+								<th><?php esc_html_e( 'Order', 'woocommerce' ); ?></th>
+								<th><?php esc_html_e( 'Date', 'woocommerce' ); ?></th>
+								<th style="text-align: center;"><?php esc_html_e( 'Credit Status', 'custom-woo-dashboard' ); ?></th>
+								<th><?php esc_html_e( 'Order Status', 'woocommerce' ); ?></th>
+								<th class="th-num"><?php esc_html_e( 'Total', 'woocommerce' ); ?></th>
+								<th style="text-align: right;"><?php esc_html_e( 'Action', 'woocommerce' ); ?></th>
 							</tr>
-						<?php endforeach; ?>
-					</tbody>
-				</table>
-			</div>
+						</thead>
+						<tbody>
+							<?php
+							$has_unsettled = false;
+							foreach ( $credit_orders as $order ) :
+								$is_settled = ( 'yes' === $order->get_meta( '_credit_order_settled' ) );
+								if ( ! $is_settled && class_exists( 'CWD_V2_Invoices' ) ) {
+									$linked_inv = CWD_V2_Invoices::get_invoices_for_order( $order->get_id() );
+									if ( $linked_inv && CWD_V2_Invoices::STATUS_PAID === $linked_inv->status ) {
+										$is_settled = true;
+									}
+								}
+								if ( ! $is_settled ) {
+									$has_unsettled = true;
+								}
+								$order_total_val = (float) $order->get_total();
+								?>
+								<tr>
+									<td style="text-align: center; vertical-align: middle; width: 44px;">
+										<?php if ( $is_settled ) : ?>
+											<span style="color: #16a34a; font-weight: 700; font-size: 15px;" title="<?php esc_attr_e( 'Paid off / Settled', 'custom-woo-dashboard' ); ?>">✓</span>
+										<?php else : ?>
+											<input type="checkbox" name="cwd_v2_selected_order_ids[]" value="<?php echo esc_attr( $order->get_id() ); ?>" data-amount="<?php echo esc_attr( $order_total_val ); ?>" class="cwd-order-checkbox" style="cursor: pointer; width: 16px; height: 16px; accent-color: #0284c7; margin: 0; vertical-align: middle;" />
+										<?php endif; ?>
+									</td>
+									<td style="font-weight: 600; color: #0f172a; white-space: nowrap;">
+										<a href="<?php echo esc_url( $order->get_view_order_url() ); ?>" style="color: #0f172a; text-decoration: none; font-weight: 600;">
+											#<?php echo esc_html( $order->get_order_number() ); ?>
+										</a>
+										<?php if ( ! empty($linked_inv) ) : ?>
+											<a href="<?php echo esc_url( wc_get_endpoint_url( 'view-invoice', $linked_inv->id ) ); ?>" style="display: block; font-size: 11px; color: #6366f1; text-decoration: none; font-weight: 500; margin-top: 2px;" title="<?php esc_attr_e( 'View linked invoice', 'custom-woo-dashboard' ); ?>">
+												<?php echo esc_html( $linked_inv->invoice_number ); ?>
+											</a>
+										<?php endif; ?>
+									</td>
+									<td style="color: #64748b; white-space: nowrap;">
+										<time datetime="<?php echo esc_attr( $order->get_date_created()->date( 'c' ) ); ?>">
+											<?php echo esc_html( wc_format_datetime( $order->get_date_created() ) ); ?>
+										</time>
+									</td>
+									<td style="text-align: center; white-space: nowrap;">
+										<?php if ( $is_settled ) : ?>
+											<span class="cwd-v2-status-pill" style="background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 4px;">
+												<?php esc_html_e( 'Settled', 'custom-woo-dashboard' ); ?>
+											</span>
+										<?php else : ?>
+											<span class="cwd-v2-status-pill" style="background: #fef3c7; color: #92400e; border: 1px solid #fde68a; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 4px;">
+												<?php esc_html_e( 'Open Credit', 'custom-woo-dashboard' ); ?>
+											</span>
+										<?php endif; ?>
+									</td>
+									<td style="white-space: nowrap;">
+										<span class="cwd-v2-status-pill" style="background: #f1f5f9; color: #334155; border: 1px solid #e2e8f0; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 4px;">
+											<?php echo esc_html( wc_get_order_status_name( $order->get_status() ) ); ?>
+										</span>
+									</td>
+									<td class="td-num" style="font-weight: 700; color: #0f172a; white-space: nowrap;">
+										<?php echo wp_kses_post( $order->get_formatted_order_total() ); ?>
+									</td>
+									<td style="text-align: right; white-space: nowrap;">
+										<a href="<?php echo esc_url( $order->get_view_order_url() ); ?>" class="cwd-v2-btn-view">
+											<?php esc_html_e( 'View', 'woocommerce' ); ?>
+										</a>
+									</td>
+								</tr>
+							<?php endforeach; ?>
+						</tbody>
+					</table>
+				</div>
+
+				<!-- Selected Orders Checkout Action Bar -->
+				<div id="cwd-orders-pay-bar" style="display: flex; justify-content: space-between; align-items: center; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px 20px; margin-top: 14px; flex-wrap: wrap; gap: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
+					<div>
+						<div style="font-size: 14px; font-weight: 700; color: #0f172a; display: flex; align-items: center; gap: 8px;">
+							<span><?php esc_html_e( 'Pay Selected Credit Orders', 'custom-woo-dashboard' ); ?></span>
+							<span id="cwd-selected-badge" style="background: #f1f5f9; color: #475569; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 12px; border: 1px solid #e2e8f0;">0 selected</span>
+						</div>
+						<div style="font-size: 12.5px; color: #64748b; margin-top: 4px;">
+							<?php esc_html_e( 'Selected payoff amount:', 'custom-woo-dashboard' ); ?> <strong id="cwd-selected-total" style="color: #0f172a; font-size: 14px;"><?php echo esc_html( html_entity_decode( get_woocommerce_currency_symbol(), ENT_QUOTES, 'UTF-8' ) ); ?>0.00</strong>
+							<span style="font-size: 11.5px; color: #94a3b8; margin-left: 6px;">&bull; <?php esc_html_e( 'Unselected orders remain on standard monthly billing cycle', 'custom-woo-dashboard' ); ?></span>
+						</div>
+					</div>
+					<div>
+						<button type="submit" id="cwd-pay-selected-btn" class="cwd-v2-btn-primary" style="opacity: 0.5; pointer-events: none; padding: 10px 22px; font-size: 13.5px; font-weight: 700; display: inline-flex; align-items: center; gap: 8px; border-radius: 6px; cursor: pointer; border: none; background: #0284c7; color: #ffffff; transition: all 0.15s ease;" disabled>
+							<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"></rect><line x1="2" y1="10" x2="22" y2="10"></line></svg>
+							<span id="cwd-pay-btn-text"><?php esc_html_e( 'Proceed to Settlement', 'custom-woo-dashboard' ); ?></span>
+						</button>
+					</div>
+				</div>
+			</form>
+
+			<script>
+			(function() {
+				var selectAll = document.getElementById('cwd-select-all-orders');
+				var checkboxes = document.querySelectorAll('.cwd-order-checkbox');
+				var countEl = document.getElementById('cwd-selected-badge');
+				var totalEl = document.getElementById('cwd-selected-total');
+				var payBtn = document.getElementById('cwd-pay-selected-btn');
+				var btnText = document.getElementById('cwd-pay-btn-text');
+				var hiddenAmount = document.getElementById('cwd-orders-hidden-amount');
+				var currencySymbol = <?php echo json_encode( html_entity_decode( get_woocommerce_currency_symbol(), ENT_QUOTES, 'UTF-8' ) ); ?>;
+
+				function updateSelection() {
+					var count = 0;
+					var total = 0.0;
+					checkboxes.forEach(function(cb) {
+						if (cb.checked) {
+							count++;
+							total += parseFloat(cb.getAttribute('data-amount') || 0);
+						}
+					});
+
+					if (countEl) {
+						countEl.textContent = count + ' selected';
+						countEl.style.background = count > 0 ? '#e0f2fe' : '#f1f5f9';
+						countEl.style.color = count > 0 ? '#0369a1' : '#475569';
+						countEl.style.borderColor = count > 0 ? '#bae6fd' : '#e2e8f0';
+					}
+					if (totalEl) {
+						totalEl.textContent = currencySymbol + total.toFixed(2);
+					}
+					if (hiddenAmount) {
+						hiddenAmount.value = total.toFixed(2);
+					}
+
+					if (payBtn) {
+						if (count > 0 && total > 0) {
+							payBtn.disabled = false;
+							payBtn.style.opacity = '1';
+							payBtn.style.pointerEvents = 'auto';
+							if (btnText) {
+								btnText.textContent = '<?php echo esc_js( __( 'Proceed to Settlement', 'custom-woo-dashboard' ) ); ?> (' + currencySymbol + total.toFixed(2) + ')';
+							}
+						} else {
+							payBtn.disabled = true;
+							payBtn.style.opacity = '0.5';
+							payBtn.style.pointerEvents = 'none';
+							if (btnText) {
+								btnText.textContent = '<?php echo esc_js( __( 'Proceed to Settlement', 'custom-woo-dashboard' ) ); ?>';
+							}
+						}
+					}
+
+					if (selectAll && checkboxes.length > 0) {
+						selectAll.checked = (count === checkboxes.length);
+					}
+				}
+
+				if (selectAll) {
+					selectAll.addEventListener('change', function() {
+						checkboxes.forEach(function(cb) {
+							cb.checked = selectAll.checked;
+						});
+						updateSelection();
+					});
+				}
+
+				checkboxes.forEach(function(cb) {
+					cb.addEventListener('change', updateSelection);
+				});
+			})();
+			</script>
 		<?php else : ?>
 			<div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 16px 20px; font-size: 13.5px; color: #64748b; display: flex; justify-content: space-between; align-items: center;">
 				<span><?php esc_html_e( 'No trade credit purchases recorded yet.', 'custom-woo-dashboard' ); ?></span>

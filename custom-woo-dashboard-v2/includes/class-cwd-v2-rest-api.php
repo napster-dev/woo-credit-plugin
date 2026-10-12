@@ -364,6 +364,12 @@ class CWD_V2_REST_API
 		if ( ! $user && ! empty( $email ) ) {
 			$user = get_user_by( 'email', $email );
 		}
+		if ( ! $user && $request->get_param( 'order_id' ) ) {
+			$order = wc_get_order( absint( $request->get_param( 'order_id' ) ) );
+			if ( $order && $order->get_user_id() ) {
+				$user = get_userdata( $order->get_user_id() );
+			}
+		}
 		if ( ! $user ) {
 			return new WP_REST_Response(
 				array( 'success' => false, 'message' => __( 'Customer not found.', 'custom-woo-dashboard' ) ),
@@ -373,6 +379,7 @@ class CWD_V2_REST_API
 
 		$row = array(
 			'odoo_invoice_id' => $request->get_param( 'odoo_invoice_id' ),
+			'order_id'        => $request->get_param( 'order_id' ),
 			'invoice_number'  => $request->get_param( 'invoice_number' ),
 			'invoice_date'    => $request->get_param( 'invoice_date' ),
 			'due_date'        => $request->get_param( 'due_date' ),

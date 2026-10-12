@@ -57,7 +57,20 @@ $document_url = apply_filters('cwd_v2_invoice_document_url', $invoice->document_
 	<div class="cwd-v2-invoice-meta">
 		<p><strong><?php esc_html_e('Invoice Date:', 'custom-woo-dashboard'); ?></strong> <?php echo esc_html(date_i18n(wc_date_format(), strtotime($invoice->invoice_date))); ?></p>
 		<p><strong><?php esc_html_e('Due Date:', 'custom-woo-dashboard'); ?></strong> <?php echo esc_html(date_i18n(wc_date_format(), strtotime($invoice->due_date))); ?></p>
-		<p><strong><?php esc_html_e('Source:', 'custom-woo-dashboard'); ?></strong> <?php echo esc_html(CWD_V2_Invoices::SOURCE_ODOO === $invoice->source ? 'Odoo' : 'Website'); ?></p>
+		<p>
+			<strong><?php esc_html_e('Source:', 'custom-woo-dashboard'); ?></strong> 
+			<?php if (CWD_V2_Invoices::SOURCE_ODOO === $invoice->source) : ?>
+				<span style="background: #ede9fe; color: #5b21b6; font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 4px; border: 1px solid #ddd6fe;">Odoo ERP</span>
+				<?php if (! empty($invoice->odoo_invoice_id)) : ?>
+					<span style="font-size: 12px; color: #64748b; margin-left: 4px;">(#<?php echo esc_html($invoice->odoo_invoice_id); ?>)</span>
+				<?php endif; ?>
+			<?php else : ?>
+				<span>Website</span>
+			<?php endif; ?>
+		</p>
+		<?php if ($order) : ?>
+			<p><strong><?php esc_html_e('Linked Order:', 'custom-woo-dashboard'); ?></strong> <a href="<?php echo esc_url($order->get_view_order_url()); ?>" style="font-weight: 600; color: #0284c7;">#<?php echo esc_html($order->get_order_number()); ?></a></p>
+		<?php endif; ?>
 		<p><strong><?php esc_html_e('Billed To:', 'custom-woo-dashboard'); ?></strong> <?php echo esc_html($current_user->display_name); ?> (<?php echo esc_html($current_user->user_email); ?>)</p>
 	</div>
 

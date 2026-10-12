@@ -21,6 +21,7 @@ class CWD_V2_Shortcode
 		add_action('woocommerce_account_returns_endpoint', array(__CLASS__, 'returns_content'));
 		add_action('woocommerce_account_statements_endpoint', array(__CLASS__, 'statements_content'));
 		add_action('woocommerce_account_credit_endpoint', array(__CLASS__, 'credit_content'));
+		add_action('woocommerce_account_credits_endpoint', array(__CLASS__, 'credit_content'));
 		add_action('woocommerce_account_change-password_endpoint', array(__CLASS__, 'change_password_content'));
 		add_action('woocommerce_account_live-orders_endpoint', array(__CLASS__, 'live_orders_content'));
 		add_action('woocommerce_account_back-orders_endpoint', array(__CLASS__, 'back_orders_content'));
@@ -67,6 +68,7 @@ class CWD_V2_Shortcode
 			'returns',
 			'statements',
 			'credit',
+			'credits',
 			'change-password',
 			'view-order',
 			'live-orders',

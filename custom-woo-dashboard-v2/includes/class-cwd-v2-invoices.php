@@ -341,6 +341,8 @@ class CWD_V2_Invoices
 		$status = in_array( $status, array( self::STATUS_UNPAID, self::STATUS_PAID, self::STATUS_VOID ), true ) ? $status : self::STATUS_UNPAID;
 		$now    = current_time( 'mysql' );
 
+		$order_id = ! empty( $row['order_id'] ) ? absint( $row['order_id'] ) : 0;
+
 		$data = array(
 			'user_id'        => (int) $user_id,
 			'invoice_number' => sanitize_text_field( $row['invoice_number'] ?? $odoo_id ),
@@ -354,22 +356,65 @@ class CWD_V2_Invoices
 			'updated_at'     => $now,
 		);
 
-		$existing = $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$table} WHERE odoo_invoice_id = %s", $odoo_id ) );
-		if ( $existing ) {
-			return false !== $wpdb->update(
-				$table,
-				$data,
-				array( 'id' => (int) $existing ),
-				array( '%d', '%s', '%s', '%s', '%s', '%s', '%f', '%f', '%s', '%s' ),
-				array( '%d' )
-			);
+		if ( $order_id > 0 ) {
+			$data['order_id'] = $order_id;
 		}
 
-		return false !== $wpdb->insert(
-			$table,
-			array_merge( $data, array( 'odoo_invoice_id' => $odoo_id, 'order_id' => null, 'created_at' => $now ) ),
-			array( '%d', '%s', '%s', '%s', '%s', '%s', '%f', '%f', '%s', '%s', '%s', '%s' )
-		);
+		// 1. Check if row exists for this odoo_invoice_id
+		$existing = $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$table} WHERE odoo_invoice_id = %s", $odoo_id ) );
+
+		// 2. If not found by odoo_invoice_id, check if existing invoice exists for this WooCommerce order
+		if ( ! $existing && $order_id > 0 ) {
+			$existing = $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$table} WHERE order_id = %d", $order_id ) );
+		}
+
+		if ( $existing ) {
+			$data['odoo_invoice_id'] = $odoo_id;
+			$updated = false !== $wpdb->update(
+				$table,
+				$data,
+				array( 'id' => (int) $existing )
+			);
+
+			// Link order in WooCommerce order meta
+			if ( $order_id > 0 ) {
+				$order = wc_get_order( $order_id );
+				if ( $order ) {
+					$order->update_meta_data( '_odoo_invoice_id', $odoo_id );
+					$order->update_meta_data( '_odoo_invoice_number', $data['invoice_number'] );
+					if ( ! empty( $data['document_url'] ) ) {
+						$order->update_meta_data( '_odoo_invoice_url', $data['document_url'] );
+					}
+					$order->save();
+				}
+			}
+
+			self::update_user_earliest_due_date( $user_id );
+			return $updated;
+		}
+
+		// 3. Otherwise insert as new linked invoice row
+		$insert_data = array_merge( $data, array(
+			'odoo_invoice_id' => $odoo_id,
+			'order_id'        => $order_id > 0 ? $order_id : null,
+			'created_at'      => $now,
+		) );
+		$inserted = false !== $wpdb->insert( $table, $insert_data );
+
+		if ( $inserted && $order_id > 0 ) {
+			$order = wc_get_order( $order_id );
+			if ( $order ) {
+				$order->update_meta_data( '_odoo_invoice_id', $odoo_id );
+				$order->update_meta_data( '_odoo_invoice_number', $data['invoice_number'] );
+				if ( ! empty( $data['document_url'] ) ) {
+					$order->update_meta_data( '_odoo_invoice_url', $data['document_url'] );
+				}
+				$order->save();
+			}
+		}
+
+		self::update_user_earliest_due_date( $user_id );
+		return $inserted;
 	}
 
 	/**
