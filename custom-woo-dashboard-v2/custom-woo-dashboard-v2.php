@@ -13,7 +13,7 @@ if (! defined('ABSPATH')) {
 
 define('CWD_V2_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CWD_V2_PLUGIN_URL', plugin_dir_url(__FILE__));
-define('CWD_V2_VERSION', '2.2.12');
+define('CWD_V2_VERSION', '2.2.14');
 
 // Include activator right away for the hook
 require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-activator.php';
@@ -47,6 +47,7 @@ if (! function_exists('cwd_v2_init_plugin')) {
 			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-credits-bridge.php';
 			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-trade-number-migrator.php';
 			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-blink-express.php';
+			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-shipment-tracking.php';
 
 			CWD_V2_Activator::register_roles();
 			CWD_V2_Shortcode::init();
@@ -60,6 +61,7 @@ if (! function_exists('cwd_v2_init_plugin')) {
 			CWD_V2_Trade_Applications::init();
 			CWD_V2_Credits_Bridge::init();
 			CWD_V2_Blink_Express::init();
+			CWD_V2_Shipment_Tracking::init();
 
 			// Enqueue dashboard styles across all front-end pages
 			add_action('wp_enqueue_scripts', 'cwd_v2_enqueue_frontend_styles', 20);
@@ -100,7 +102,7 @@ if (! function_exists('cwd_v2_init_plugin')) {
 if (! function_exists('cwd_v2_refresh_rewrite_rules')) {
 	function cwd_v2_refresh_rewrite_rules()
 	{
-		$rewrite_version = '5';
+		$rewrite_version = '6';
 
 		if (get_option('cwd_v2_rewrite_version') === $rewrite_version) {
 			return;
@@ -146,6 +148,61 @@ if (! function_exists('cwd_v2_enqueue_frontend_styles')) {
 		if (is_account_page() || is_checkout() || is_cart() || is_singular('product')) {
 			wp_enqueue_style('cwd-v2-dashboard-style', CWD_V2_PLUGIN_URL . 'assets/css/style.css', array(), CWD_V2_VERSION);
 		}
+	}
+}
+
+// Redirect any /my-account/credits request to canonical /my-account/credit/
+add_action('template_redirect', 'cwd_v2_canonical_credit_redirect');
+if (! function_exists('cwd_v2_canonical_credit_redirect')) {
+	function cwd_v2_canonical_credit_redirect()
+	{
+		if (function_exists('is_account_page') && is_account_page()) {
+			global $wp;
+			if (isset($wp->query_vars['credits'])) {
+				wp_safe_redirect(wc_get_endpoint_url('credit', '', wc_get_page_permalink('myaccount')));
+				exit;
+			}
+		}
+	}
+}
+
+// Client-side linker for dropdown menus next to user avatar/pfp
+add_action('wp_footer', 'cwd_v2_fix_user_menu_credits_links', 99);
+if (! function_exists('cwd_v2_fix_user_menu_credits_links')) {
+	function cwd_v2_fix_user_menu_credits_links()
+	{
+		if (! is_user_logged_in()) {
+			return;
+		}
+		$myaccount_id = function_exists('wc_get_page_id') ? wc_get_page_id('myaccount') : get_option('woocommerce_myaccount_page_id');
+		$myaccount_url = $myaccount_id ? get_permalink($myaccount_id) : home_url('/my-account/');
+		$credit_url = esc_url(trailingslashit($myaccount_url) . 'credit/');
+		?>
+		<script id="cwd-v2-header-credits-linker">
+		document.addEventListener('DOMContentLoaded', function() {
+			var creditTargetUrl = <?php echo json_encode($credit_url); ?>;
+			if (!creditTargetUrl) return;
+
+			function fixCreditsLinks() {
+				var links = document.querySelectorAll('a');
+				for (var i = 0; i < links.length; i++) {
+					var link = links[i];
+					var text = (link.textContent || '').trim().toLowerCase();
+					var href = link.getAttribute('href') || '';
+					
+					// If link text is "credits" or "credit" (e.g. in dropdown next to user pfp) or ends with /credits or /credits/
+					if ((text === 'credits' || text === 'credit' || /[\/]credits[\/]?$/i.test(href)) && !href.includes('admin.php') && !href.includes('wp-admin')) {
+						link.setAttribute('href', creditTargetUrl);
+					}
+				}
+			}
+
+			fixCreditsLinks();
+			setTimeout(fixCreditsLinks, 400);
+			setTimeout(fixCreditsLinks, 1200);
+		});
+		</script>
+		<?php
 	}
 }
 

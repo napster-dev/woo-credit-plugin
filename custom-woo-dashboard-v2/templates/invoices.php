@@ -69,8 +69,19 @@ $all_url  = esc_url(add_query_arg('cwd_status', 'all', wc_get_endpoint_url('invo
 						<tr>
 							<td data-title="<?php esc_attr_e('Invoice #', 'custom-woo-dashboard'); ?>" style="font-weight: 600; white-space: nowrap;">
 								<a href="<?php echo $view_url; ?>" style="color: #0f172a; text-decoration: none;"><?php echo esc_html($invoice->invoice_number); ?></a>
+								<?php if ( ! empty($invoice->order_id) ) : ?>
+									<span style="font-size: 11px; color: #64748b; display: block; font-weight: 400; margin-top: 2px;">
+										<?php printf( esc_html__( 'Order #%s', 'custom-woo-dashboard' ), esc_html( $invoice->order_id ) ); ?>
+									</span>
+								<?php endif; ?>
 							</td>
-							<td data-title="<?php esc_attr_e('Source', 'custom-woo-dashboard'); ?>" style="white-space: nowrap;"><?php echo esc_html(CWD_V2_Invoices::SOURCE_ODOO === $invoice->source ? 'Odoo' : 'Website'); ?></td>
+							<td data-title="<?php esc_attr_e('Source', 'custom-woo-dashboard'); ?>" style="white-space: nowrap;">
+								<?php if (CWD_V2_Invoices::SOURCE_ODOO === $invoice->source) : ?>
+									<span style="background: #ede9fe; color: #5b21b6; font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 4px; border: 1px solid #ddd6fe;">Odoo</span>
+								<?php else : ?>
+									<span style="background: #f1f5f9; color: #475569; font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 4px; border: 1px solid #e2e8f0;">Website</span>
+								<?php endif; ?>
+							</td>
 							<td data-title="<?php esc_attr_e('Date', 'custom-woo-dashboard'); ?>" style="color: #64748b; white-space: nowrap;">
 								<?php echo esc_html(date_i18n(wc_date_format(), strtotime($invoice->invoice_date))); ?>
 							</td>

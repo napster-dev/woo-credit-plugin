@@ -68,9 +68,82 @@ class CWD_V2_REST_API
 	/**
 	 * Authorization callback for credit meta in REST API
 	 */
-	public static function rest_meta_auth_callback()
+	public static function rest_meta_auth_callback($request = null)
 	{
-		return current_user_can('manage_woocommerce') || current_user_can('manage_options');
+		if (current_user_can('manage_woocommerce') || current_user_can('manage_options') || current_user_can('edit_shop_orders')) {
+			return true;
+		}
+
+		if ($request instanceof WP_REST_Request) {
+			// 1. Shared Secret Key check
+			$auth_header = $request->get_header('X-Odoo-Secret') 
+				?: $request->get_header('X-CWD-SECRET-KEY') 
+				?: $request->get_header('X-ODOO-SECRET') 
+				?: $request->get_param('secret_key');
+
+			$secret_key = defined('CWD_ODOO_SECRET_KEY') ? CWD_ODOO_SECRET_KEY : get_option('cwd_odoo_secret_key', '');
+
+			if (! empty($secret_key) && ! empty($auth_header) && hash_equals((string) $secret_key, (string) $auth_header)) {
+				return true;
+			}
+
+			// 2. Direct Basic Auth parsing (fixes LiteSpeed/Hostinger/FastCGI stripping Authorization header)
+			$raw_auth = '';
+			if (! empty($_SERVER['HTTP_AUTHORIZATION'])) {
+				$raw_auth = $_SERVER['HTTP_AUTHORIZATION'];
+			} elseif (! empty($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])) {
+				$raw_auth = $_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
+			} elseif ($request->get_header('authorization')) {
+				$raw_auth = $request->get_header('authorization');
+			} elseif ($request->get_header('X-Authorization')) {
+				$raw_auth = $request->get_header('X-Authorization');
+			}
+
+			if (0 === stripos($raw_auth, 'basic ')) {
+				$decoded = base64_decode(substr($raw_auth, 6));
+				if (false !== $decoded && strpos($decoded, ':') !== false) {
+					list($login_or_email, $password) = explode(':', $decoded, 2);
+					$user = get_user_by('login', $login_or_email) ?: get_user_by('email', $login_or_email);
+					if ($user) {
+						$clean_pw = str_replace(' ', '', $password);
+						if (class_exists('WP_Application_Passwords') && WP_Application_Passwords::is_enabled()) {
+							$authenticated = WP_Application_Passwords::authenticate(null, $user->user_login, $clean_pw);
+							if (! is_wp_error($authenticated) && $authenticated instanceof WP_User) {
+								if (user_can($authenticated, 'manage_woocommerce') || user_can($authenticated, 'manage_options') || user_can($authenticated, 'edit_shop_orders')) {
+									wp_set_current_user($authenticated->ID);
+									return true;
+								}
+							}
+						}
+						if (wp_check_password($password, $user->user_pass, $user->ID) || wp_check_password($clean_pw, $user->user_pass, $user->ID)) {
+							if (user_can($user, 'manage_woocommerce') || user_can($user, 'manage_options') || user_can($user, 'edit_shop_orders')) {
+								wp_set_current_user($user->ID);
+								return true;
+							}
+						}
+					}
+				}
+			}
+
+			// 3. Custom X-WP-App-User and X-WP-App-Password headers
+			$custom_user = $request->get_header('X-WP-App-User') ?: $request->get_param('wp_username');
+			$custom_pw   = $request->get_header('X-WP-App-Password') ?: $request->get_param('wp_app_password');
+			if (! empty($custom_user) && ! empty($custom_pw)) {
+				$user = get_user_by('login', $custom_user) ?: get_user_by('email', $custom_user);
+				if ($user && class_exists('WP_Application_Passwords') && WP_Application_Passwords::is_enabled()) {
+					$clean_pw = str_replace(' ', '', $custom_pw);
+					$authenticated = WP_Application_Passwords::authenticate(null, $user->user_login, $clean_pw);
+					if (! is_wp_error($authenticated) && $authenticated instanceof WP_User) {
+						if (user_can($authenticated, 'manage_woocommerce') || user_can($authenticated, 'manage_options') || user_can($authenticated, 'edit_shop_orders')) {
+							wp_set_current_user($authenticated->ID);
+							return true;
+						}
+					}
+				}
+			}
+		}
+
+		return false;
 	}
 
 	/**
@@ -340,6 +413,9 @@ class CWD_V2_REST_API
 		$customer_id = (int) $request->get_param( 'customer_id' );
 		$email       = sanitize_email( (string) $request->get_param( 'email' ) );
 
+		$order_id = absint( $request->get_param( 'order_id' ) );
+		$order    = $order_id > 0 ? wc_get_order( $order_id ) : null;
+
 		$user = null;
 		if ( $customer_id > 0 ) {
 			$user = get_userdata( $customer_id );
@@ -347,15 +423,27 @@ class CWD_V2_REST_API
 		if ( ! $user && ! empty( $email ) ) {
 			$user = get_user_by( 'email', $email );
 		}
-		if ( ! $user ) {
+		if ( ! $user && $order ) {
+			if ( $order->get_user_id() ) {
+				$user = get_userdata( $order->get_user_id() );
+			}
+			if ( ! $user && $order->get_billing_email() ) {
+				$user = get_user_by( 'email', $order->get_billing_email() );
+			}
+		}
+
+		if ( ! $user && ! $order ) {
 			return new WP_REST_Response(
-				array( 'success' => false, 'message' => __( 'Customer not found.', 'custom-woo-dashboard' ) ),
+				array( 'success' => false, 'message' => __( 'Customer or order not found.', 'custom-woo-dashboard' ) ),
 				404
 			);
 		}
 
+		$user_id = $user ? $user->ID : ( $order ? (int) $order->get_user_id() : 0 );
+
 		$row = array(
 			'odoo_invoice_id' => $request->get_param( 'odoo_invoice_id' ),
+			'order_id'        => $request->get_param( 'order_id' ),
 			'invoice_number'  => $request->get_param( 'invoice_number' ),
 			'invoice_date'    => $request->get_param( 'invoice_date' ),
 			'due_date'        => $request->get_param( 'due_date' ),
@@ -365,18 +453,18 @@ class CWD_V2_REST_API
 			'document_url'    => $request->get_param( 'document_url' ),
 		);
 
-		$ok = CWD_V2_Invoices::upsert_odoo_invoice( $user->ID, $row );
+		$ok = CWD_V2_Invoices::upsert_odoo_invoice( $user_id, $row );
 
 		$live_balance = 0.0;
-		if ( $ok && class_exists( 'CWD_V2_Credit_Logic' ) ) {
-			$live_balance = CWD_V2_Credit_Logic::recalculate_and_sync_user_credit_balance( $user->ID );
+		if ( $ok && $user_id > 0 && class_exists( 'CWD_V2_Credit_Logic' ) ) {
+			$live_balance = CWD_V2_Credit_Logic::recalculate_and_sync_user_credit_balance( $user_id );
 		}
 
 		return new WP_REST_Response(
 			array(
 				'success'        => $ok,
-				'customer_id'    => $user->ID,
-				'email'          => $user->user_email,
+				'customer_id'    => $user_id,
+				'email'          => $user ? $user->user_email : ( $order ? $order->get_billing_email() : '' ),
 				'credit_balance' => $live_balance,
 			),
 			$ok ? 200 : 500

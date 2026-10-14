@@ -27,6 +27,8 @@ class CWD_V2_Invoices
 		add_action('woocommerce_order_status_cancelled', array(__CLASS__, 'void_invoice_for_order'));
 		add_action('woocommerce_order_status_refunded', array(__CLASS__, 'void_invoice_for_order'));
 		add_action('cwd_v2_sync_odoo_invoices', array(__CLASS__, 'sync_odoo_invoices'));
+		add_action('add_meta_boxes', array(__CLASS__, 'register_order_invoice_meta_box'), 25);
+		add_action('woocommerce_admin_order_data_after_order_details', array(__CLASS__, 'display_admin_order_invoice_meta'));
 	}
 
 	/**
@@ -328,7 +330,8 @@ class CWD_V2_Invoices
 	public static function upsert_odoo_invoice( $user_id, $row )
 	{
 		$odoo_id = isset( $row['odoo_invoice_id'] ) ? sanitize_text_field( $row['odoo_invoice_id'] ) : '';
-		if ( '' === $odoo_id || ! $user_id ) {
+		$order_id = ! empty( $row['order_id'] ) ? absint( $row['order_id'] ) : 0;
+		if ( '' === $odoo_id && $order_id <= 0 ) {
 			return false;
 		}
 
@@ -354,22 +357,155 @@ class CWD_V2_Invoices
 			'updated_at'     => $now,
 		);
 
-		$existing = $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$table} WHERE odoo_invoice_id = %s", $odoo_id ) );
-		if ( $existing ) {
-			return false !== $wpdb->update(
-				$table,
-				$data,
-				array( 'id' => (int) $existing ),
-				array( '%d', '%s', '%s', '%s', '%s', '%s', '%f', '%f', '%s', '%s' ),
-				array( '%d' )
-			);
+		if ( $order_id > 0 ) {
+			$data['order_id'] = $order_id;
 		}
 
-		return false !== $wpdb->insert(
-			$table,
-			array_merge( $data, array( 'odoo_invoice_id' => $odoo_id, 'order_id' => null, 'created_at' => $now ) ),
-			array( '%d', '%s', '%s', '%s', '%s', '%s', '%f', '%f', '%s', '%s', '%s', '%s' )
+		$updated_or_inserted = false;
+
+		if ( $user_id > 0 ) {
+			// 1. Check if row exists for this odoo_invoice_id
+			$existing = $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$table} WHERE odoo_invoice_id = %s", $odoo_id ) );
+
+			// 2. If not found by odoo_invoice_id, check if existing invoice exists for this WooCommerce order
+			if ( ! $existing && $order_id > 0 ) {
+				$existing = $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$table} WHERE order_id = %d", $order_id ) );
+			}
+
+			if ( $existing ) {
+				$data['odoo_invoice_id'] = $odoo_id;
+				$updated_or_inserted = false !== $wpdb->update(
+					$table,
+					$data,
+					array( 'id' => (int) $existing )
+				);
+			} else {
+				$insert_data = array_merge( $data, array(
+					'odoo_invoice_id' => $odoo_id,
+					'order_id'        => $order_id > 0 ? $order_id : null,
+					'created_at'      => $now,
+				) );
+				$updated_or_inserted = false !== $wpdb->insert( $table, $insert_data );
+			}
+
+			self::update_user_earliest_due_date( $user_id );
+		}
+
+		// Always update WooCommerce order metadata and log an order note
+		if ( $order_id > 0 ) {
+			$order = wc_get_order( $order_id );
+			if ( $order ) {
+				$order->update_meta_data( '_odoo_invoice_id', $odoo_id );
+				$order->update_meta_data( '_odoo_invoice_number', $data['invoice_number'] );
+				$order->update_meta_data( 'odoo_invoice_number', $data['invoice_number'] );
+				$order->update_meta_data( '_odoo_invoice_status', $data['status'] );
+				if ( ! empty( $data['document_url'] ) ) {
+					$order->update_meta_data( '_odoo_invoice_url', $data['document_url'] );
+				}
+				$order->add_order_note(
+					sprintf(
+						__( 'Odoo Invoice %s linked successfully (Amount: £%s, Status: %s).', 'custom-woo-dashboard' ),
+						$data['invoice_number'],
+						number_format( $total, 2 ),
+						ucfirst( $data['status'] )
+					)
+				);
+				$order->save();
+				$updated_or_inserted = true;
+			}
+		}
+
+		return $updated_or_inserted;
+	}
+
+	/**
+	 * Register Admin Meta Box for Odoo Invoice Details on Order Edit screen
+	 */
+	public static function register_order_invoice_meta_box()
+	{
+		$screen = class_exists('\Automattic\WooCommerce\Internal\DataStores\Orders\CustomOrdersTableController') &&
+				  wc_get_container()->get(\Automattic\WooCommerce\Internal\DataStores\Orders\CustomOrdersTableController::class)->custom_orders_table_usage_is_enabled()
+				  ? wc_get_page_screen_id('shop-order')
+				  : 'shop_order';
+
+		add_meta_box(
+			'cwd_v2_odoo_invoice_box',
+			__('Odoo Invoice Details', 'custom-woo-dashboard'),
+			array(__CLASS__, 'render_admin_order_invoice_box'),
+			$screen,
+			'side',
+			'high'
 		);
+	}
+
+	/**
+	 * Render Odoo Invoice meta box on order page
+	 */
+	public static function render_admin_order_invoice_box($post_or_order)
+	{
+		$order = $post_or_order instanceof WC_Order ? $post_or_order : wc_get_order(is_object($post_or_order) ? $post_or_order->ID : $post_or_order);
+		if (! $order) {
+			return;
+		}
+
+		$invoice_number = $order->get_meta('_odoo_invoice_number') ?: $order->get_meta('odoo_invoice_number');
+		$odoo_id        = $order->get_meta('_odoo_invoice_id');
+		$invoice_url    = $order->get_meta('_odoo_invoice_url');
+		$status         = $order->get_meta('_odoo_invoice_status') ?: 'unpaid';
+
+		if ($invoice_number) {
+			$badge_color = 'paid' === strtolower($status) ? '#10b981' : '#f59e0b';
+			?>
+			<div style="font-size: 13px; line-height: 1.6;">
+				<p style="margin: 0 0 8px;">
+					<strong><?php esc_html_e('Invoice #:', 'custom-woo-dashboard'); ?></strong>
+					<span style="font-size: 15px; font-weight: 700; color: #0284c7;"><?php echo esc_html($invoice_number); ?></span>
+				</p>
+				<?php if ($odoo_id) : ?>
+					<p style="margin: 0 0 8px;">
+						<strong><?php esc_html_e('Odoo Move ID:', 'custom-woo-dashboard'); ?></strong>
+						<code>#<?php echo esc_html($odoo_id); ?></code>
+					</p>
+				<?php endif; ?>
+				<p style="margin: 0 0 12px;">
+					<strong><?php esc_html_e('Payment Status:', 'custom-woo-dashboard'); ?></strong>
+					<span style="display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; color: #fff; background-color: <?php echo esc_attr($badge_color); ?>;">
+						<?php echo esc_html($status); ?>
+					</span>
+				</p>
+				<?php if (! empty($invoice_url)) : ?>
+					<p style="margin: 0;">
+						<a href="<?php echo esc_url($invoice_url); ?>" target="_blank" class="button button-secondary" style="width: 100%; text-align: center;">
+							<?php esc_html_e('View in Odoo Portal ↗', 'custom-woo-dashboard'); ?>
+						</a>
+					</p>
+				<?php endif; ?>
+			</div>
+			<?php
+		} else {
+			?>
+			<p style="color: #64748b; font-size: 13px; margin: 0 0 6px;">
+				<?php esc_html_e('No Odoo invoice linked to this order yet.', 'custom-woo-dashboard'); ?>
+			</p>
+			<p style="color: #94a3b8; font-size: 12px; margin: 0;">
+				<?php esc_html_e('It will link automatically when confirmed or synced from Odoo.', 'custom-woo-dashboard'); ?>
+			</p>
+			<?php
+		}
+	}
+
+	/**
+	 * Display Odoo Invoice badge under General Order details
+	 */
+	public static function display_admin_order_invoice_meta($order)
+	{
+		$invoice_number = $order->get_meta('_odoo_invoice_number') ?: $order->get_meta('odoo_invoice_number');
+		if ($invoice_number) {
+			echo '<p class="form-field form-field-wide" style="margin-top: 10px; padding: 8px 12px; background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 4px;">' .
+				 '<strong>' . esc_html__('Odoo Invoice:', 'custom-woo-dashboard') . '</strong> ' .
+				 '<span style="font-weight: 700; color: #0369a1; margin-left: 6px;">' . esc_html($invoice_number) . '</span>' .
+				 '</p>';
+		}
 	}
 
 	/**

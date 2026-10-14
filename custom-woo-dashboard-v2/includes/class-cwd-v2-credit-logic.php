@@ -45,11 +45,44 @@ class CWD_V2_Credit_Logic
 		add_action('woocommerce_order_refunded', array(__CLASS__, 'handle_credit_order_refund'), 10, 2);
 	}
 
+	public static function get_credit_payment_product_id()
+	{
+		$product_id = (int) get_option('cwd_v2_credit_payment_product_id');
+		if ($product_id && get_post_status($product_id) === 'publish') {
+			return $product_id;
+		}
+
+		if (class_exists('CWD_V2_Activator')) {
+			CWD_V2_Activator::activate();
+			$product_id = (int) get_option('cwd_v2_credit_payment_product_id');
+			if ($product_id && get_post_status($product_id) === 'publish') {
+				return $product_id;
+			}
+		}
+
+		$new_product_id = wp_insert_post(array(
+			'post_title'   => 'Credit Account Payment',
+			'post_content' => 'Used for paying off credit balances.',
+			'post_status'  => 'publish',
+			'post_type'    => 'product',
+		));
+		if (! is_wp_error($new_product_id)) {
+			update_post_meta($new_product_id, '_virtual', 'yes');
+			update_post_meta($new_product_id, '_sold_individually', 'yes');
+			update_post_meta($new_product_id, '_price', '0');
+			update_post_meta($new_product_id, '_regular_price', '0');
+			update_option('cwd_v2_credit_payment_product_id', $new_product_id);
+			return $new_product_id;
+		}
+
+		return 0;
+	}
+
 	public static function filter_account_payment_gateways( $gateways ) {
-		if ( ! WC()->cart ) {
+		if ( ! is_array( $gateways ) || ! isset( WC()->cart ) || ! WC()->cart ) {
 			return $gateways;
 		}
-		$product_id = (int) get_option( 'cwd_v2_credit_payment_product_id' );
+		$product_id = (int) self::get_credit_payment_product_id();
 		$is_account_payment = false;
 		foreach ( WC()->cart->get_cart() as $cart_item ) {
 			if ( $product_id && (int) ( $cart_item['product_id'] ?? 0 ) === $product_id ) {
@@ -60,15 +93,15 @@ class CWD_V2_Credit_Logic
 		if ( ! $is_account_payment ) {
 			return $gateways;
 		}
-		foreach ( array( 'cod', 'bacs', 'cheque', 'cwd_v2_credit_account' ) as $gateway_id ) {
-			unset( $gateways[ $gateway_id ] );
-		}
+		// Customers cannot pay their credit account using credit account itself.
+		// Keep all real payment gateways (card, BACS, etc.) enabled so customer can place the order!
+		unset( $gateways['cwd_v2_credit_account'] );
 		return $gateways;
 	}
 
 	public static function handle_pay_balance()
 	{
-		if (isset($_POST['cwd_v2_pay_credit_balance']) && isset($_POST['cwd_v2_pay_amount']) && is_user_logged_in()) {
+		if (isset($_POST['cwd_v2_pay_credit_balance']) && is_user_logged_in()) {
 			$roles = (array) wp_get_current_user()->roles;
 			if (! in_array('credit_account', $roles, true) && ! current_user_can('manage_options')) {
 				wc_add_notice(__('You are not authorized to make credit account payments.', 'custom-woo-dashboard'), 'error');
@@ -80,41 +113,66 @@ class CWD_V2_Credit_Logic
 				return;
 			}
 
-			$amount = round((float) wc_format_decimal(wp_unslash($_POST['cwd_v2_pay_amount'])), 2);
-			if ($amount <= 0) {
-				wc_add_notice(__('Please enter a valid amount.', 'custom-woo-dashboard'), 'error');
-				return;
-			}
-
-			$product_id = (int) get_option('cwd_v2_credit_payment_product_id');
+			$product_id = (int) self::get_credit_payment_product_id();
 			if (! $product_id) {
 				wc_add_notice(__('Credit payment product not configured.', 'custom-woo-dashboard'), 'error');
 				return;
 			}
 
-			$cart_item_data = array('cwd_v2_custom_price' => $amount);
+			// 1. Customer selected specific credit orders to pay off
+			if (! empty($_POST['cwd_v2_selected_order_ids']) || ! empty($_POST['cwd_v2_pay_selected_orders'])) {
+				$selected_ids = array_filter(array_map('absint', (array) ($_POST['cwd_v2_selected_order_ids'] ?? array())));
+				$valid_order_ids = array();
+				$calculated_order_amount = 0.0;
+				$current_uid = get_current_user_id();
 
-			// If this payment was triggered from a specific invoice's "Pay This Invoice"
-			// form, carry the invoice ID through so it can be marked paid once the
-			// resulting order completes.
-			if (! empty($_POST['cwd_v2_pay_invoice_id'])) {
-				$invoice_id = absint($_POST['cwd_v2_pay_invoice_id']);
-				$invoice    = CWD_V2_Invoices::get_invoice($invoice_id, get_current_user_id());
-				$amount_due = $invoice ? max(0, (float) $invoice->amount_total - (float) $invoice->amount_paid) : 0;
-				$current_balance = (float) get_user_meta(get_current_user_id(), '_credit_balance', true);
+				foreach ($selected_ids as $sid) {
+					$ord = wc_get_order($sid);
+					if ($ord && (int) $ord->get_user_id() === $current_uid && $ord->get_meta('_credit_order_settled') !== 'yes') {
+						$valid_order_ids[] = $sid;
+						$calculated_order_amount += (float) $ord->get_total();
+					}
+				}
 
-				if (! $invoice || CWD_V2_Invoices::STATUS_UNPAID !== $invoice->status || $amount > round($amount_due, 2) || $amount > round($current_balance, 2)) {
-					wc_add_notice(__('This invoice is no longer available to pay.', 'custom-woo-dashboard'), 'error');
+				if (empty($valid_order_ids) || $calculated_order_amount <= 0) {
+					wc_add_notice(__('Please select at least one unsettled credit order to pay off.', 'custom-woo-dashboard'), 'error');
 					return;
 				}
 
-				$cart_item_data['cwd_v2_invoice_id'] = $invoice_id;
-			} elseif ($amount > (float) get_user_meta(get_current_user_id(), '_credit_balance', true)) {
-				wc_add_notice(__('The payment amount cannot exceed your outstanding balance.', 'custom-woo-dashboard'), 'error');
-				return;
+				$amount = round($calculated_order_amount, 2);
+				$cart_item_data = array(
+					'cwd_v2_custom_price'      => $amount,
+					'cwd_v2_settled_order_ids' => $valid_order_ids,
+				);
+			} else {
+				// 2. Standard balance or invoice payment
+				$amount = round((float) wc_format_decimal(wp_unslash($_POST['cwd_v2_pay_amount'] ?? 0)), 2);
+				if ($amount <= 0) {
+					wc_add_notice(__('Please enter a valid amount.', 'custom-woo-dashboard'), 'error');
+					return;
+				}
+
+				$cart_item_data = array('cwd_v2_custom_price' => $amount);
+
+				if (! empty($_POST['cwd_v2_pay_invoice_id'])) {
+					$invoice_id = absint($_POST['cwd_v2_pay_invoice_id']);
+					$invoice    = CWD_V2_Invoices::get_invoice($invoice_id, get_current_user_id());
+					$amount_due = $invoice ? max(0, (float) $invoice->amount_total - (float) $invoice->amount_paid) : 0;
+					$current_balance = (float) get_user_meta(get_current_user_id(), '_credit_balance', true);
+
+					if (! $invoice || CWD_V2_Invoices::STATUS_UNPAID !== $invoice->status || $amount > round($amount_due, 2) || $amount > round($current_balance, 2)) {
+						wc_add_notice(__('This invoice is no longer available to pay.', 'custom-woo-dashboard'), 'error');
+						return;
+					}
+
+					$cart_item_data['cwd_v2_invoice_id'] = $invoice_id;
+				} elseif ($amount > (float) get_user_meta(get_current_user_id(), '_credit_balance', true)) {
+					wc_add_notice(__('The payment amount cannot exceed your outstanding balance.', 'custom-woo-dashboard'), 'error');
+					return;
+				}
 			}
 
-			// Empty cart to ensure only this payment is processed? Optional, but cleaner.
+			// Empty cart to ensure only this payment is processed
 			WC()->cart->empty_cart();
 
 			// Add product to cart with custom price data
@@ -130,6 +188,10 @@ class CWD_V2_Credit_Logic
 	{
 		if (! empty($values['cwd_v2_invoice_id'])) {
 			$item->add_meta_data('cwd_v2_invoice_id', absint($values['cwd_v2_invoice_id']), true);
+		}
+
+		if (! empty($values['cwd_v2_settled_order_ids'])) {
+			$item->add_meta_data('cwd_v2_settled_order_ids', implode(',', array_map('absint', (array) $values['cwd_v2_settled_order_ids'])), true);
 		}
 
 		if (isset($values['cwd_v2_custom_price'])) {
@@ -165,6 +227,7 @@ class CWD_V2_Credit_Logic
 		$payment_amount = 0;
 
 		$invoice_id = 0;
+		$settled_order_ids = array();
 
 		foreach ($order->get_items() as $item) {
 			if ($item->get_product_id() === $product_id) {
@@ -174,6 +237,11 @@ class CWD_V2_Credit_Logic
 				$item_invoice_id = $item->get_meta('cwd_v2_invoice_id');
 				if ($item_invoice_id) {
 					$invoice_id = absint($item_invoice_id);
+				}
+
+				$item_settled = $item->get_meta('cwd_v2_settled_order_ids');
+				if (! empty($item_settled)) {
+					$settled_order_ids = array_filter(array_map('absint', explode(',', (string) $item_settled)));
 				}
 			}
 		}
@@ -185,7 +253,11 @@ class CWD_V2_Credit_Logic
 				$wpdb->query('START TRANSACTION');
 				$wpdb->get_var($wpdb->prepare('SELECT ID FROM ' . $wpdb->users . ' WHERE ID = %d FOR UPDATE', (int) $user_id));
 				$current_balance = (float) get_user_meta($user_id, '_credit_balance', true);
-				if ($payment_amount <= 0 || $payment_amount > $current_balance) {
+				if ($payment_amount <= 0) {
+					$wpdb->query('ROLLBACK');
+					return;
+				}
+				if (empty($settled_order_ids) && $payment_amount > $current_balance) {
 					$wpdb->query('ROLLBACK');
 					return;
 				}
@@ -200,6 +272,28 @@ class CWD_V2_Credit_Logic
 					return;
 				}
 
+				// If specific orders were settled, mark them and settle any linked invoice
+				if (! empty($settled_order_ids)) {
+					foreach ($settled_order_ids as $soid) {
+						$so = wc_get_order($soid);
+						if ($so) {
+							$so->update_meta_data('_credit_order_settled', 'yes');
+							$so->update_meta_data('_credit_settlement_order_id', $order_id);
+							$so->update_meta_data('_credit_settled_at', current_time('mysql'));
+							$so->add_order_note(sprintf(__('Order credit balance settled via payment order #%d.', 'custom-woo-dashboard'), $order_id));
+							$so->save();
+						}
+						// Settle invoice if exists in CWD_V2_Invoices
+						if (class_exists('CWD_V2_Invoices')) {
+							$inv = CWD_V2_Invoices::get_invoices_for_order($soid);
+							if ($inv && $inv->status !== CWD_V2_Invoices::STATUS_PAID) {
+								$due = max(0, (float) $inv->amount_total - (float) $inv->amount_paid);
+								CWD_V2_Invoices::apply_invoice_payment($inv->id, $user_id, $due);
+							}
+						}
+					}
+				}
+
 				$new_balance = max(0, $current_balance - $payment_amount);
 				self::sync_user_credit_balance($user_id, $new_balance);
 
@@ -211,6 +305,16 @@ class CWD_V2_Credit_Logic
 						'invoice',
 						$invoice_id,
 						sprintf(__('Payment for invoice #%d', 'custom-woo-dashboard'), $invoice_id)
+					);
+				} elseif (! empty($settled_order_ids)) {
+					$order_list_str = '#' . implode(', #', $settled_order_ids);
+					$ledger_result = CWD_V2_Account_Ledger::record(
+						$user_id,
+						CWD_V2_Account_Ledger::TYPE_PAYMENT,
+						$payment_amount,
+						'order',
+						$order_id,
+						sprintf(__('Settlement payoff for credit order(s) %s via payment order #%d', 'custom-woo-dashboard'), $order_list_str, $order_id)
 					);
 				} else {
 					$ledger_result = CWD_V2_Account_Ledger::record(
@@ -228,6 +332,10 @@ class CWD_V2_Credit_Logic
 					return;
 				}
 				$wpdb->query('COMMIT');
+
+				if (class_exists('CWD_V2_Invoices')) {
+					CWD_V2_Invoices::update_user_earliest_due_date($user_id);
+				}
 
 				// Mark as processed
 				$order->update_meta_data('_cwd_v2_credit_payment_processed', 'yes');

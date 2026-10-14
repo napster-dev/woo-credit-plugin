@@ -310,15 +310,22 @@ class CWD_V2_Backorders
 	 */
 	public static function check_rest_permissions($request)
 	{
-		$secret_key = get_option('cwd_odoo_secret_key', '');
-		$auth_header = $request->get_header('X-Odoo-Secret');
-
-		if (! empty($secret_key) && $auth_header === $secret_key) {
+		if (current_user_can('manage_woocommerce') || current_user_can('manage_options')) {
 			return true;
 		}
 
-		// Fallback to manage_woocommerce capability for authenticated users
-		return current_user_can('manage_woocommerce');
+		$auth_header = $request->get_header('X-Odoo-Secret') 
+			?: $request->get_header('X-CWD-SECRET-KEY') 
+			?: $request->get_header('X-ODOO-SECRET') 
+			?: $request->get_param('secret_key');
+
+		$secret_key = defined('CWD_ODOO_SECRET_KEY') ? CWD_ODOO_SECRET_KEY : get_option('cwd_odoo_secret_key', '');
+
+		if (! empty($secret_key) && ! empty($auth_header) && hash_equals((string) $secret_key, (string) $auth_header)) {
+			return true;
+		}
+
+		return false;
 	}
 
 	/**

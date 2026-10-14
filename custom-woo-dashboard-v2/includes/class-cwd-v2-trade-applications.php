@@ -507,35 +507,14 @@ class CWD_V2_Trade_Applications
 			self::process_adjust_user_credit_limit();
 		}
 
+		// Adjust user payment terms / schedule
+		if (isset($_POST['cwd_v2_adjust_user_payment_terms'])) {
+			self::process_adjust_user_payment_terms();
+		}
+
 		// Add manual credit user
 		if (isset($_POST['cwd_v2_add_manual_credit_user'])) {
 			self::process_add_manual_credit_user();
-		}
-
-		// Check trade account number conflicts
-		if (isset($_POST['cwd_v2_check_trade_number_conflicts'])) {
-			if (! isset($_POST['cwd_v2_trade_migration_nonce']) || ! wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['cwd_v2_trade_migration_nonce'])), 'cwd_v2_trade_migration_action')) {
-				wp_die(__('Security check failed.', 'custom-woo-dashboard'));
-			}
-			if (class_exists('CWD_V2_Trade_Number_Migrator')) {
-				$analysis = CWD_V2_Trade_Number_Migrator::analyze();
-				set_transient('cwd_v2_migration_check_result', $analysis, 300);
-			}
-			wp_redirect(admin_url('admin.php?page=cwd-v2-trade-applications&tab=settings&mig_action=checked'));
-			exit;
-		}
-
-		// Run trade account number migration
-		if (isset($_POST['cwd_v2_run_trade_number_migration'])) {
-			if (! isset($_POST['cwd_v2_trade_migration_nonce']) || ! wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['cwd_v2_trade_migration_nonce'])), 'cwd_v2_trade_migration_action')) {
-				wp_die(__('Security check failed.', 'custom-woo-dashboard'));
-			}
-			if (class_exists('CWD_V2_Trade_Number_Migrator')) {
-				$result = CWD_V2_Trade_Number_Migrator::migrate(true);
-				set_transient('cwd_v2_migration_run_result', $result, 300);
-			}
-			wp_redirect(admin_url('admin.php?page=cwd-v2-trade-applications&tab=settings&mig_action=migrated'));
-			exit;
 		}
 	}
 
@@ -878,6 +857,39 @@ class CWD_V2_Trade_Applications
 	}
 
 	/**
+	 * Adjust user payment timeline / schedule directly from Credit Accounts screen
+	 */
+	private static function process_adjust_user_payment_terms()
+	{
+		check_admin_referer('cwd_v2_credit_accounts_action', 'cwd_v2_credit_nonce');
+
+		$user_id = isset($_POST['user_id']) ? (int) $_POST['user_id'] : 0;
+		$preset  = isset($_POST['new_terms_preset']) ? sanitize_text_field(wp_unslash($_POST['new_terms_preset'])) : '';
+		if ('custom' === $preset && ! empty($_POST['new_payment_terms_custom'])) {
+			$terms = sanitize_text_field(wp_unslash($_POST['new_payment_terms_custom']));
+		} else {
+			$terms = $preset;
+		}
+
+		if ($user_id > 0 && ! empty($terms)) {
+			update_user_meta($user_id, '_credit_payment_terms', $terms);
+			if (class_exists('CWD_V2_Invoices')) {
+				CWD_V2_Invoices::update_user_earliest_due_date($user_id);
+			}
+			$current_balance = (float) get_user_meta($user_id, '_credit_balance', true);
+			if ($current_balance > 0 && class_exists('CWD_V2_Invoices')) {
+				$new_due = CWD_V2_Invoices::calculate_due_date_for_user($user_id);
+				if ($new_due) {
+					update_user_meta($user_id, '_credit_due_date', date('Y-m-d', strtotime($new_due)));
+				}
+			}
+		}
+
+		wp_redirect(admin_url('admin.php?page=cwd-v2-trade-applications&tab=accounts&notice=terms_updated'));
+		exit;
+	}
+
+	/**
 	 * Manually add a credit user
 	 */
 	private static function process_add_manual_credit_user()
@@ -925,6 +937,15 @@ class CWD_V2_Trade_Applications
 			update_user_meta($user_id, '_credit_limit', $limit);
 			update_user_meta($user_id, '_credit_balance', 0);
 		}
+
+		// Set Payment Terms / Schedule
+		$terms = isset($_POST['payment_terms_preset']) ? sanitize_text_field(wp_unslash($_POST['payment_terms_preset'])) : '';
+		if ('custom' === $terms && ! empty($_POST['payment_terms'])) {
+			$terms = sanitize_text_field(wp_unslash($_POST['payment_terms']));
+		} elseif (empty($terms)) {
+			$terms = '30 Days End of Month';
+		}
+		update_user_meta($user_id, '_credit_payment_terms', $terms);
 
 		if (! get_user_meta($user_id, 'ews_account_number', true)) {
 			$last_num = (int) get_option('cwd_v2_last_trade_number', 0) + 1;
@@ -1394,6 +1415,8 @@ class CWD_V2_Trade_Applications
 				<div class="notice notice-success is-dismissible"><p><?php esc_html_e('Credit accounts, limits, and outstanding balances successfully synchronized into WordPress database.', 'custom-woo-dashboard'); ?></p></div>
 			<?php elseif ($notice === 'limit_updated') : ?>
 				<div class="notice notice-success is-dismissible"><p><?php esc_html_e('Credit facility limit updated successfully.', 'custom-woo-dashboard'); ?></p></div>
+			<?php elseif ($notice === 'terms_updated') : ?>
+				<div class="notice notice-success is-dismissible"><p><?php esc_html_e('Payment timeline / schedule updated successfully.', 'custom-woo-dashboard'); ?></p></div>
 			<?php elseif ($notice === 'approved') : ?>
 				<div class="notice notice-success is-dismissible"><p><?php esc_html_e('Application approved and trade credit account provisioned.', 'custom-woo-dashboard'); ?></p></div>
 			<?php elseif ($notice === 'rejected') : ?>
@@ -1731,6 +1754,49 @@ class CWD_V2_Trade_Applications
 												</div>
 											</details>
 
+											<details style="display: inline-block; position: relative;">
+												<summary class="button button-small" style="font-size: 11px; cursor: pointer; padding: 1px 7px; height: 26px; line-height: 24px; vertical-align: middle;">
+													<?php esc_html_e('Schedule', 'custom-woo-dashboard'); ?>
+												</summary>
+												<div style="position: absolute; right: 0; top: 100%; margin-top: 6px; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 12px; z-index: 1000; box-shadow: 0 4px 16px rgba(0,0,0,0.18); width: 250px; text-align: left; white-space: normal !important; box-sizing: border-box;">
+													<form method="post" action="" style="margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; white-space: normal !important;">
+														<?php wp_nonce_field('cwd_v2_credit_accounts_action', 'cwd_v2_credit_nonce'); ?>
+														<input type="hidden" name="user_id" value="<?php echo esc_attr($acc['user_id']); ?>" />
+														<div>
+															<label style="display: block; font-size: 11px; font-weight: 600; color: #334155; margin-bottom: 4px; line-height: 1.3;">
+																<?php esc_html_e('Payment Schedule / Terms:', 'custom-woo-dashboard'); ?>
+															</label>
+															<?php
+															$cur_terms = $acc['terms'] ?: '30 Days End of Month';
+															$presets = array(
+																'30 Days End of Month' => __('30 Days EOM (Standard UK)', 'custom-woo-dashboard'),
+																'Net 60 Days'          => __('Net 60 Days', 'custom-woo-dashboard'),
+																'Net 30 Days'          => __('Net 30 Days', 'custom-woo-dashboard'),
+																'Net 14 Days'          => __('Net 14 Days', 'custom-woo-dashboard'),
+																'Net 7 Days'           => __('Net 7 Days', 'custom-woo-dashboard'),
+																'Due on Receipt'       => __('Due on Receipt', 'custom-woo-dashboard'),
+															);
+															$is_cur_preset = isset($presets[$cur_terms]);
+															$custom_wrap_id = 'cwd-terms-wrap-' . esc_attr($acc['user_id']);
+															$custom_input_id = 'cwd-terms-input-' . esc_attr($acc['user_id']);
+															?>
+															<select name="new_terms_preset" onchange="var w = document.getElementById('<?php echo $custom_wrap_id; ?>'); var inp = document.getElementById('<?php echo $custom_input_id; ?>'); if (this.value === 'custom') { w.style.display = 'block'; } else { w.style.display = 'none'; inp.value = this.value; }" style="display: block; width: 100%; box-sizing: border-box; padding: 4px 6px; font-size: 11.5px; border: 1px solid #cbd5e1; border-radius: 4px; margin: 0; height: 30px;">
+																<?php foreach ($presets as $pval => $plabel) : ?>
+																	<option value="<?php echo esc_attr($pval); ?>" <?php selected($is_cur_preset && $cur_terms === $pval); ?>><?php echo esc_html($plabel); ?></option>
+																<?php endforeach; ?>
+																<option value="custom" <?php selected(! $is_cur_preset); ?>><?php esc_html_e('Custom Days / Terms...', 'custom-woo-dashboard'); ?></option>
+															</select>
+															<div id="<?php echo $custom_wrap_id; ?>" style="<?php echo ! $is_cur_preset ? 'display: block;' : 'display: none;'; ?> margin-top: 6px;">
+																<input type="text" name="new_payment_terms_custom" id="<?php echo $custom_input_id; ?>" value="<?php echo esc_attr($cur_terms); ?>" placeholder="<?php esc_attr_e('e.g. 45 Days Net', 'custom-woo-dashboard'); ?>" style="display: block; width: 100%; box-sizing: border-box; padding: 4px 6px; font-size: 11.5px; border: 1px solid #cbd5e1; border-radius: 4px; height: 28px;" />
+															</div>
+														</div>
+														<button type="submit" name="cwd_v2_adjust_user_payment_terms" class="button button-primary button-small" style="display: block; width: 100%; box-sizing: border-box; text-align: center; height: 30px; line-height: 28px; font-weight: 600; font-size: 11.5px; background: #0284c7; border-color: #0284c7; color: #ffffff; cursor: pointer; border-radius: 4px; margin: 0; white-space: nowrap;">
+															<?php esc_html_e('Save Schedule', 'custom-woo-dashboard'); ?>
+														</button>
+													</form>
+												</div>
+											</details>
+
 											<a href="<?php echo esc_url(get_edit_user_link($acc['user_id'])); ?>" class="button button-small" style="font-size: 11px; padding: 1px 7px; height: 26px; line-height: 24px; vertical-align: middle;" target="_blank">
 												<?php esc_html_e('Profile', 'custom-woo-dashboard'); ?>
 											</a>
@@ -1908,6 +1974,24 @@ class CWD_V2_Trade_Applications
 						<p class="description" style="margin-top: 4px;"><?php esc_html_e('Credit limit is securely saved and will never be automatically reduced or overwritten.', 'custom-woo-dashboard'); ?></p>
 					</div>
 
+					<div style="margin-bottom: 24px;">
+						<label style="display: block; font-size: 13px; font-weight: 600; color: #334155; margin-bottom: 6px;">
+							<?php esc_html_e('Payment Schedule / Terms', 'custom-woo-dashboard'); ?>
+						</label>
+						<select name="payment_terms_preset" onchange="var customWrap = document.getElementById('cwd-prov-custom-terms-wrap'); var input = document.getElementById('payment_terms_prov'); if (this.value === 'custom') { customWrap.style.display = 'block'; } else { customWrap.style.display = 'none'; input.value = this.value; }" style="width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 7px 10px; font-size: 13px; background: #ffffff; margin-bottom: 6px;">
+							<option value="30 Days End of Month" selected><?php esc_html_e('30 Days End of Month (30 Days EOM - Standard UK Trade)', 'custom-woo-dashboard'); ?></option>
+							<option value="Net 60 Days"><?php esc_html_e('Net 60 Days (60 calendar days from invoice)', 'custom-woo-dashboard'); ?></option>
+							<option value="Net 30 Days"><?php esc_html_e('Net 30 Days (30 calendar days from invoice)', 'custom-woo-dashboard'); ?></option>
+							<option value="Net 14 Days"><?php esc_html_e('Net 14 Days (14 calendar days from invoice)', 'custom-woo-dashboard'); ?></option>
+							<option value="Net 7 Days"><?php esc_html_e('Net 7 Days (7 calendar days from invoice)', 'custom-woo-dashboard'); ?></option>
+							<option value="Due on Receipt"><?php esc_html_e('Due on Receipt (Immediate / 0 days)', 'custom-woo-dashboard'); ?></option>
+							<option value="custom"><?php esc_html_e('Custom Days / Terms...', 'custom-woo-dashboard'); ?></option>
+						</select>
+						<div id="cwd-prov-custom-terms-wrap" style="display: none; margin-top: 6px;">
+							<input type="text" name="payment_terms" id="payment_terms_prov" value="30 Days End of Month" placeholder="<?php esc_attr_e('e.g. 45 Days Net or 15 Days EOM', 'custom-woo-dashboard'); ?>" style="width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 7px 10px; font-size: 13px;" />
+						</div>
+					</div>
+
 					<button type="submit" name="cwd_v2_add_manual_credit_user" class="button button-primary" style="padding: 8px 24px; font-weight: 700; font-size: 14px; height: auto; background: #0284c7; border-color: #0284c7;">
 						<span class="dashicons dashicons-yes" style="font-size: 18px; line-height: 20px; vertical-align: top;"></span>
 						<?php esc_html_e('Provision Trade Facility', 'custom-woo-dashboard'); ?>
@@ -2024,6 +2108,34 @@ class CWD_V2_Trade_Applications
 							</p>
 						</td>
 					</tr>
+					<tr>
+						<th colspan="2" style="padding-top: 24px; padding-bottom: 8px;">
+							<div style="border-top: 1px solid #e2e8f0; padding-top: 18px;">
+								<h4 style="margin: 0; font-size: 14px; font-weight: 700; color: #1e293b; display: flex; align-items: center; gap: 6px;">
+									<span class="dashicons dashicons-rest-api" style="color: #0284c7;"></span>
+									<?php esc_html_e('Odoo ERP Integration & Webhook Security', 'custom-woo-dashboard'); ?>
+								</h4>
+								<p style="margin: 4px 0 0; font-size: 12px; color: #64748b; font-weight: normal;">
+									<?php esc_html_e('Shared secret key used to authenticate inbound Odoo webhooks (Shipment Tracking, Backorder state transitions, Invoice sync, and Outbox events). Matches la_woocommerce.backorder_odoo_secret or la_woocommerce.dashboard_sync_secret in Odoo.', 'custom-woo-dashboard'); ?>
+								</p>
+							</div>
+						</th>
+					</tr>
+					<tr>
+						<th scope="row"><label for="cwd_odoo_secret_key"><?php esc_html_e('Odoo Shared Secret Key', 'custom-woo-dashboard'); ?></label></th>
+						<td>
+							<input type="password" name="cwd_odoo_secret_key" id="cwd_odoo_secret_key" value="<?php echo esc_attr(get_option('cwd_odoo_secret_key', '')); ?>" class="regular-text" autocomplete="off" />
+							<p class="description">
+								<?php
+								if (defined('CWD_ODOO_SECRET_KEY')) {
+									esc_html_e('Overridden by CWD_ODOO_SECRET_KEY constant in wp-config.php.', 'custom-woo-dashboard');
+								} else {
+									esc_html_e('In Odoo, set this value in la_woocommerce.backorder_odoo_secret or la_woocommerce.dashboard_sync_secret.', 'custom-woo-dashboard');
+								}
+								?>
+							</p>
+						</td>
+					</tr>
 				</table>
 				<div style="margin-top: 20px;">
 					<?php submit_button(__('Save Settings', 'custom-woo-dashboard')); ?>
@@ -2031,141 +2143,6 @@ class CWD_V2_Trade_Applications
 			</form>
 		</div>
 
-		<!-- EWS Trade Account Number Format & Migration Card -->
-		<div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 26px; max-width: 800px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); margin-top: 24px;">
-			<h3 style="margin: 0 0 12px; font-size: 16px; font-weight: 700; color: #0f172a; display: flex; align-items: center; gap: 8px;">
-				<span class="dashicons dashicons-admin-tools" style="color: #0284c7;"></span>
-				<?php esc_html_e('Trade Account Number Format (EWS-######)', 'custom-woo-dashboard'); ?>
-			</h3>
-			<p style="color: #64748b; font-size: 13px; line-height: 1.6; margin: 0 0 18px;">
-				<?php esc_html_e('All new trade accounts are now created in the standard 6-digit format (e.g. EWS-000042) without the "T". Use this tool to check for conflicts and migrate any existing legacy "EWS-T####" accounts.', 'custom-woo-dashboard'); ?>
-			</p>
-
-			<?php
-			$mig_action = isset($_GET['mig_action']) ? sanitize_text_field(wp_unslash($_GET['mig_action'])) : '';
-			$check_res  = get_transient('cwd_v2_migration_check_result');
-			$run_res    = get_transient('cwd_v2_migration_run_result');
-
-			if ('checked' === $mig_action && is_array($check_res)) :
-				?>
-				<div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 16px; margin-bottom: 20px;">
-					<h4 style="margin: 0 0 10px; font-size: 14px; font-weight: 700; color: #1e293b;">
-						<?php esc_html_e('Conflict Analysis Results (Dry Run):', 'custom-woo-dashboard'); ?>
-					</h4>
-					<p style="margin: 4px 0; font-size: 13px; color: #334155;">
-						<strong><?php esc_html_e('Total Trade Accounts Analyzed:', 'custom-woo-dashboard'); ?></strong> <?php echo esc_html($check_res['total_accounts']); ?>
-					</p>
-					<p style="margin: 4px 0; font-size: 13px; color: #334155;">
-						<strong><?php esc_html_e('Legacy "EWS-T" Accounts Found:', 'custom-woo-dashboard'); ?></strong> <?php echo esc_html(count($check_res['t_accounts'])); ?>
-					</p>
-					<p style="margin: 4px 0; font-size: 13px; color: #334155;">
-						<strong><?php esc_html_e('Clean "EWS-######" Accounts:', 'custom-woo-dashboard'); ?></strong> <?php echo esc_html(count($check_res['clean_accounts'])); ?>
-					</p>
-					
-					<?php if ($check_res['has_conflicts']) : ?>
-						<div style="margin-top: 12px; padding: 12px; background: #fef2f2; border: 1px solid #f87171; border-radius: 6px; color: #991b1b; font-size: 13px;">
-							<strong>⚠️ <?php esc_html_e('Conflicts Detected:', 'custom-woo-dashboard'); ?></strong>
-							<p style="margin: 6px 0 0;"><?php esc_html_e('The following account numbers would collide if "T" is stripped directly. When you run the migration, these accounts will automatically be safely regenerated with new unique sequential numbers so no accounts collide:', 'custom-woo-dashboard'); ?></p>
-							<ul style="margin: 8px 0 0 18px; padding: 0;">
-								<?php foreach ($check_res['conflicts'] as $c) : ?>
-									<li><?php echo esc_html($c['message']); ?></li>
-								<?php endforeach; ?>
-							</ul>
-						</div>
-					<?php else : ?>
-						<div style="margin-top: 12px; padding: 12px; background: #f0fdf4; border: 1px solid #86efac; border-radius: 6px; color: #166534; font-size: 13px;">
-							<strong>✅ <?php esc_html_e('Zero Conflicts Found!', 'custom-woo-dashboard'); ?></strong>
-							<?php if (! empty($check_res['t_accounts'])) : ?>
-								<span><?php echo esc_html(sprintf(__('All %d legacy account(s) can be safely converted to EWS-######.', 'custom-woo-dashboard'), count($check_res['t_accounts']))); ?></span>
-							<?php else : ?>
-								<span><?php esc_html_e('All accounts are already in standard format.', 'custom-woo-dashboard'); ?></span>
-							<?php endif; ?>
-						</div>
-					<?php endif; ?>
-
-					<?php if (! empty($check_res['t_accounts'])) : ?>
-						<details style="margin-top: 14px;">
-							<summary style="cursor: pointer; color: #0284c7; font-weight: 600; font-size: 13px;">
-								<?php esc_html_e('View Proposed Conversions List', 'custom-woo-dashboard'); ?> (<?php echo esc_html(count($check_res['t_accounts'])); ?>)
-							</summary>
-							<table class="widefat striped" style="margin-top: 10px; font-size: 12px;">
-								<thead>
-									<tr>
-										<th><?php esc_html_e('User ID', 'custom-woo-dashboard'); ?></th>
-										<th><?php esc_html_e('Email', 'custom-woo-dashboard'); ?></th>
-										<th><?php esc_html_e('Current Number', 'custom-woo-dashboard'); ?></th>
-										<th><?php esc_html_e('Proposed Number', 'custom-woo-dashboard'); ?></th>
-									</tr>
-								</thead>
-								<tbody>
-									<?php foreach ($check_res['t_accounts'] as $acc) : ?>
-										<tr>
-											<td>#<?php echo esc_html($acc['user_id']); ?></td>
-											<td><?php echo esc_html($acc['email']); ?></td>
-											<td><code><?php echo esc_html($acc['current']); ?></code></td>
-											<td><code><?php echo esc_html($acc['proposed']); ?></code></td>
-										</tr>
-									<?php endforeach; ?>
-								</tbody>
-							</table>
-						</details>
-					<?php endif; ?>
-				</div>
-			<?php endif; ?>
-
-			<?php if ('migrated' === $mig_action && is_array($run_res)) : ?>
-				<div style="background: #f0fdf4; border: 1px solid #86efac; border-radius: 6px; padding: 16px; margin-bottom: 20px; color: #166534;">
-					<h4 style="margin: 0 0 10px; font-size: 14px; font-weight: 700;">
-						🎉 <?php esc_html_e('Migration Completed Successfully!', 'custom-woo-dashboard'); ?>
-					</h4>
-					<p style="margin: 4px 0; font-size: 13px;">
-						<?php echo esc_html(sprintf(__('Updated %d account(s). Highest sequence is now %d.', 'custom-woo-dashboard'), count($run_res['updated']), $run_res['new_max'])); ?>
-					</p>
-					<?php if (! empty($run_res['updated'])) : ?>
-						<table class="widefat striped" style="margin-top: 12px; font-size: 12px;">
-							<thead>
-								<tr>
-									<th><?php esc_html_e('User ID', 'custom-woo-dashboard'); ?></th>
-									<th><?php esc_html_e('Email', 'custom-woo-dashboard'); ?></th>
-									<th><?php esc_html_e('Old Number', 'custom-woo-dashboard'); ?></th>
-									<th><?php esc_html_e('New Number', 'custom-woo-dashboard'); ?></th>
-									<th><?php esc_html_e('Status', 'custom-woo-dashboard'); ?></th>
-								</tr>
-							</thead>
-							<tbody>
-								<?php foreach ($run_res['updated'] as $u) : ?>
-									<tr>
-										<td>#<?php echo esc_html($u['user_id']); ?></td>
-										<td><?php echo esc_html($u['email']); ?></td>
-										<td><code><?php echo esc_html($u['old']); ?></code></td>
-										<td><strong style="color: #166534;"><?php echo esc_html($u['new']); ?></strong></td>
-										<td><?php echo esc_html($u['status']); ?></td>
-									</tr>
-								<?php endforeach; ?>
-							</tbody>
-						</table>
-					<?php endif; ?>
-				</div>
-			<?php endif; ?>
-
-			<div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
-				<form method="post" action="">
-					<?php wp_nonce_field('cwd_v2_trade_migration_action', 'cwd_v2_trade_migration_nonce'); ?>
-					<button type="submit" name="cwd_v2_check_trade_number_conflicts" value="1" class="button button-secondary" style="height: 38px; padding: 0 16px; font-weight: 600;">
-						<span class="dashicons dashicons-search" style="margin-top: 3px;"></span>
-						<?php esc_html_e('Check for Conflicts (Dry Run)', 'custom-woo-dashboard'); ?>
-					</button>
-				</form>
-
-				<form method="post" action="" onsubmit="return confirm('<?php echo esc_js(__('Are you sure you want to migrate legacy trade account numbers to EWS-######? Conflicting numbers will be safely regenerated.', 'custom-woo-dashboard')); ?>');">
-					<?php wp_nonce_field('cwd_v2_trade_migration_action', 'cwd_v2_trade_migration_nonce'); ?>
-					<button type="submit" name="cwd_v2_run_trade_number_migration" value="1" class="button button-primary" style="height: 38px; padding: 0 16px; font-weight: 600;">
-						<span class="dashicons dashicons-update" style="margin-top: 3px;"></span>
-						<?php esc_html_e('Migrate Numbers (Remove "T")', 'custom-woo-dashboard'); ?>
-					</button>
-				</form>
-			</div>
-		</div>
 		<?php
 	}
 
@@ -2578,6 +2555,11 @@ class CWD_V2_Trade_Applications
 			'default'           => '',
 		));
 		register_setting('cwd_v2_trade_settings', 'cwd_v2_blink_secret_key', array(
+			'type'              => 'string',
+			'sanitize_callback' => 'sanitize_text_field',
+			'default'           => '',
+		));
+		register_setting('cwd_v2_trade_settings', 'cwd_odoo_secret_key', array(
 			'type'              => 'string',
 			'sanitize_callback' => 'sanitize_text_field',
 			'default'           => '',

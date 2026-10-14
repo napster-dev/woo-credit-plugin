@@ -39,6 +39,20 @@ class CWD_V2_Admin_Profile
 		$due_date         = (string) get_user_meta($user_id, '_credit_due_date', true);
 		$account_number   = (string) get_user_meta($user_id, 'ews_account_number', true);
 		$available_credit = max(0, $credit_limit - $credit_balance);
+		$user_terms       = (string) get_user_meta($user_id, '_credit_payment_terms', true);
+		if (empty($user_terms)) {
+			$user_terms = '30 Days End of Month';
+		}
+
+		$payment_term_presets = array(
+			'30 Days End of Month' => __('30 Days End of Month (30 Days EOM - Standard UK Trade)', 'custom-woo-dashboard'),
+			'Net 60 Days'          => __('Net 60 Days (60 calendar days from invoice)', 'custom-woo-dashboard'),
+			'Net 30 Days'          => __('Net 30 Days (30 calendar days from invoice)', 'custom-woo-dashboard'),
+			'Net 14 Days'          => __('Net 14 Days (14 calendar days from invoice)', 'custom-woo-dashboard'),
+			'Net 7 Days'           => __('Net 7 Days (7 calendar days from invoice)', 'custom-woo-dashboard'),
+			'Due on Receipt'       => __('Due on Receipt (Immediate / 0 days)', 'custom-woo-dashboard'),
+		);
+		$is_preset_terms = isset($payment_term_presets[$user_terms]);
 
 		$user_roles       = (array) $user->roles;
 		$is_credit_account = in_array('credit_account', $user_roles, true);
@@ -73,7 +87,7 @@ class CWD_V2_Admin_Profile
 
 				<tr>
 					<th scope="row">
-						<label for="cwd_credit_limit"><?php esc_html_e('Credit Limit', 'custom-woo-dashboard'); ?> (<?php echo esc_html(get_woocommerce_currency_symbol()); ?>)</label>
+						<label for="cwd_credit_limit"><?php esc_html_e('Credit Limit', 'custom-woo-dashboard'); ?> (<?php echo esc_html(html_entity_decode(get_woocommerce_currency_symbol(), ENT_QUOTES, 'UTF-8')); ?>)</label>
 					</th>
 					<td>
 						<input type="number" step="0.01" min="0" name="cwd_credit_limit" id="cwd_credit_limit" value="<?php echo esc_attr(number_format($credit_limit, 2, '.', '')); ?>" class="regular-text" style="max-width: 200px;" />
@@ -83,7 +97,7 @@ class CWD_V2_Admin_Profile
 
 				<tr>
 					<th scope="row">
-						<label for="cwd_credit_balance"><?php esc_html_e('Current Balance / Credit Used', 'custom-woo-dashboard'); ?> (<?php echo esc_html(get_woocommerce_currency_symbol()); ?>)</label>
+						<label for="cwd_credit_balance"><?php esc_html_e('Current Balance / Credit Used', 'custom-woo-dashboard'); ?> (<?php echo esc_html(html_entity_decode(get_woocommerce_currency_symbol(), ENT_QUOTES, 'UTF-8')); ?>)</label>
 					</th>
 					<td>
 						<input type="number" step="0.01" min="0" name="cwd_credit_balance" id="cwd_credit_balance" value="<?php echo esc_attr(number_format($credit_balance, 2, '.', '')); ?>" class="regular-text" style="max-width: 200px;" />
@@ -100,6 +114,28 @@ class CWD_V2_Admin_Profile
 							<?php echo wp_kses_post(wc_price($available_credit)); ?>
 						</span>
 						<p class="description"><?php esc_html_e('Calculated automatically as (Credit Limit - Current Balance).', 'custom-woo-dashboard'); ?></p>
+					</td>
+				</tr>
+
+				<tr>
+					<th scope="row">
+						<label for="cwd_credit_payment_terms_preset"><?php esc_html_e('Payment Schedule / Terms', 'custom-woo-dashboard'); ?></label>
+					</th>
+					<td>
+						<select name="cwd_credit_payment_terms_preset" id="cwd_credit_payment_terms_preset" onchange="var customWrap = document.getElementById('cwd_custom_terms_admin_wrap'); var input = document.getElementById('cwd_credit_payment_terms_custom'); if (this.value === 'custom') { customWrap.style.display = 'block'; } else { customWrap.style.display = 'none'; input.value = this.value; }" style="max-width: 380px; width: 100%;">
+							<?php foreach ($payment_term_presets as $val => $label) : ?>
+								<option value="<?php echo esc_attr($val); ?>" <?php selected($is_preset_terms && $user_terms === $val); ?>>
+									<?php echo esc_html($label); ?>
+								</option>
+							<?php endforeach; ?>
+							<option value="custom" <?php selected(! $is_preset_terms); ?>>
+								<?php esc_html_e('Custom Days / Terms...', 'custom-woo-dashboard'); ?>
+							</option>
+						</select>
+						<div id="cwd_custom_terms_admin_wrap" style="<?php echo ! $is_preset_terms ? 'display: block;' : 'display: none;'; ?> margin-top: 8px;">
+							<input type="text" name="cwd_credit_payment_terms_custom" id="cwd_credit_payment_terms_custom" value="<?php echo esc_attr($user_terms); ?>" placeholder="<?php esc_attr_e('e.g. 45 Days Net or 15 Days EOM', 'custom-woo-dashboard'); ?>" class="regular-text" style="max-width: 380px;" />
+						</div>
+						<p class="description"><?php esc_html_e('Timeline/schedule used to calculate payment due dates and monthly statement cycles.', 'custom-woo-dashboard'); ?></p>
 					</td>
 				</tr>
 
@@ -165,6 +201,29 @@ class CWD_V2_Admin_Profile
 				CWD_V2_Credit_Logic::sync_user_credit_balance($user_id, $balance);
 			} else {
 				update_user_meta($user_id, '_credit_balance', $balance);
+			}
+		}
+
+		// Save Payment Terms / Schedule
+		if (isset($_POST['cwd_credit_payment_terms_preset'])) {
+			$preset = sanitize_text_field(wp_unslash($_POST['cwd_credit_payment_terms_preset']));
+			if ('custom' === $preset && ! empty($_POST['cwd_credit_payment_terms_custom'])) {
+				$terms_val = sanitize_text_field(wp_unslash($_POST['cwd_credit_payment_terms_custom']));
+			} else {
+				$terms_val = $preset;
+			}
+			if (! empty($terms_val)) {
+				update_user_meta($user_id, '_credit_payment_terms', $terms_val);
+				if (class_exists('CWD_V2_Invoices')) {
+					CWD_V2_Invoices::update_user_earliest_due_date($user_id);
+				}
+				$cur_bal = (float) get_user_meta($user_id, '_credit_balance', true);
+				if ($cur_bal > 0 && class_exists('CWD_V2_Invoices')) {
+					$calc_due = CWD_V2_Invoices::calculate_due_date_for_user($user_id);
+					if ($calc_due) {
+						update_user_meta($user_id, '_credit_due_date', date('Y-m-d', strtotime($calc_due)));
+					}
+				}
 			}
 		}
 
