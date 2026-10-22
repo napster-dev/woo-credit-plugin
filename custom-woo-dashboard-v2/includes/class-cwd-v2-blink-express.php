@@ -570,16 +570,90 @@ class CWD_V2_Blink_Express
 			return false;
 		}
 
+		// Clear any validation notices previously generated
+		if (function_exists('wc_clear_notices')) {
+			wc_clear_notices();
+		}
+
+		$current_user = wp_get_current_user();
+		$email = ! empty($_POST['customer_email']) ? sanitize_email(wp_unslash($_POST['customer_email'])) : ($current_user && $current_user->ID ? $current_user->user_email : 'guest@ewsupplies.com');
+		$name  = ! empty($_POST['customer_name']) ? sanitize_text_field(wp_unslash($_POST['customer_name'])) : ($current_user && $current_user->ID ? $current_user->display_name : 'Guest Customer');
+		$name_parts = explode(' ', trim($name), 2);
+		$first_name = $name_parts[0] ?: 'Guest';
+		$last_name  = isset($name_parts[1]) && ! empty($name_parts[1]) ? $name_parts[1] : 'Customer';
+
+		// Seed required guest checkout fields in $_POST so $checkout->create_order() passes without validation errors
+		$defaults = array(
+			'billing_first_name' => $first_name,
+			'billing_last_name'  => $last_name,
+			'billing_email'      => $email,
+			'billing_phone'      => ! empty($_POST['customer_phone']) ? sanitize_text_field(wp_unslash($_POST['customer_phone'])) : '01onal',
+			'billing_address_1'  => ! empty($_POST['billing_address_1']) ? sanitize_text_field(wp_unslash($_POST['billing_address_1'])) : 'Express Checkout',
+			'billing_city'       => ! empty($_POST['billing_city']) ? sanitize_text_field(wp_unslash($_POST['billing_city'])) : 'London',
+			'billing_postcode'   => ! empty($_POST['billing_postcode']) ? sanitize_text_field(wp_unslash($_POST['billing_postcode'])) : 'E1 6AN',
+			'billing_country'    => ! empty($_POST['billing_country']) ? sanitize_text_field(wp_unslash($_POST['billing_country'])) : 'GB',
+			'ship_to_different_address' => false,
+		);
+		foreach ($defaults as $k => $v) {
+			if (empty($_POST[$k])) {
+				$_POST[$k] = $v;
+			}
+		}
+
+		// Filter out required field validation errors for express checkout
+		add_filter('woocommerce_checkout_posted_data', function($data) use ($defaults) {
+			foreach ($defaults as $k => $v) {
+				if (empty($data[$k])) {
+					$data[$k] = $v;
+				}
+			}
+			return $data;
+		});
+
 		$checkout = WC()->checkout();
 		$order_id = $checkout->create_order(array(
 			'payment_method' => 'blink',
 		));
 
-		if (is_wp_error($order_id)) {
-			return false;
+		// If standard checkout creation encountered a validation error, create order directly from cart
+		if (is_wp_error($order_id) || ! $order_id) {
+			if (function_exists('wc_clear_notices')) {
+				wc_clear_notices();
+			}
+			$order = wc_create_order(array(
+				'customer_id' => $current_user && $current_user->ID ? $current_user->ID : 0,
+			));
+			if (! $order || is_wp_error($order)) {
+				return false;
+			}
+			foreach (WC()->cart->get_cart() as $cart_item_key => $values) {
+				$order->add_product(
+					$values['data'],
+					$values['quantity'],
+					array(
+						'subtotal' => $values['line_subtotal'],
+						'total'    => $values['line_total'],
+					)
+				);
+			}
+			$address = array(
+				'first_name' => $first_name,
+				'last_name'  => $last_name,
+				'email'      => $email,
+				'address_1'  => $_POST['billing_address_1'],
+				'city'       => $_POST['billing_city'],
+				'postcode'   => $_POST['billing_postcode'],
+				'country'    => $_POST['billing_country'],
+			);
+			$order->set_address($address, 'billing');
+			$order->set_address($address, 'shipping');
+			$order->set_payment_method('blink');
+			$order->calculate_totals();
+			$order_id = $order->get_id();
+		} else {
+			$order = wc_get_order($order_id);
 		}
 
-		$order = wc_get_order($order_id);
 		if (! $order) {
 			return false;
 		}
@@ -588,6 +662,11 @@ class CWD_V2_Blink_Express
 		$order->set_payment_method_title('Blink (' . $display_provider . ')');
 		$order->add_order_note(sprintf(__('Payment confirmed via Blink %1$s. Transaction Ref: %2$s', 'custom-woo-dashboard'), $display_provider, $transaction_ref));
 		$order->payment_complete($transaction_ref);
+
+		// Instantly push order to Odoo
+		if (function_exists('cwd_v2_notify_odoo_order_event')) {
+			cwd_v2_notify_odoo_order_event($order->get_id());
+		}
 
 		return $order;
 	}

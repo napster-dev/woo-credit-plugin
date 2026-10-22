@@ -79,23 +79,46 @@ class CWD_V2_Credit_Logic
 	}
 
 	public static function filter_account_payment_gateways( $gateways ) {
-		if ( ! is_array( $gateways ) || ! isset( WC()->cart ) || ! WC()->cart ) {
+		if ( ! is_array( $gateways ) ) {
 			return $gateways;
 		}
+
+		// Completely remove Direct Bank Transfer (BACS) across checkout
+		unset( $gateways['bacs'] );
+
 		$product_id = (int) self::get_credit_payment_product_id();
 		$is_account_payment = false;
-		foreach ( WC()->cart->get_cart() as $cart_item ) {
-			if ( $product_id && (int) ( $cart_item['product_id'] ?? 0 ) === $product_id ) {
-				$is_account_payment = true;
-				break;
+		if ( isset( WC()->cart ) && WC()->cart ) {
+			foreach ( WC()->cart->get_cart() as $cart_item ) {
+				if ( $product_id && (int) ( $cart_item['product_id'] ?? 0 ) === $product_id ) {
+					$is_account_payment = true;
+					break;
+				}
 			}
 		}
-		if ( ! $is_account_payment ) {
-			return $gateways;
+
+		// Check order-pay page
+		if ( ! $is_account_payment && isset( $_GET['pay_for_order'] ) ) {
+			$order_id = absint( get_query_var( 'order-pay' ) );
+			$order = wc_get_order( $order_id );
+			if ( $order ) {
+				foreach ( $order->get_items() as $item ) {
+					if ( $product_id && (int) $item->get_product_id() === $product_id ) {
+						$is_account_payment = true;
+						break;
+					}
+				}
+			}
 		}
-		// Customers cannot pay their credit account using credit account itself.
-		// Keep all real payment gateways (card, BACS, etc.) enabled so customer can place the order!
-		unset( $gateways['cwd_v2_credit_account'] );
+
+		if ( $is_account_payment ) {
+			// Customers cannot pay their credit account using credit account itself
+			unset( $gateways['cwd_v2_credit_account'] );
+			unset( $gateways['credits'] );
+			unset( $gateways['trade_credit'] );
+			unset( $gateways['fpc_credits'] );
+		}
+
 		return $gateways;
 	}
 
