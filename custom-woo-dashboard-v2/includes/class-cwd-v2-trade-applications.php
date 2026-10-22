@@ -2122,6 +2122,15 @@ class CWD_V2_Trade_Applications
 						</th>
 					</tr>
 					<tr>
+						<th scope="row"><label for="cwd_odoo_base_url"><?php esc_html_e('Odoo ERP Base URL', 'custom-woo-dashboard'); ?></label></th>
+						<td>
+							<input type="url" name="cwd_odoo_base_url" id="cwd_odoo_base_url" value="<?php echo esc_attr(get_option('cwd_odoo_base_url', '')); ?>" class="regular-text" placeholder="https://odoo.yourdomain.com" />
+							<p class="description">
+								<?php esc_html_e('The public URL of your Odoo ERP server. When an order is placed on WooCommerce, an instant sync signal is sent immediately to Odoo.', 'custom-woo-dashboard'); ?>
+							</p>
+						</td>
+					</tr>
+					<tr>
 						<th scope="row"><label for="cwd_odoo_secret_key"><?php esc_html_e('Odoo Shared Secret Key', 'custom-woo-dashboard'); ?></label></th>
 						<td>
 							<input type="password" name="cwd_odoo_secret_key" id="cwd_odoo_secret_key" value="<?php echo esc_attr(get_option('cwd_odoo_secret_key', '')); ?>" class="regular-text" autocomplete="off" />
@@ -2562,6 +2571,11 @@ class CWD_V2_Trade_Applications
 		register_setting('cwd_v2_trade_settings', 'cwd_odoo_secret_key', array(
 			'type'              => 'string',
 			'sanitize_callback' => 'sanitize_text_field',
+			'default'           => '',
+		));
+		register_setting('cwd_v2_trade_settings', 'cwd_odoo_base_url', array(
+			'type'              => 'string',
+			'sanitize_callback' => 'esc_url_raw',
 			'default'           => '',
 		));
 	}

@@ -95,6 +95,11 @@ if (! function_exists('cwd_v2_init_plugin')) {
 
 			// Register WooCommerce Blocks payment method integration
 			add_action('woocommerce_blocks_loaded', 'cwd_v2_register_credit_gateway_blocks_support');
+
+			// Instant Order Sync with Odoo ERP
+			add_action('woocommerce_checkout_order_processed', 'cwd_v2_notify_odoo_order_event', 10, 1);
+			add_action('woocommerce_payment_complete', 'cwd_v2_notify_odoo_order_event', 10, 1);
+			add_action('woocommerce_order_status_changed', 'cwd_v2_notify_odoo_order_event', 10, 1);
 		}
 	}
 }
@@ -203,6 +208,44 @@ if (! function_exists('cwd_v2_fix_user_menu_credits_links')) {
 		});
 		</script>
 		<?php
+	}
+}
+
+if (! function_exists('cwd_v2_notify_odoo_order_event')) {
+	/**
+	 * Instant order event notification to Odoo ERP.
+	 * Dispatched asynchronously without blocking customer checkout.
+	 *
+	 * @param int $order_id WooCommerce Order ID
+	 */
+	function cwd_v2_notify_odoo_order_event($order_id)
+	{
+		if (! $order_id) {
+			return;
+		}
+
+		$odoo_url = defined('CWD_ODOO_BASE_URL') ? CWD_ODOO_BASE_URL : get_option('cwd_odoo_base_url', '');
+		$odoo_url = apply_filters('cwd_v2_odoo_base_url', $odoo_url);
+		if (empty($odoo_url)) {
+			return;
+		}
+
+		$secret = defined('CWD_ODOO_SECRET_KEY') ? CWD_ODOO_SECRET_KEY : get_option('cwd_odoo_secret_key', '');
+		$endpoint = rtrim($odoo_url, '/') . '/la_woocommerce/webhook/order';
+
+		// Fire non-blocking asynchronous request so customer checkout is never delayed
+		wp_remote_post($endpoint, array(
+			'timeout'   => 5,
+			'blocking'  => false,
+			'headers'   => array(
+				'Content-Type'  => 'application/json',
+				'X-Odoo-Secret' => $secret,
+			),
+			'body'      => wp_json_encode(array(
+				'order_id' => (int) $order_id,
+				'action'   => 'created',
+			)),
+		));
 	}
 }
 
