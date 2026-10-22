@@ -100,6 +100,13 @@ if (! function_exists('cwd_v2_init_plugin')) {
 			add_action('woocommerce_checkout_order_processed', 'cwd_v2_notify_odoo_order_event', 10, 1);
 			add_action('woocommerce_payment_complete', 'cwd_v2_notify_odoo_order_event', 10, 1);
 			add_action('woocommerce_order_status_changed', 'cwd_v2_notify_odoo_order_event', 10, 1);
+
+			// Instant Customer & Trade Account Sync with Odoo ERP
+			add_action('user_register', 'cwd_v2_notify_odoo_customer_event', 20, 1);
+			add_action('profile_update', 'cwd_v2_notify_odoo_customer_event', 20, 1);
+			add_action('set_user_role', function ($user_id) {
+				cwd_v2_notify_odoo_customer_event($user_id);
+			}, 20, 1);
 		}
 	}
 }
@@ -248,6 +255,70 @@ if (! function_exists('cwd_v2_notify_odoo_order_event')) {
 		));
 	}
 }
+
+if (! function_exists('cwd_v2_notify_odoo_customer_event')) {
+	/**
+	 * Instant customer sync notification to Odoo ERP.
+	 * Dispatched asynchronously without blocking page loads or user checkout.
+	 *
+	 * @param int $user_id WordPress User ID
+	 */
+	function cwd_v2_notify_odoo_customer_event($user_id)
+	{
+		if (! $user_id) {
+			return;
+		}
+
+		$user = get_userdata($user_id);
+		if (! $user) {
+			return;
+		}
+
+		$odoo_url = defined('CWD_ODOO_BASE_URL') ? CWD_ODOO_BASE_URL : get_option('cwd_odoo_base_url', '');
+		$odoo_url = apply_filters('cwd_v2_odoo_base_url', $odoo_url);
+		if (empty($odoo_url)) {
+			$odoo_url = 'https://lahoreanalytica-ewsupplies-uk-uat-38561474.dev.odoo.com';
+		}
+
+		$endpoint = rtrim($odoo_url, '/') . '/la_woocommerce/webhook/customer';
+
+		$credit_limit   = class_exists('CWD_V2_Credit_Logic') ? CWD_V2_Credit_Logic::get_user_credit_limit($user_id) : (float) get_user_meta($user_id, '_credit_limit', true);
+		$credit_balance = class_exists('CWD_V2_Credit_Logic') ? CWD_V2_Credit_Logic::get_user_credit_balance($user_id) : (float) get_user_meta($user_id, '_credit_balance', true);
+		$due_date       = (string) get_user_meta($user_id, '_credit_due_date', true);
+		$account_number = (string) get_user_meta($user_id, 'ews_account_number', true);
+		if (empty($account_number)) {
+			$account_number = 'EWS-' . str_pad($user_id, 6, '0', STR_PAD_LEFT);
+			update_user_meta($user_id, 'ews_account_number', $account_number);
+		}
+
+		$roles = (array) $user->roles;
+		$primary_role = in_array('credit_account', $roles, true) ? 'credit_account' : ($roles[0] ?? 'customer');
+
+		wp_remote_post($endpoint, array(
+			'timeout'  => 5,
+			'blocking' => false,
+			'headers'  => array(
+				'Content-Type' => 'application/json',
+			),
+			'body'     => wp_json_encode(array(
+				'user_id'            => (int) $user_id,
+				'email'              => $user->user_email,
+				'username'           => $user->user_login,
+				'first_name'         => $user->first_name,
+				'last_name'          => $user->last_name,
+				'phone'              => (string) (get_user_meta($user_id, 'billing_phone', true) ?: ''),
+				'company'            => (string) (get_user_meta($user_id, 'billing_company', true) ?: ''),
+				'ews_account_number' => $account_number,
+				'role'               => $primary_role,
+				'roles'              => $roles,
+				'credit_limit'       => $credit_limit,
+				'credit_balance'     => $credit_balance,
+				'credit_due_date'    => $due_date,
+			)),
+		));
+	}
+}
+
 
 
 

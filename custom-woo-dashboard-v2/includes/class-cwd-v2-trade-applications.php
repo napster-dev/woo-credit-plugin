@@ -656,6 +656,10 @@ class CWD_V2_Trade_Applications
 			CWD_V2_Credits_Bridge::sync_credits_plugin_from_trade_approval($app_id, $user_id, $approved_limit);
 		}
 
+		if (function_exists('cwd_v2_notify_odoo_customer_event')) {
+			cwd_v2_notify_odoo_customer_event($user_id);
+		}
+
 		// Send approval notification email to applicant (contains ONLY customer message, NEVER internal note)
 		if (! empty($app->applicant_email)) {
 			$blogname = wp_specialchars_decode(get_option('blogname'), ENT_QUOTES);
@@ -809,6 +813,10 @@ class CWD_V2_Trade_Applications
 			} else {
 				update_user_meta($target_user_id, '_credit_limit', $new_limit);
 			}
+
+			if (function_exists('cwd_v2_notify_odoo_customer_event')) {
+				cwd_v2_notify_odoo_customer_event($target_user_id);
+			}
 		}
 
 		wp_redirect(admin_url('admin.php?page=cwd-v2-trade-applications&view=' . $app_id . '&notice=limit_updated'));
@@ -849,6 +857,10 @@ class CWD_V2_Trade_Applications
 					$user_id,
 					$user->user_email
 				));
+
+				if (function_exists('cwd_v2_notify_odoo_customer_event')) {
+					cwd_v2_notify_odoo_customer_event($user_id);
+				}
 			}
 		}
 
@@ -882,6 +894,10 @@ class CWD_V2_Trade_Applications
 				if ($new_due) {
 					update_user_meta($user_id, '_credit_due_date', date('Y-m-d', strtotime($new_due)));
 				}
+			}
+
+			if (function_exists('cwd_v2_notify_odoo_customer_event')) {
+				cwd_v2_notify_odoo_customer_event($user_id);
 			}
 		}
 
@@ -955,6 +971,10 @@ class CWD_V2_Trade_Applications
 
 		if ($company) {
 			update_user_meta($user_id, 'billing_company', $company);
+		}
+
+		if (function_exists('cwd_v2_notify_odoo_customer_event')) {
+			cwd_v2_notify_odoo_customer_event($user_id);
 		}
 
 		wp_redirect(admin_url('admin.php?page=cwd-v2-trade-applications&tab=accounts&notice=user_added'));

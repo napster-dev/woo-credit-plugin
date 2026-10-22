@@ -41,6 +41,12 @@ class CWD_V2_Credit_Logic
 		add_action('woocommerce_order_status_cancelled', array(__CLASS__, 'reverse_credit_order_charge'), 10, 1);
 		add_action('woocommerce_order_status_failed', array(__CLASS__, 'reverse_credit_order_charge'), 10, 1);
 
+		// Optional payoff of outstanding credit balance at checkout
+		add_action('woocommerce_review_order_before_payment', array(__CLASS__, 'render_checkout_credit_payoff_option'));
+		add_action('woocommerce_checkout_update_order_review', array(__CLASS__, 'handle_checkout_update_payoff_preference'));
+		add_action('woocommerce_cart_calculate_fees', array(__CLASS__, 'apply_checkout_credit_payoff_fee'));
+		add_action('woocommerce_checkout_create_order', array(__CLASS__, 'save_checkout_credit_payoff_meta'), 10, 2);
+
 		// Hook into refunds on credit-paid orders to decrease the outstanding balance.
 		add_action('woocommerce_order_refunded', array(__CLASS__, 'handle_credit_order_refund'), 10, 2);
 	}
@@ -111,7 +117,7 @@ class CWD_V2_Credit_Logic
 			}
 		}
 
-		if ( $is_account_payment ) {
+		if ( $is_account_payment || ( isset( WC()->session ) && WC()->session->get( 'cwd_payoff_credit_balance', false ) ) ) {
 			// Customers cannot pay their credit account using credit account itself
 			unset( $gateways['cwd_v2_credit_account'] );
 			unset( $gateways['credits'] );
@@ -364,6 +370,150 @@ class CWD_V2_Credit_Logic
 				$order->update_meta_data('_cwd_v2_credit_payment_processed', 'yes');
 				$order->save();
 			}
+		}
+
+		// Handle optional checkout credit balance payoff
+		$payoff_amount = (float) $order->get_meta('_cwd_payoff_credit_balance_amount');
+		if ($payoff_amount > 0 && ! $order->get_meta('_cwd_payoff_balance_processed')) {
+			$user_id = $order->get_user_id();
+			if ($user_id) {
+				$curr_bal = self::get_user_credit_balance($user_id);
+				$new_bal  = max(0, $curr_bal - $payoff_amount);
+				self::sync_user_credit_balance($user_id, $new_bal);
+				if (class_exists('CWD_V2_Account_Ledger')) {
+					CWD_V2_Account_Ledger::record(
+						$user_id,
+						CWD_V2_Account_Ledger::TYPE_PAYMENT,
+						$payoff_amount,
+						'order',
+						$order->get_id(),
+						sprintf(__('Checkout payoff of outstanding balance via order #%d', 'custom-woo-dashboard'), $order->get_id())
+					);
+				}
+				if (class_exists('CWD_V2_Invoices')) {
+					CWD_V2_Invoices::update_user_earliest_due_date($user_id);
+				}
+				$order->update_meta_data('_cwd_payoff_balance_processed', 'yes');
+				$order->add_order_note(sprintf(__('Settled outstanding credit balance of %s via checkout payoff on this order.', 'custom-woo-dashboard'), wc_price($payoff_amount)));
+				$order->save();
+			}
+		}
+	}
+
+	/**
+	 * Render optional credit balance payoff checkbox at checkout
+	 */
+	public static function render_checkout_credit_payoff_option()
+	{
+		if (! is_user_logged_in()) {
+			return;
+		}
+
+		$user_id = get_current_user_id();
+		$roles   = (array) wp_get_current_user()->roles;
+		if (! in_array('credit_account', $roles, true) && ! current_user_can('manage_options')) {
+			return;
+		}
+
+		// Don't render if paying credit balance specifically via the credit payment product
+		$product_id = (int) self::get_credit_payment_product_id();
+		if (isset(WC()->cart) && WC()->cart) {
+			foreach (WC()->cart->get_cart() as $cart_item) {
+				if ($product_id && (int) ($cart_item['product_id'] ?? 0) === $product_id) {
+					return;
+				}
+			}
+		}
+
+		$credit_balance = self::get_user_credit_balance($user_id);
+		if ($credit_balance <= 0.01) {
+			return;
+		}
+
+		$due_date   = (string) get_user_meta($user_id, '_credit_due_date', true);
+		$is_checked = (bool) (WC()->session ? WC()->session->get('cwd_payoff_credit_balance', false) : false);
+		?>
+		<div class="cwd-credit-payoff-checkout-box" style="margin: 16px 0; padding: 14px 16px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px;">
+			<label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer; margin: 0; font-size: 14px; color: #0f172a;">
+				<input type="checkbox" name="cwd_payoff_credit_balance" id="cwd_payoff_credit_balance" value="1" <?php checked($is_checked, true); ?> style="margin-top: 3px;" onchange="jQuery('body').trigger('update_checkout');" />
+				<span>
+					<strong><?php printf(esc_html__('Also pay off my outstanding credit balance (%s) with this order', 'custom-woo-dashboard'), wp_strip_all_tags(wc_price($credit_balance))); ?></strong>
+					<?php if (! empty($due_date)) : ?>
+						<span style="display: block; font-size: 12px; color: #64748b; margin-top: 2px;">
+							<?php printf(esc_html__('Payment due date: %s. Leave unchecked if you prefer to settle this on your due date.', 'custom-woo-dashboard'), esc_html($due_date)); ?>
+						</span>
+					<?php else : ?>
+						<span style="display: block; font-size: 12px; color: #64748b; margin-top: 2px;">
+							<?php esc_html_e('Leave unchecked to pay only for the items currently in your cart according to your standard trade terms.', 'custom-woo-dashboard'); ?>
+						</span>
+					<?php endif; ?>
+				</span>
+			</label>
+		</div>
+		<?php
+	}
+
+	/**
+	 * Handle AJAX update of the checkout payoff preference
+	 */
+	public static function handle_checkout_update_payoff_preference($post_data)
+	{
+		if (! WC()->session) {
+			return;
+		}
+
+		$params = array();
+		wp_parse_str($post_data, $params);
+
+		$payoff = ! empty($params['cwd_payoff_credit_balance']);
+		WC()->session->set('cwd_payoff_credit_balance', $payoff);
+	}
+
+	/**
+	 * Apply checkout payoff fee to cart total if selected
+	 */
+	public static function apply_checkout_credit_payoff_fee($cart)
+	{
+		if (is_admin() && ! defined('DOING_AJAX')) {
+			return;
+		}
+
+		if (! is_user_logged_in() || ! WC()->session) {
+			return;
+		}
+
+		if (! WC()->session->get('cwd_payoff_credit_balance', false)) {
+			return;
+		}
+
+		$product_id = (int) self::get_credit_payment_product_id();
+		foreach ($cart->get_cart() as $cart_item) {
+			if ($product_id && (int) ($cart_item['product_id'] ?? 0) === $product_id) {
+				return;
+			}
+		}
+
+		$user_id = get_current_user_id();
+		$credit_balance = self::get_user_credit_balance($user_id);
+		if ($credit_balance > 0.01) {
+			$cart->add_fee(__('Outstanding Credit Balance Payoff', 'custom-woo-dashboard'), $credit_balance, false);
+		}
+	}
+
+	/**
+	 * Save payoff meta to order upon creation
+	 */
+	public static function save_checkout_credit_payoff_meta($order, $data)
+	{
+		if (isset(WC()->session) && WC()->session->get('cwd_payoff_credit_balance', false)) {
+			$user_id = $order->get_user_id();
+			if ($user_id) {
+				$credit_balance = self::get_user_credit_balance($user_id);
+				if ($credit_balance > 0.01) {
+					$order->update_meta_data('_cwd_payoff_credit_balance_amount', $credit_balance);
+				}
+			}
+			WC()->session->set('cwd_payoff_credit_balance', false);
 		}
 	}
 

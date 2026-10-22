@@ -254,5 +254,9 @@ class CWD_V2_Admin_Profile
 				}
 			}
 		}
+
+		if (function_exists('cwd_v2_notify_odoo_customer_event')) {
+			cwd_v2_notify_odoo_customer_event($user_id);
+		}
 	}
 }
