@@ -228,6 +228,18 @@ class CWD_V2_REST_API
 		$available_credit = max(0, $credit_limit - $credit_balance);
 		$due_date         = (string) get_user_meta($user_id, '_credit_due_date', true);
 		$account_number   = (string) get_user_meta($user_id, 'ews_account_number', true);
+		if (empty($account_number)) {
+			$account_number = (string) get_user_meta($user_id, 'cwd_ews_account_number', true);
+		}
+		if (empty($account_number)) {
+			$account_number = (string) get_user_meta($user_id, 'trade_number', true);
+		}
+		if (empty($account_number)) {
+			$account_number = 'EWS-' . str_pad((string) $user_id, 6, '0', STR_PAD_LEFT);
+		}
+		if (get_user_meta($user_id, 'ews_account_number', true) !== $account_number) {
+			update_user_meta($user_id, 'ews_account_number', $account_number);
+		}
 
 		$data = $response->get_data();
 		$data['credit_account'] = array(
@@ -238,6 +250,27 @@ class CWD_V2_REST_API
 			'credit_due_date'    => $due_date,
 			'ews_account_number' => $account_number,
 		);
+
+		// Guarantee ews_account_number is also present in standard meta_data array
+		$meta_data = isset($data['meta_data']) && is_array($data['meta_data']) ? $data['meta_data'] : array();
+		$found_meta = false;
+		foreach ($meta_data as &$m_entry) {
+			if (isset($m_entry['key']) && $m_entry['key'] === 'ews_account_number') {
+				$m_entry['value'] = $account_number;
+				$found_meta = true;
+				break;
+			}
+		}
+		unset($m_entry);
+		if (! $found_meta) {
+			$meta_data[] = array(
+				'id'    => 0,
+				'key'   => 'ews_account_number',
+				'value' => $account_number,
+			);
+		}
+		$data['meta_data'] = $meta_data;
+
 		$response->set_data($data);
 
 		return $response;

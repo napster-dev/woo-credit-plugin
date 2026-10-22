@@ -1173,7 +1173,19 @@ class CWD_V2_Trade_Applications
 			}
 
 			$phone   = get_user_meta($uid, 'billing_phone', true) ?: '';
-			$acc_num = get_user_meta($uid, 'ews_account_number', true) ?: ('EWS-' . str_pad($uid, 6, '0', STR_PAD_LEFT));
+			$acc_num = (string) get_user_meta($uid, 'ews_account_number', true);
+			if (empty($acc_num)) {
+				$acc_num = (string) get_user_meta($uid, 'cwd_ews_account_number', true);
+			}
+			if (empty($acc_num)) {
+				$acc_num = (string) get_user_meta($uid, 'trade_number', true);
+			}
+			if (empty($acc_num)) {
+				$acc_num = 'EWS-' . str_pad((string) $uid, 6, '0', STR_PAD_LEFT);
+			}
+			if (get_user_meta($uid, 'ews_account_number', true) !== $acc_num) {
+				update_user_meta($uid, 'ews_account_number', $acc_num);
+			}
 			$terms   = get_user_meta($uid, '_credit_payment_terms', true) ?: '30 Days EOM';
 
 			// Due date from pre-fetched batch
