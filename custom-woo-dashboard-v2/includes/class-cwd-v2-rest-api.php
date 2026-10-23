@@ -125,6 +125,36 @@ class CWD_V2_REST_API
 				}
 			}
 
+			// 2.5 WooCommerce API Keys check (matches active WooCommerce instance keys)
+			$woo_ck = $request->get_header('X-Woo-Consumer-Key') ?: $request->get_param('consumer_key');
+			$woo_cs = $request->get_header('X-Woo-Consumer-Secret') ?: $request->get_param('consumer_secret');
+			if (empty($woo_ck) && 0 === stripos($raw_auth, 'basic ')) {
+				$decoded_auth = base64_decode(substr($raw_auth, 6));
+				if (false !== $decoded_auth && strpos($decoded_auth, ':') !== false) {
+					list($maybe_ck, $maybe_cs) = explode(':', $decoded_auth, 2);
+					if (0 === strpos($maybe_ck, 'ck_')) {
+						$woo_ck = $maybe_ck;
+						$woo_cs = $maybe_cs;
+					}
+				}
+			}
+
+			if (! empty($woo_ck) && ! empty($woo_cs) && function_exists('wc_api_hash')) {
+				global $wpdb;
+				$key = $wpdb->get_row($wpdb->prepare(
+					"SELECT user_id, permissions, consumer_secret FROM {$wpdb->prefix}woocommerce_api_keys WHERE consumer_key = %s",
+					wc_api_hash($woo_ck)
+				));
+				if ($key && hash_equals($key->consumer_secret, $woo_cs)) {
+					if (in_array($key->permissions, array('read_write', 'write'), true)) {
+						if (! empty($key->user_id)) {
+							wp_set_current_user($key->user_id);
+						}
+						return true;
+					}
+				}
+			}
+
 			// 3. Custom X-WP-App-User and X-WP-App-Password headers
 			$custom_user = $request->get_header('X-WP-App-User') ?: $request->get_param('wp_username');
 			$custom_pw   = $request->get_header('X-WP-App-Password') ?: $request->get_param('wp_app_password');
@@ -349,6 +379,23 @@ class CWD_V2_REST_API
 				),
 			)
 		);
+
+		register_rest_route(
+			'cwd/v2',
+			'/sync-tracking',
+			array(
+				'methods'             => 'POST',
+				'callback'            => array( __CLASS__, 'handle_direct_tracking_sync' ),
+				'permission_callback' => array( __CLASS__, 'rest_meta_auth_callback' ),
+				'args'                => array(
+					'order_id'         => array( 'type' => 'string',  'required' => true ),
+					'carrier'          => array( 'type' => 'string',  'required' => false ),
+					'tracking_number'  => array( 'type' => 'string',  'required' => true ),
+					'tracking_url'     => array( 'type' => 'string',  'required' => false ),
+					'notify_customer'  => array( 'type' => 'boolean', 'required' => false ),
+				),
+			)
+		);
 	}
 
 	/**
@@ -501,6 +548,108 @@ class CWD_V2_REST_API
 				'credit_balance' => $live_balance,
 			),
 			$ok ? 200 : 500
+		);
+	}
+
+	/**
+	 * Process direct tracking sync request from Odoo
+	 *
+	 * @param WP_REST_Request $request
+	 * @return WP_REST_Response
+	 */
+	public static function handle_direct_tracking_sync($request)
+	{
+		$order_id        = sanitize_text_field($request->get_param('order_id'));
+		$carrier         = sanitize_text_field($request->get_param('carrier') ?: 'Royal Mail');
+		$tracking_number = sanitize_text_field($request->get_param('tracking_number'));
+		$tracking_url    = esc_url_raw($request->get_param('tracking_url') ?: '');
+		$notify_customer = (bool) $request->get_param('notify_customer');
+
+		if (empty($order_id) || empty($tracking_number)) {
+			return new WP_REST_Response(
+				array('success' => false, 'message' => __('Order ID and tracking number are required.', 'custom-woo-dashboard')),
+				400
+			);
+		}
+
+		$order = wc_get_order($order_id);
+		if (! $order instanceof WC_Order) {
+			return new WP_REST_Response(
+				array('success' => false, 'message' => __('Order not found.', 'custom-woo-dashboard')),
+				404
+			);
+		}
+
+		// 1. Save using CWD_V2_Shipment_Tracking if available
+		if (class_exists('CWD_V2_Shipment_Tracking')) {
+			CWD_V2_Shipment_Tracking::add_tracking_item(
+				$order,
+				array(
+					'tracking_provider'    => $carrier,
+					'tracking_number'      => $tracking_number,
+					'custom_tracking_link' => $tracking_url,
+					'date_shipped'         => current_time('Y-m-d'),
+				),
+				$notify_customer
+			);
+		}
+
+		// 2. Set standard WooCommerce, AST, and ParcelPanel/ParcelWILL meta
+		$order->update_meta_data('_tracking_number', $tracking_number);
+		$order->update_meta_data('tracking_number', $tracking_number);
+		$order->update_meta_data('_tracking_provider', $carrier);
+		$order->update_meta_data('tracking_provider', $carrier);
+		if (! empty($tracking_url)) {
+			$order->update_meta_data('_custom_tracking_link', $tracking_url);
+			$order->update_meta_data('custom_tracking_link', $tracking_url);
+		}
+		$order->update_meta_data('_parcelpanel_tracking_number', $tracking_number);
+		$order->update_meta_data('_parcelpanel_carrier', $carrier);
+		$order->update_meta_data('_parcelpanel_tracking_url', $tracking_url);
+
+		// Also populate standard WooCommerce Shipment Tracking items array
+		$existing_items = $order->get_meta('_wc_shipment_tracking_items', true);
+		if (! is_array($existing_items)) {
+			$existing_items = array();
+		}
+		$item_exists = false;
+		foreach ($existing_items as $ei) {
+			if (($ei['tracking_number'] ?? '') === $tracking_number) {
+				$item_exists = true;
+				break;
+			}
+		}
+		if (! $item_exists) {
+			$existing_items[] = array(
+				'tracking_provider'    => $carrier,
+				'tracking_number'      => $tracking_number,
+				'custom_tracking_link' => $tracking_url,
+				'date_shipped'         => current_time('Y-m-d'),
+			);
+			$order->update_meta_data('_wc_shipment_tracking_items', $existing_items);
+			$order->update_meta_data('_shipment_tracking_items', $existing_items);
+		}
+
+		// Add note to order history
+		$note = sprintf(
+			__('Tracking details updated from Odoo: %1$s - %2$s', 'custom-woo-dashboard'),
+			$carrier,
+			$tracking_number
+		);
+		if (! empty($tracking_url)) {
+			$note .= ' (' . $tracking_url . ')';
+		}
+		$order->add_order_note($note, $notify_customer);
+		$order->save();
+
+		return new WP_REST_Response(
+			array(
+				'success'         => true,
+				'order_id'        => $order->get_id(),
+				'tracking_number' => $tracking_number,
+				'carrier'         => $carrier,
+			),
+			200
 		);
 	}
 }

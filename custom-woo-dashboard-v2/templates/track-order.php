@@ -281,7 +281,7 @@ $providers = CWD_V2_Shipment_Tracking::get_providers();
 						</div>
 					</div>
 
-					<!-- Courier Tracking Numbers Section (if available) -->
+					<!-- Courier Tracking Numbers Section -->
 					<?php if (! empty($tracking_items)) : ?>
 						<div style="padding: 16px 20px; background: #fdfefe; border-bottom: 1px solid #f1f5f9;">
 							<div style="display: flex; flex-direction: column; gap: 10px;">
@@ -331,6 +331,11 @@ $providers = CWD_V2_Shipment_Tracking::get_providers();
 									</div>
 								<?php endforeach; ?>
 							</div>
+						</div>
+					<?php else : ?>
+						<div style="padding: 12px 20px; background: #f8fafc; border-bottom: 1px solid #f1f5f9; display: flex; align-items: center; gap: 8px; color: #64748b; font-size: 13px;">
+							<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+							<span><?php esc_html_e('No tracking data available for this order right now.', 'custom-woo-dashboard'); ?></span>
 						</div>
 					<?php endif; ?>
 

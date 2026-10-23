@@ -11,10 +11,12 @@ if (! defined('ABSPATH')) {
 class CWD_V2_Invoices
 {
 
-	const STATUS_UNPAID  = 'unpaid';
-	const STATUS_PAID    = 'paid';
-	const STATUS_OVERDUE = 'overdue';
-	const STATUS_VOID    = 'void';
+	const STATUS_UNPAID      = 'unpaid';
+	const STATUS_PAID        = 'paid';
+	const STATUS_OVERDUE     = 'overdue';
+	const STATUS_VOID        = 'void';
+	const STATUS_WRITTEN_OFF = 'written_off';
+	const STATUS_MARKED_OFF  = 'marked_off';
 
 	const SOURCE_WEBSITE = 'website';
 	const SOURCE_ODOO    = 'odoo';
@@ -340,9 +342,21 @@ class CWD_V2_Invoices
 
 		$total  = isset( $row['amount_total'] ) ? (float) $row['amount_total'] : 0.0;
 		$paid   = min( $total, max( 0.0, isset( $row['amount_paid'] ) ? (float) $row['amount_paid'] : 0.0 ) );
-		$status = isset( $row['status'] ) ? sanitize_key( $row['status'] ) : self::STATUS_UNPAID;
-		$status = in_array( $status, array( self::STATUS_UNPAID, self::STATUS_PAID, self::STATUS_VOID ), true ) ? $status : self::STATUS_UNPAID;
+		$raw_status = isset( $row['status'] ) ? sanitize_key( $row['status'] ) : self::STATUS_UNPAID;
+		$valid_statuses = array( self::STATUS_UNPAID, self::STATUS_PAID, self::STATUS_VOID, self::STATUS_WRITTEN_OFF, self::STATUS_MARKED_OFF, 'written_off', 'marked_off' );
+		$status = in_array( $raw_status, $valid_statuses, true ) ? $raw_status : self::STATUS_UNPAID;
 		$now    = current_time( 'mysql' );
+
+		// If marked off / written off in Odoo, strictly preserve written_off status
+		if ( in_array( $status, array( self::STATUS_WRITTEN_OFF, self::STATUS_MARKED_OFF, 'written_off', 'marked_off' ), true ) ) {
+			$final_status = self::STATUS_WRITTEN_OFF;
+		} elseif ( self::STATUS_VOID === $status ) {
+			$final_status = self::STATUS_VOID;
+		} elseif ( $paid >= $total && $total > 0 ) {
+			$final_status = self::STATUS_PAID;
+		} else {
+			$final_status = $status;
+		}
 
 		$data = array(
 			'user_id'        => (int) $user_id,
@@ -350,7 +364,7 @@ class CWD_V2_Invoices
 			'source'         => self::SOURCE_ODOO,
 			'invoice_date'   => sanitize_text_field( $row['invoice_date'] ?? $now ),
 			'due_date'       => sanitize_text_field( $row['due_date'] ?? $now ),
-			'status'         => $paid >= $total && $total > 0 ? self::STATUS_PAID : $status,
+			'status'         => $final_status,
 			'amount_total'   => $total,
 			'amount_paid'    => $paid,
 			'document_url'   => ! empty( $row['document_url'] ) ? esc_url_raw( $row['document_url'] ) : null,

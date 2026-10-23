@@ -24,7 +24,7 @@ class CWD_V2_Credit_Logic
 
 		// Set price of credit payment product in cart
 		add_action('woocommerce_before_calculate_totals', array(__CLASS__, 'set_credit_payment_price'), 10, 1);
-		add_filter( 'woocommerce_available_payment_gateways', array( __CLASS__, 'filter_account_payment_gateways' ) );
+		add_filter( 'woocommerce_available_payment_gateways', array( __CLASS__, 'filter_account_payment_gateways' ), 9999 );
 
 		// Hook into order payment to decrease balance
 		add_action('woocommerce_payment_complete', array(__CLASS__, 'reduce_credit_balance_on_payment'));
@@ -842,7 +842,7 @@ class CWD_V2_Credit_Logic
 			if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $invoices_table)) === $invoices_table) {
 				$unpaid_invoices_total = (float) $wpdb->get_var($wpdb->prepare(
 					"SELECT SUM(GREATEST(0, amount_total - amount_paid)) FROM {$invoices_table}
-					 WHERE user_id = %d AND status NOT IN ('paid', 'void')",
+					 WHERE user_id = %d AND status NOT IN ('paid', 'void', 'written_off', 'marked_off')",
 					$user_id
 				));
 				if ($unpaid_invoices_total > 0) {
@@ -1071,7 +1071,7 @@ class CWD_V2_Credit_Logic
 			if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $invoices_table)) === $invoices_table) {
 				$inv_total = (float) $wpdb->get_var($wpdb->prepare(
 					"SELECT SUM(GREATEST(0, amount_total - amount_paid)) FROM {$invoices_table}
-					 WHERE user_id = %d AND status NOT IN ('paid', 'void')",
+					 WHERE user_id = %d AND status NOT IN ('paid', 'void', 'written_off', 'marked_off')",
 					$user_id
 				));
 				$total_unpaid += $inv_total;
