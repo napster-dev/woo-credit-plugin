@@ -364,6 +364,49 @@ if (! function_exists('cwd_v2_notify_odoo_customer_event')) {
 	}
 }
 
+if (! function_exists('cwd_v2_ensure_wordfence_2fa_configuration')) {
+	/**
+	 * Automatically grant 2FA management capability to staff roles and enable 2FA for all roles in Wordfence.
+	 * Eliminates 'Sorry, you are not allowed to access this page' and ensures 2FA setup appears on user profiles.
+	 */
+	function cwd_v2_ensure_wordfence_2fa_configuration()
+	{
+		// 1. Grant 2FA management capability to administrator and shop_manager
+		foreach (array('administrator', 'shop_manager') as $role_slug) {
+			$role = get_role($role_slug);
+			if ($role && ! $role->has_cap('wf_manage_login_security')) {
+				$role->add_cap('wf_manage_login_security');
+			}
+		}
+
+		// 2. Programmatically configure Wordfence Login Security settings if available
+		if (class_exists('\WordfenceLS\Controller_Settings')) {
+			try {
+				$settings = \WordfenceLS\Controller_Settings::shared();
+				$allowed_roles = $settings->get_array(\WordfenceLS\Controller_Settings::KEY_2FA_ROLES, array());
+				$all_roles = array_keys(wp_roles()->roles);
+
+				// Ensure all user roles (including customer, credit_account, shop_manager) can use 2FA
+				$diff = array_diff($all_roles, $allowed_roles);
+				if (! empty($diff)) {
+					$merged = array_unique(array_merge($allowed_roles, $all_roles));
+					$settings->set_array(\WordfenceLS\Controller_Settings::KEY_2FA_ROLES, $merged);
+				}
+
+				if (! $settings->get_bool(\WordfenceLS\Controller_Settings::KEY_ENABLE_2FA_MANAGEMENT_SHORTCODE)) {
+					$settings->set_bool(\WordfenceLS\Controller_Settings::KEY_ENABLE_2FA_MANAGEMENT_SHORTCODE, true);
+				}
+				if (! $settings->get_bool(\WordfenceLS\Controller_Settings::KEY_ENABLE_WOOCOMMERCE_INTEGRATION)) {
+					$settings->set_bool(\WordfenceLS\Controller_Settings::KEY_ENABLE_WOOCOMMERCE_INTEGRATION, true);
+				}
+			} catch (\Exception $e) {
+				// Non-blocking
+			}
+		}
+	}
+	add_action('admin_init', 'cwd_v2_ensure_wordfence_2fa_configuration');
+}
+
 
 
 
