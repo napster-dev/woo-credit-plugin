@@ -231,6 +231,25 @@ if (! function_exists('cwd_v2_notify_odoo_order_event')) {
 			return;
 		}
 
+		$order = wc_get_order($order_id);
+		$acc_num = '';
+		if ($order instanceof WC_Order) {
+			$acc_num = (string) $order->get_meta('ews_account_number');
+			$user_id = $order->get_customer_id();
+			if (empty($acc_num) && $user_id) {
+				$acc_num = (string) get_user_meta($user_id, 'ews_account_number', true);
+				if (empty($acc_num)) {
+					$acc_num = (string) get_user_meta($user_id, 'cwd_ews_account_number', true);
+				}
+				if (empty($acc_num)) {
+					$acc_num = 'EWS-' . str_pad((string) $user_id, 6, '0', STR_PAD_LEFT);
+					update_user_meta($user_id, 'ews_account_number', $acc_num);
+				}
+				$order->update_meta_data('ews_account_number', $acc_num);
+				$order->save();
+			}
+		}
+
 		$odoo_url = defined('CWD_ODOO_BASE_URL') ? CWD_ODOO_BASE_URL : get_option('cwd_odoo_base_url', '');
 		$odoo_url = apply_filters('cwd_v2_odoo_base_url', $odoo_url);
 		if (empty($odoo_url)) {
@@ -249,11 +268,37 @@ if (! function_exists('cwd_v2_notify_odoo_order_event')) {
 				'X-Odoo-Secret' => $secret,
 			),
 			'body'      => wp_json_encode(array(
-				'order_id' => (int) $order_id,
-				'action'   => 'created',
+				'order_id'           => (int) $order_id,
+				'action'             => 'created',
+				'ews_account_number' => $acc_num,
 			)),
 		));
 	}
+}
+
+if (! function_exists('cwd_v2_attach_account_number_to_order')) {
+	/**
+	 * Automatically attach customer's authoritative EWS trade account number to new WooCommerce orders.
+	 */
+	function cwd_v2_attach_account_number_to_order($order, $data = null)
+	{
+		if (! $order instanceof WC_Order) {
+			return;
+		}
+		$user_id = $order->get_customer_id();
+		if ($user_id) {
+			$acc = (string) get_user_meta($user_id, 'ews_account_number', true);
+			if (empty($acc)) {
+				$acc = (string) get_user_meta($user_id, 'cwd_ews_account_number', true);
+			}
+			if (empty($acc)) {
+				$acc = 'EWS-' . str_pad((string) $user_id, 6, '0', STR_PAD_LEFT);
+				update_user_meta($user_id, 'ews_account_number', $acc);
+			}
+			$order->update_meta_data('ews_account_number', $acc);
+		}
+	}
+	add_action('woocommerce_checkout_create_order', 'cwd_v2_attach_account_number_to_order', 10, 2);
 }
 
 if (! function_exists('cwd_v2_notify_odoo_customer_event')) {

@@ -143,15 +143,7 @@ class CWD_V2_Endpoints
 		echo '<p style="margin: 0; font-size: 13.5px; color: #64748b;">' . esc_html__('Protect your account by managing your Wordfence two-factor authentication security settings.', 'custom-woo-dashboard') . '</p>';
 		echo '</div>';
 
-		// If admin/staff user, provide direct button to Wordfence Security settings in wp-admin
-		if (current_user_can('manage_options') || current_user_can('edit_posts')) {
-			$admin_wfls = admin_url('admin.php?page=WFLS');
-			echo '<div style="background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 8px; padding: 18px 20px; margin-bottom: 22px;">';
-			echo '<strong style="color: #0f172a; display: block; font-size: 14.5px; margin-bottom: 4px;">' . esc_html__('Administrator Two-Factor Authentication', 'custom-woo-dashboard') . '</strong>';
-			echo '<p style="color: #475569; font-size: 13px; margin: 0 0 14px 0; line-height: 1.5;">' . esc_html__('As an administrative user, you can scan QR codes, download recovery backup codes, and manage 2FA roles directly in the Wordfence Security dashboard.', 'custom-woo-dashboard') . '</p>';
-			echo '<a href="' . esc_url($admin_wfls) . '" class="button cwd-btn-primary" style="background: #008060; color: #fff; padding: 10px 18px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 13.5px; display: inline-block;">' . esc_html__('Open Wordfence 2FA Dashboard', 'custom-woo-dashboard') . ' &rarr;</a>';
-			echo '</div>';
-		}
+
 
 		$rendered_sc = do_shortcode('[wordfence_2fa_management]');
 		if (! empty(trim($rendered_sc)) && false === strpos($rendered_sc, '[wordfence_2fa_management]')) {

@@ -22,6 +22,9 @@ class CWD_V2_REST_API
 		// Expose credit info in WooCommerce REST API Customer response
 		add_filter('woocommerce_rest_prepare_customer', array(__CLASS__, 'prepare_rest_customer_response'), 10, 3);
 
+		// Expose EWS account number in WooCommerce REST API Order response
+		add_filter('woocommerce_rest_prepare_shop_order_object', array(__CLASS__, 'prepare_rest_order_response'), 10, 3);
+
 		// Register a dedicated direct sync route for Odoo
 		add_action('rest_api_init', array(__CLASS__, 'register_credit_sync_routes'));
 	}
@@ -302,6 +305,54 @@ class CWD_V2_REST_API
 		$data['meta_data'] = $meta_data;
 
 		$response->set_data($data);
+
+		return $response;
+	}
+
+	/**
+	 * Ensure WooCommerce REST API Order response always includes authoritative ews_account_number in meta_data
+	 */
+	public static function prepare_rest_order_response($response, $order, $request)
+	{
+		if (! $order instanceof WC_Order) {
+			return $response;
+		}
+
+		$user_id = $order->get_customer_id();
+		$acc_num = (string) $order->get_meta('ews_account_number');
+		if (empty($acc_num) && $user_id) {
+			$acc_num = (string) get_user_meta($user_id, 'ews_account_number', true);
+			if (empty($acc_num)) {
+				$acc_num = (string) get_user_meta($user_id, 'cwd_ews_account_number', true);
+			}
+			if (empty($acc_num)) {
+				$acc_num = 'EWS-' . str_pad((string) $user_id, 6, '0', STR_PAD_LEFT);
+			}
+		}
+
+		if (! empty($acc_num)) {
+			$data = $response->get_data();
+			$meta_data = isset($data['meta_data']) && is_array($data['meta_data']) ? $data['meta_data'] : array();
+			$found = false;
+			foreach ($meta_data as &$m) {
+				if (isset($m['key']) && $m['key'] === 'ews_account_number') {
+					$m['value'] = $acc_num;
+					$found = true;
+					break;
+				}
+			}
+			unset($m);
+			if (! $found) {
+				$meta_data[] = array(
+					'id'    => 0,
+					'key'   => 'ews_account_number',
+					'value' => $acc_num,
+				);
+			}
+			$data['meta_data'] = $meta_data;
+			$data['ews_account_number'] = $acc_num;
+			$response->set_data($data);
+		}
 
 		return $response;
 	}

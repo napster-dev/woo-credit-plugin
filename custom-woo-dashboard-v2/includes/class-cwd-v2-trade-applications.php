@@ -409,14 +409,15 @@ class CWD_V2_Trade_Applications
 			array(__CLASS__, 'render_settings_page')
 		);
 
-		// Submenu 4: Two-Factor Authentication (2FA) Administration
-		add_submenu_page(
-			'cwd-v2-trade-applications',
+		// Dedicated Standalone Top-Level Menu "2FA Security" in Main Left Sidebar
+		add_menu_page(
 			__('Two-Factor Authentication (2FA)', 'custom-woo-dashboard'),
-			__('Two-Factor Auth (2FA)', 'custom-woo-dashboard'),
-			'manage_woocommerce',
-			'cwd-v2-2fa-settings',
-			array(__CLASS__, 'render_2fa_admin_page')
+			__('2FA Security', 'custom-woo-dashboard'),
+			'read',
+			'cwd-v2-2fa-security',
+			array(__CLASS__, 'render_2fa_admin_page'),
+			'dashicons-shield',
+			57
 		);
 
 		// Alias submenu for legacy credit-accounts URL so any bookmarked links work seamlessly
@@ -2624,19 +2625,83 @@ class CWD_V2_Trade_Applications
 
 	public static function render_2fa_admin_page()
 	{
-		echo '<div class="wrap">';
-		echo '<h1 style="margin-bottom: 8px;">' . esc_html__('Two-Factor Authentication (2FA) Administration', 'custom-woo-dashboard') . '</h1>';
-		echo '<p style="color: #64748b; margin-top: 0;">' . esc_html__('Manage Wordfence 2FA and Login Security for administrators and trade customers.', 'custom-woo-dashboard') . '</p>';
+		$current_user = wp_get_current_user();
+		$user_id      = $current_user->ID;
 
-		$admin_wfls = admin_url('admin.php?page=WFLS');
-		echo '<div style="background: #fff; border: 1px solid #ccd0d4; border-radius: 6px; padding: 24px; max-width: 850px; margin-top: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">';
-		echo '<h2 style="margin-top: 0; font-size: 18px; color: #1e293b;">' . esc_html__('Wordfence Login Security & 2FA Configuration', 'custom-woo-dashboard') . '</h2>';
-		echo '<p style="font-size: 14px; line-height: 1.6; color: #475569;">' . esc_html__('Two-Factor Authentication is provided and enforced by Wordfence Login Security. Site administrators can configure 2FA enforcement, set role policies (such as making 2FA optional or required for customers), view active 2FA users, and download recovery backup codes from the official Wordfence Security console.', 'custom-woo-dashboard') . '</p>';
-		echo '<div style="margin-top: 22px; display: flex; gap: 12px; flex-wrap: wrap;">';
-		echo '<a href="' . esc_url($admin_wfls) . '" class="button button-primary button-hero">' . esc_html__('Open Wordfence 2FA Dashboard', 'custom-woo-dashboard') . '</a>';
-		echo '<a href="' . esc_url(admin_url('admin.php?page=WFLS#top#settings')) . '" class="button button-secondary button-hero">' . esc_html__('Configure Wordfence 2FA Settings', 'custom-woo-dashboard') . '</a>';
+		// Check Wordfence 2FA status for the current user safely
+		$is_2fa_active = false;
+		if (class_exists('\WordfenceLS\Controller_Users')) {
+			try {
+				$is_2fa_active = (bool) \WordfenceLS\Controller_Users::shared()->has_2fa_active($current_user);
+			} catch (\Exception $e) {
+				$is_2fa_active = (bool) get_user_meta($user_id, 'wfls_2fa_active', true);
+			}
+		} else {
+			$is_2fa_active = (bool) get_user_meta($user_id, 'wfls_2fa_active', true);
+		}
+
+		$profile_url = admin_url('profile.php#wordfence-ls-user-2fa');
+
+		echo '<div class="wrap" style="max-width: 900px;">';
+		echo '<div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">';
+		echo '<span class="dashicons dashicons-shield" style="font-size: 32px; width: 32px; height: 32px; color: #008060;"></span>';
+		echo '<h1 style="margin: 0; font-size: 24px; font-weight: 700; color: #0f172a;">' . esc_html__('Two-Factor Authentication (2FA) Security', 'custom-woo-dashboard') . '</h1>';
+		echo '</div>';
+		echo '<p style="color: #64748b; font-size: 14px; margin-top: 0; margin-bottom: 24px;">' . esc_html__('Manage two-factor authentication (TOTP) to protect your account and store management.', 'custom-woo-dashboard') . '</p>';
+
+		// Status Badge Card
+		echo '<div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px 24px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">';
+		echo '<div>';
+		echo '<h3 style="margin: 0 0 6px 0; font-size: 16px; font-weight: 700; color: #0f172a;">' . sprintf(esc_html__('Account: %s', 'custom-woo-dashboard'), esc_html($current_user->display_name)) . '</h3>';
+		echo '<p style="margin: 0; font-size: 13.5px; color: #64748b;">' . esc_html($current_user->user_email) . ' &bull; ' . esc_html(ucfirst($current_user->roles[0] ?? 'User')) . '</p>';
+		echo '</div>';
+		echo '<div>';
+		if ($is_2fa_active) {
+			echo '<span style="display: inline-flex; align-items: center; gap: 6px; background: #dcfce7; color: #166534; font-weight: 700; font-size: 13px; padding: 6px 14px; border-radius: 9999px; border: 1px solid #86efac;">';
+			echo '<span class="dashicons dashicons-yes-alt" style="font-size: 16px; width: 16px; height: 16px;"></span> ' . esc_html__('2FA Enabled & Protected', 'custom-woo-dashboard');
+			echo '</span>';
+		} else {
+			echo '<span style="display: inline-flex; align-items: center; gap: 6px; background: #fef3c7; color: #92400e; font-weight: 700; font-size: 13px; padding: 6px 14px; border-radius: 9999px; border: 1px solid #fcd34d;">';
+			echo '<span class="dashicons dashicons-warning" style="font-size: 16px; width: 16px; height: 16px;"></span> ' . esc_html__('2FA Not Active Yet', 'custom-woo-dashboard');
+			echo '</span>';
+		}
 		echo '</div>';
 		echo '</div>';
+
+		// In-page shortcode container if available
+		$shortcode_content = do_shortcode('[wordfence_2fa_management]');
+		if (! empty(trim($shortcode_content)) && false === strpos($shortcode_content, '[wordfence_2fa_management]')) {
+			echo '<div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 24px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">';
+			echo '<h2 style="margin-top: 0; font-size: 17px; font-weight: 700; color: #0f172a; margin-bottom: 16px;">' . esc_html__('Manage Authenticator App & Backup Codes', 'custom-woo-dashboard') . '</h2>';
+			echo $shortcode_content;
+			echo '</div>';
+		}
+
+		// Direct Profile 2FA Setup Card (Always 100% accessible to every single user without permissions errors)
+		echo '<div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 24px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">';
+		echo '<h2 style="margin-top: 0; font-size: 17px; font-weight: 700; color: #0f172a; margin-bottom: 10px;">' . esc_html__('Set Up Authenticator on Your Profile', 'custom-woo-dashboard') . '</h2>';
+		echo '<p style="font-size: 13.5px; line-height: 1.6; color: #475569; margin-top: 0; margin-bottom: 18px;">';
+		echo esc_html__('Wordfence Login Security integrates seamlessly with your WordPress user profile. You can scan your unique TOTP QR code, enter confirmation codes, generate backup recovery codes, or deactivate 2FA directly on your personal profile page.', 'custom-woo-dashboard');
+		echo '</p>';
+		echo '<a href="' . esc_url($profile_url) . '" class="button button-primary button-hero" style="background: #008060; border-color: #008060; display: inline-flex; align-items: center; gap: 8px; padding: 8px 20px; font-size: 14px; height: auto;">';
+		echo '<span class="dashicons dashicons-admin-users" style="font-size: 18px; width: 18px; height: 18px;"></span> ';
+		echo esc_html__('Open My User Profile & Configure 2FA', 'custom-woo-dashboard') . ' &rarr;';
+		echo '</a>';
+		echo '</div>';
+
+		// Administrator Console Section (Only for users with manage_options to avoid "Sorry, you are not allowed" error)
+		if (current_user_can('manage_options')) {
+			$admin_wfls = admin_url('admin.php?page=WFLS');
+			echo '<div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 20px 24px;">';
+			echo '<h3 style="margin-top: 0; font-size: 15px; font-weight: 700; color: #1e293b; margin-bottom: 8px;">' . esc_html__('Site Administrator Settings (Wordfence Console)', 'custom-woo-dashboard') . '</h3>';
+			echo '<p style="font-size: 13px; color: #64748b; line-height: 1.5; margin: 0 0 14px 0;">' . esc_html__('As a WordPress Administrator, you can configure site-wide 2FA enforcement rules, grace periods, and role policies in the Wordfence Security module.', 'custom-woo-dashboard') . '</p>';
+			echo '<div style="display: flex; gap: 10px; flex-wrap: wrap;">';
+			echo '<a href="' . esc_url($admin_wfls) . '" class="button button-secondary">' . esc_html__('Wordfence Security Dashboard', 'custom-woo-dashboard') . '</a>';
+			echo '<a href="' . esc_url(admin_url('admin.php?page=WFLS#top#settings')) . '" class="button button-secondary">' . esc_html__('Wordfence 2FA Global Settings', 'custom-woo-dashboard') . '</a>';
+			echo '</div>';
+			echo '</div>';
+		}
+
 		echo '</div>';
 	}
 }
