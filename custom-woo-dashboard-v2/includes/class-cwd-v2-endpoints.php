@@ -28,6 +28,8 @@ class CWD_V2_Endpoints
 		add_filter('woocommerce_endpoint_back-orders_title', array(__CLASS__, 'back_orders_title'));
 		add_filter('woocommerce_endpoint_order-history_title', array(__CLASS__, 'order_history_title'));
 		add_filter('woocommerce_endpoint_track-order_title', array(__CLASS__, 'track_order_title'));
+		add_filter('woocommerce_endpoint_wfls-2fa_title', array(__CLASS__, 'wfls_2fa_title'));
+		add_action('woocommerce_account_wfls-2fa_endpoint', array(__CLASS__, 'endpoint_wfls_2fa'));
 
 		// Fix endpoint URLs and account menu items linking for credits
 		add_filter('woocommerce_get_endpoint_url', array(__CLASS__, 'filter_endpoint_url'), 10, 4);
@@ -41,6 +43,12 @@ class CWD_V2_Endpoints
 		// Render Wordfence 2FA on the account details page at the bottom
 		add_action('woocommerce_after_edit_account_form', array(__CLASS__, 'render_wordfence_2fa_section'), 99);
 		add_action('woocommerce_edit_account_form_end', array(__CLASS__, 'render_wordfence_2fa_section'), 99);
+
+		// Ensure endpoints are flushed once after this update
+		if ('yes' !== get_option('cwd_v2_endpoints_flushed_wfls_v4')) {
+			flush_rewrite_rules(false);
+			update_option('cwd_v2_endpoints_flushed_wfls_v4', 'yes');
+		}
 	}
 
 	public static function hide_wordfence_dropdown_css()
@@ -114,7 +122,12 @@ class CWD_V2_Endpoints
 			echo '<strong style="color: #0f172a; font-size: 14.5px; display: block; margin-bottom: 4px;">' . esc_html__('Wordfence Two-Factor Authentication', 'custom-woo-dashboard') . '</strong>';
 			echo '<span style="color: #64748b; font-size: 13px;">' . esc_html__('Scan QR codes or configure authenticator app passkeys for enhanced login security.', 'custom-woo-dashboard') . '</span>';
 			echo '</div>';
+			echo '<div style="display: flex; gap: 10px; flex-wrap: wrap;">';
+			if (current_user_can('manage_options')) {
+				echo '<a href="' . esc_url(admin_url('admin.php?page=WFLS')) . '" class="button" style="padding: 10px 16px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 13px;">' . esc_html__('Wordfence 2FA Admin', 'custom-woo-dashboard') . '</a>';
+			}
 			echo '<a href="' . esc_url($wfls_url) . '" class="button cwd-btn-primary" style="background: #008060; color: #fff; padding: 10px 18px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 13.5px; display: inline-block;">' . esc_html__('Manage 2FA Settings', 'custom-woo-dashboard') . ' &rarr;</a>';
+			echo '</div>';
 			echo '</div>';
 		}
 
@@ -134,6 +147,7 @@ class CWD_V2_Endpoints
 		add_rewrite_endpoint('back-orders', EP_ROOT | EP_PAGES);
 		add_rewrite_endpoint('order-history', EP_ROOT | EP_PAGES);
 		add_rewrite_endpoint('track-order', EP_ROOT | EP_PAGES);
+		add_rewrite_endpoint('wfls-2fa', EP_ROOT | EP_PAGES);
 	}
 
 	public static function add_query_vars($vars)
@@ -149,7 +163,44 @@ class CWD_V2_Endpoints
 		$vars[] = 'back-orders';
 		$vars[] = 'order-history';
 		$vars[] = 'track-order';
+		$vars[] = 'wfls-2fa';
 		return $vars;
+	}
+
+	public static function wfls_2fa_title()
+	{
+		return __('Two-Factor Authentication', 'custom-woo-dashboard');
+	}
+
+	public static function endpoint_wfls_2fa()
+	{
+		echo '<div class="cwd-v2-section-heading" style="margin-bottom: 24px;">';
+		echo '<h3 style="margin: 0 0 6px 0; font-size: 20px; font-weight: 700; color: #0f172a;">' . esc_html__('Two-Factor Authentication (2FA)', 'custom-woo-dashboard') . '</h3>';
+		echo '<p style="margin: 0; font-size: 13.5px; color: #64748b;">' . esc_html__('Protect your account by managing your Wordfence two-factor authentication security settings.', 'custom-woo-dashboard') . '</p>';
+		echo '</div>';
+
+		// If admin/staff user, provide direct button to Wordfence Security settings in wp-admin
+		if (current_user_can('manage_options') || current_user_can('edit_posts')) {
+			$admin_wfls = admin_url('admin.php?page=WFLS');
+			echo '<div style="background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 8px; padding: 18px 20px; margin-bottom: 22px;">';
+			echo '<strong style="color: #0f172a; display: block; font-size: 14.5px; margin-bottom: 4px;">' . esc_html__('Administrator Two-Factor Authentication', 'custom-woo-dashboard') . '</strong>';
+			echo '<p style="color: #475569; font-size: 13px; margin: 0 0 14px 0; line-height: 1.5;">' . esc_html__('As an administrative user, you can scan QR codes, download recovery backup codes, and manage 2FA roles directly in the Wordfence Security dashboard.', 'custom-woo-dashboard') . '</p>';
+			echo '<a href="' . esc_url($admin_wfls) . '" class="button cwd-btn-primary" style="background: #008060; color: #fff; padding: 10px 18px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 13.5px; display: inline-block;">' . esc_html__('Open Wordfence 2FA Dashboard', 'custom-woo-dashboard') . ' &rarr;</a>';
+			echo '</div>';
+		}
+
+		$rendered_sc = do_shortcode('[wordfence_2fa_management]');
+		if (! empty(trim($rendered_sc)) && false === strpos($rendered_sc, '[wordfence_2fa_management]')) {
+			echo $rendered_sc;
+		} else {
+			echo '<div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 22px;">';
+			echo '<h4 style="margin: 0 0 10px 0; font-size: 16px; color: #1e293b;">' . esc_html__('Two-Factor Authentication Setup', 'custom-woo-dashboard') . '</h4>';
+			echo '<p style="font-size: 13.5px; color: #64748b; line-height: 1.6; margin-bottom: 12px;">' . esc_html__('To enable Two-Factor Authentication for your account, please ensure "2FA Management Shortcode" and "WooCommerce Account page" are enabled in your WordPress dashboard under Wordfence > Login Security > Settings.', 'custom-woo-dashboard') . '</p>';
+			if (current_user_can('manage_options')) {
+				echo '<a href="' . esc_url(admin_url('admin.php?page=WFLS#top#settings')) . '" class="button" style="padding: 8px 16px; border-radius: 6px;">' . esc_html__('Configure Wordfence Login Security Settings', 'custom-woo-dashboard') . '</a>';
+			}
+			echo '</div>';
+		}
 	}
 
 	public static function invoices_title()

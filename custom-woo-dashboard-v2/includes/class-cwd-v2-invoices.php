@@ -31,6 +31,7 @@ class CWD_V2_Invoices
 		add_action('cwd_v2_sync_odoo_invoices', array(__CLASS__, 'sync_odoo_invoices'));
 		add_action('add_meta_boxes', array(__CLASS__, 'register_order_invoice_meta_box'), 25);
 		add_action('woocommerce_admin_order_data_after_order_details', array(__CLASS__, 'display_admin_order_invoice_meta'));
+		self::repair_same_day_due_dates();
 	}
 
 	/**
@@ -317,7 +318,25 @@ class CWD_V2_Invoices
 			);
 		}
 
-		return $wpdb->get_results($sql);
+		$results = $wpdb->get_results($sql);
+		if (! empty($results)) {
+			foreach ($results as $inv) {
+				// Auto-heal any legacy invoice where due_date was mistakenly set to same calendar day as invoice_date
+				if (! empty($inv->invoice_date) && ! empty($inv->due_date)) {
+					$inv_day = substr($inv->invoice_date, 0, 10);
+					$due_day = substr($inv->due_date, 0, 10);
+					if ($due_day <= $inv_day) {
+						$calc_due = self::calculate_due_date_for_user((int) $inv->user_id, $inv->invoice_date);
+						if ($calc_due) {
+							$inv->due_date = $calc_due;
+							$wpdb->update($table, array('due_date' => $calc_due), array('id' => (int) $inv->id));
+						}
+					}
+				}
+			}
+		}
+
+		return $results;
 	}
 
 	/**
@@ -358,12 +377,22 @@ class CWD_V2_Invoices
 			$final_status = $status;
 		}
 
+		$inv_date = sanitize_text_field( $row['invoice_date'] ?? $now );
+		$incoming_due = sanitize_text_field( $row['due_date'] ?? '' );
+		// If due_date is missing, invalid, or identical to invoice_date (e.g. Odoo defaulted without payment terms),
+		// calculate the true due date using the customer's trade credit terms (defaulting to 30 Days End of Month).
+		if ( empty( $incoming_due ) || substr( $incoming_due, 0, 10 ) <= substr( $inv_date, 0, 10 ) ) {
+			if ( $user_id > 0 ) {
+				$incoming_due = self::calculate_due_date_for_user( (int) $user_id, $inv_date );
+			}
+		}
+
 		$data = array(
 			'user_id'        => (int) $user_id,
 			'invoice_number' => sanitize_text_field( $row['invoice_number'] ?? $odoo_id ),
 			'source'         => self::SOURCE_ODOO,
-			'invoice_date'   => sanitize_text_field( $row['invoice_date'] ?? $now ),
-			'due_date'       => sanitize_text_field( $row['due_date'] ?? $now ),
+			'invoice_date'   => $inv_date,
+			'due_date'       => ! empty( $incoming_due ) ? $incoming_due : $inv_date,
 			'status'         => $final_status,
 			'amount_total'   => $total,
 			'amount_paid'    => $paid,
@@ -563,10 +592,24 @@ class CWD_V2_Invoices
 		$table = self::table_name();
 
 		if ($user_id) {
-			return $wpdb->get_row($wpdb->prepare("SELECT * FROM {$table} WHERE id = %d AND user_id = %d", $invoice_id, $user_id));
+			$inv = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$table} WHERE id = %d AND user_id = %d", $invoice_id, $user_id));
+		} else {
+			$inv = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$table} WHERE id = %d", $invoice_id));
 		}
 
-		return $wpdb->get_row($wpdb->prepare("SELECT * FROM {$table} WHERE id = %d", $invoice_id));
+		if ($inv && ! empty($inv->invoice_date) && ! empty($inv->due_date)) {
+			$inv_day = substr($inv->invoice_date, 0, 10);
+			$due_day = substr($inv->due_date, 0, 10);
+			if ($due_day <= $inv_day) {
+				$calc_due = self::calculate_due_date_for_user((int) $inv->user_id, $inv->invoice_date);
+				if ($calc_due) {
+					$inv->due_date = $calc_due;
+					$wpdb->update($table, array('due_date' => $calc_due), array('id' => (int) $inv->id));
+				}
+			}
+		}
+
+		return $inv;
 	}
 
 	public static function get_invoices_for_order($order_id)
@@ -694,5 +737,32 @@ class CWD_V2_Invoices
 		}
 
 		return strtotime($invoice->due_date) < current_time('timestamp');
+	}
+
+	/**
+	 * Auto-correct any legacy or Odoo invoices where due_date was mistakenly recorded
+	 * on the same calendar day as invoice_date.
+	 */
+	public static function repair_same_day_due_dates()
+	{
+		global $wpdb;
+		$table = self::table_name();
+		if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $table)) !== $table) {
+			return;
+		}
+
+		$rows = $wpdb->get_results(
+			"SELECT id, user_id, invoice_date, due_date FROM {$table}
+			 WHERE DATE(due_date) <= DATE(invoice_date) AND user_id > 0 LIMIT 200"
+		);
+
+		if (! empty($rows)) {
+			foreach ($rows as $r) {
+				$new_due = self::calculate_due_date_for_user((int) $r->user_id, $r->invoice_date);
+				if ($new_due && $new_due !== $r->due_date) {
+					$wpdb->update($table, array('due_date' => $new_due), array('id' => (int) $r->id));
+				}
+			}
+		}
 	}
 }
