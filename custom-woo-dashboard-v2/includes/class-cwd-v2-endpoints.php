@@ -53,6 +53,13 @@ class CWD_V2_Endpoints
 	public static function hide_wordfence_dropdown_css()
 	{
 		echo '<style id="cwd-hide-2fa-dropdown">
+			.cwd-passkeys-wrapper,
+			#wfls-passkeys,
+			.wfls-passkeys,
+			.wfls-passkeys-container,
+			.wfls-notice-passkeys-disabled,
+			#wfls-passkeys-management,
+			.woocommerce-MyAccount-navigation-link--wfls-passkeys,
 			.menu-item-wfls-2fa,
 			.woodmart-my-account-links a[href*="wfls"],
 			.woodmart-my-account-links a[href*="2fa"],
@@ -79,17 +86,11 @@ class CWD_V2_Endpoints
 
 		try {
 			echo '<div class="cwd-v2-2fa-section" style="margin-top: 35px; border-top: 2px solid #e2e8f0; padding-top: 25px; clear: both;">';
-			echo '<h3 style="font-size: 18px; font-weight: 700; color: #1e293b; margin-bottom: 8px;">' . esc_html__('Two-Factor Authentication (2FA) & Passkeys', 'custom-woo-dashboard') . '</h3>';
-			echo '<p style="font-size: 13.5px; color: #64748b; margin-bottom: 14px;">' . esc_html__('Protect your account with an authenticator app (Google Authenticator, Microsoft Authenticator, Authy) or passkeys.', 'custom-woo-dashboard') . '</p>';
+			echo '<h3 style="font-size: 18px; font-weight: 700; color: #1e293b; margin-bottom: 8px;">' . esc_html__('Two-Factor Authentication (2FA)', 'custom-woo-dashboard') . '</h3>';
+			echo '<p style="font-size: 13.5px; color: #64748b; margin-bottom: 14px;">' . esc_html__('Protect your account with an authenticator app (Google Authenticator, Microsoft Authenticator, Authy).', 'custom-woo-dashboard') . '</p>';
 
 			$sc_out = do_shortcode('[wordfence_2fa_management]');
-			$sc_pk  = do_shortcode('[wordfence_passkey_management]');
 			$has_rendered = false;
-
-			if (! empty(trim($sc_pk)) && false === strpos($sc_pk, '[wordfence_passkey_management]')) {
-				echo '<div style="margin-bottom: 20px;">' . $sc_pk . '</div>';
-				$has_rendered = true;
-			}
 
 			if (! empty(trim($sc_out)) && false === strpos($sc_out, '[wordfence_2fa_management]')) {
 				echo $sc_out;
@@ -100,8 +101,8 @@ class CWD_V2_Endpoints
 				$wfls_url = wc_get_account_endpoint_url('wfls-2fa');
 				echo '<div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 18px 20px;">';
 				echo '<strong style="color: #0f172a; font-size: 14.5px; display: block; margin-bottom: 4px;">' . esc_html__('Two-Factor Authentication Protection', 'custom-woo-dashboard') . '</strong>';
-				echo '<p style="color: #64748b; font-size: 13px; margin: 0 0 12px 0; line-height: 1.5;">' . esc_html__('Enhance your account security with two-factor authentication and passkeys.', 'custom-woo-dashboard') . '</p>';
-				echo '<a href="' . esc_url($wfls_url) . '" class="button cwd-btn-primary" style="background: #008060; color: #fff; padding: 8px 16px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 13px; display: inline-block;">' . esc_html__('Configure 2FA & Passkeys', 'custom-woo-dashboard') . ' &rarr;</a>';
+				echo '<p style="color: #64748b; font-size: 13px; margin: 0 0 12px 0; line-height: 1.5;">' . esc_html__('Enhance your account security with two-factor authentication.', 'custom-woo-dashboard') . '</p>';
+				echo '<a href="' . esc_url($wfls_url) . '" class="button cwd-btn-primary" style="background: #008060; color: #fff; padding: 8px 16px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 13px; display: inline-block;">' . esc_html__('Configure 2FA Settings', 'custom-woo-dashboard') . ' &rarr;</a>';
 				echo '</div>';
 			}
 
@@ -146,25 +147,19 @@ class CWD_V2_Endpoints
 
 	public static function wfls_2fa_title()
 	{
-		return __('Two-Factor Authentication & Passkeys', 'custom-woo-dashboard');
+		return __('Two-Factor Authentication (2FA)', 'custom-woo-dashboard');
 	}
 
 	public static function endpoint_wfls_2fa()
 	{
 		try {
 			echo '<div class="cwd-v2-section-heading" style="margin-bottom: 24px;">';
-			echo '<h3 style="margin: 0 0 6px 0; font-size: 20px; font-weight: 700; color: #0f172a;">' . esc_html__('Two-Factor Authentication (2FA) & Passkeys', 'custom-woo-dashboard') . '</h3>';
-			echo '<p style="margin: 0; font-size: 13.5px; color: #64748b;">' . esc_html__('Protect your account with mobile authenticator apps (Google Authenticator, Microsoft Authenticator, Authy) and biometric passkeys.', 'custom-woo-dashboard') . '</p>';
+			echo '<h3 style="margin: 0 0 6px 0; font-size: 20px; font-weight: 700; color: #0f172a;">' . esc_html__('Two-Factor Authentication (2FA)', 'custom-woo-dashboard') . '</h3>';
+			echo '<p style="margin: 0; font-size: 13.5px; color: #64748b;">' . esc_html__('Protect your account with mobile authenticator apps (Google Authenticator, Microsoft Authenticator, Authy).', 'custom-woo-dashboard') . '</p>';
 			echo '</div>';
 
-			$rendered_pk = do_shortcode('[wordfence_passkey_management]');
 			$rendered_2fa = do_shortcode('[wordfence_2fa_management]');
 			$has_rendered = false;
-
-			if (! empty(trim($rendered_pk)) && false === strpos($rendered_pk, '[wordfence_passkey_management]')) {
-				echo '<div class="cwd-passkeys-wrapper" style="margin-bottom: 24px;">' . $rendered_pk . '</div>';
-				$has_rendered = true;
-			}
 
 			if (! empty(trim($rendered_2fa)) && false === strpos($rendered_2fa, '[wordfence_2fa_management]')) {
 				echo '<div class="cwd-2fa-wrapper">' . $rendered_2fa . '</div>';
@@ -174,7 +169,7 @@ class CWD_V2_Endpoints
 			if (! $has_rendered) {
 				echo '<div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 22px;">';
 				echo '<h4 style="margin: 0 0 10px 0; font-size: 16px; color: #1e293b;">' . esc_html__('Two-Factor Authentication Setup', 'custom-woo-dashboard') . '</h4>';
-				echo '<p style="font-size: 13.5px; color: #64748b; line-height: 1.6; margin-bottom: 12px;">' . esc_html__('To enable Two-Factor Authentication and Passkeys for customer accounts, please ensure 2FA is enabled for Customer roles under Wordfence > Login Security > Settings.', 'custom-woo-dashboard') . '</p>';
+				echo '<p style="font-size: 13.5px; color: #64748b; line-height: 1.6; margin-bottom: 12px;">' . esc_html__('To enable Two-Factor Authentication for customer accounts, please ensure 2FA is enabled for Customer roles under Wordfence > Login Security > Settings.', 'custom-woo-dashboard') . '</p>';
 				if (current_user_can('manage_options')) {
 					echo '<a href="' . esc_url(admin_url('admin.php?page=WFLS#top#settings')) . '" class="button button-primary" style="padding: 8px 16px; border-radius: 6px;">' . esc_html__('Configure Wordfence Login Security Settings', 'custom-woo-dashboard') . '</a>';
 				}

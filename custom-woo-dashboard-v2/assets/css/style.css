@@ -682,3 +682,15 @@
     color: #0f172a !important;
     text-decoration: none !important;
 }
+
+/* Suppress Passkeys and Admin Configuration buttons on frontend */
+.cwd-passkeys-wrapper,
+#wfls-passkeys,
+.wfls-passkeys,
+.wfls-passkeys-container,
+.wfls-notice-passkeys-disabled,
+#wfls-passkeys-management,
+.woocommerce-MyAccount-navigation-link--wfls-passkeys,
+a[href*="page=WFLS#top#settings"] {
+    display: none !important;
+}
