@@ -53,10 +53,6 @@ class CWD_V2_Endpoints
 	public static function hide_wordfence_dropdown_css()
 	{
 		echo '<style id="cwd-hide-2fa-dropdown">
-			.woocommerce-MyAccount-navigation-link--wfls-2fa,
-			.woocommerce-MyAccount-navigation-link--wfls-passkeys,
-			.woocommerce-MyAccount-navigation-link--wordfence-2fa,
-			.woocommerce-MyAccount-navigation-link--2fa,
 			.menu-item-wfls-2fa,
 			.woodmart-my-account-links a[href*="wfls"],
 			.woodmart-my-account-links a[href*="2fa"],
@@ -83,20 +79,29 @@ class CWD_V2_Endpoints
 
 		try {
 			echo '<div class="cwd-v2-2fa-section" style="margin-top: 35px; border-top: 2px solid #e2e8f0; padding-top: 25px; clear: both;">';
-			echo '<h3 style="font-size: 18px; font-weight: 700; color: #1e293b; margin-bottom: 8px;">' . esc_html__('Two-Factor Authentication (2FA)', 'custom-woo-dashboard') . '</h3>';
-			echo '<p style="font-size: 13.5px; color: #64748b; margin-bottom: 12px;">' . esc_html__('Protect your account with two-factor authentication (Google Authenticator, Microsoft Authenticator, 1Password, Authy).', 'custom-woo-dashboard') . '</p>';
+			echo '<h3 style="font-size: 18px; font-weight: 700; color: #1e293b; margin-bottom: 8px;">' . esc_html__('Two-Factor Authentication (2FA) & Passkeys', 'custom-woo-dashboard') . '</h3>';
+			echo '<p style="font-size: 13.5px; color: #64748b; margin-bottom: 14px;">' . esc_html__('Protect your account with an authenticator app (Google Authenticator, Microsoft Authenticator, Authy) or passkeys.', 'custom-woo-dashboard') . '</p>';
 
 			$sc_out = do_shortcode('[wordfence_2fa_management]');
+			$sc_pk  = do_shortcode('[wordfence_passkey_management]');
+			$has_rendered = false;
+
+			if (! empty(trim($sc_pk)) && false === strpos($sc_pk, '[wordfence_passkey_management]')) {
+				echo '<div style="margin-bottom: 20px;">' . $sc_pk . '</div>';
+				$has_rendered = true;
+			}
+
 			if (! empty(trim($sc_out)) && false === strpos($sc_out, '[wordfence_2fa_management]')) {
 				echo $sc_out;
-			} else {
-				$profile_url = admin_url('profile.php#wordfence-ls-user-2fa');
+				$has_rendered = true;
+			}
+
+			if (! $has_rendered) {
+				$wfls_url = wc_get_account_endpoint_url('wfls-2fa');
 				echo '<div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 18px 20px;">';
 				echo '<strong style="color: #0f172a; font-size: 14.5px; display: block; margin-bottom: 4px;">' . esc_html__('Two-Factor Authentication Protection', 'custom-woo-dashboard') . '</strong>';
-				echo '<p style="color: #64748b; font-size: 13px; margin: 0 0 10px 0; line-height: 1.5;">' . esc_html__('Your account can be secured with Two-Factor Authentication. If enabled on the site, you can configure your authenticator app on your account security profile.', 'custom-woo-dashboard') . '</p>';
-				if (is_user_logged_in() && is_admin_bar_showing()) {
-					echo '<a href="' . esc_url($profile_url) . '" class="button cwd-btn-primary" style="background: #008060; color: #fff; padding: 8px 16px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 13px; display: inline-block;">' . esc_html__('Open 2FA Profile Settings', 'custom-woo-dashboard') . ' &rarr;</a>';
-				}
+				echo '<p style="color: #64748b; font-size: 13px; margin: 0 0 12px 0; line-height: 1.5;">' . esc_html__('Enhance your account security with two-factor authentication and passkeys.', 'custom-woo-dashboard') . '</p>';
+				echo '<a href="' . esc_url($wfls_url) . '" class="button cwd-btn-primary" style="background: #008060; color: #fff; padding: 8px 16px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 13px; display: inline-block;">' . esc_html__('Configure 2FA & Passkeys', 'custom-woo-dashboard') . ' &rarr;</a>';
 				echo '</div>';
 			}
 
@@ -141,29 +146,42 @@ class CWD_V2_Endpoints
 
 	public static function wfls_2fa_title()
 	{
-		return __('Two-Factor Authentication', 'custom-woo-dashboard');
+		return __('Two-Factor Authentication & Passkeys', 'custom-woo-dashboard');
 	}
 
 	public static function endpoint_wfls_2fa()
 	{
-		echo '<div class="cwd-v2-section-heading" style="margin-bottom: 24px;">';
-		echo '<h3 style="margin: 0 0 6px 0; font-size: 20px; font-weight: 700; color: #0f172a;">' . esc_html__('Two-Factor Authentication (2FA)', 'custom-woo-dashboard') . '</h3>';
-		echo '<p style="margin: 0; font-size: 13.5px; color: #64748b;">' . esc_html__('Protect your account by managing your Wordfence two-factor authentication security settings.', 'custom-woo-dashboard') . '</p>';
-		echo '</div>';
-
-
-
-		$rendered_sc = do_shortcode('[wordfence_2fa_management]');
-		if (! empty(trim($rendered_sc)) && false === strpos($rendered_sc, '[wordfence_2fa_management]')) {
-			echo $rendered_sc;
-		} else {
-			echo '<div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 22px;">';
-			echo '<h4 style="margin: 0 0 10px 0; font-size: 16px; color: #1e293b;">' . esc_html__('Two-Factor Authentication Setup', 'custom-woo-dashboard') . '</h4>';
-			echo '<p style="font-size: 13.5px; color: #64748b; line-height: 1.6; margin-bottom: 12px;">' . esc_html__('To enable Two-Factor Authentication for your account, please ensure "2FA Management Shortcode" and "WooCommerce Account page" are enabled in your WordPress dashboard under Wordfence > Login Security > Settings.', 'custom-woo-dashboard') . '</p>';
-			if (current_user_can('manage_options')) {
-				echo '<a href="' . esc_url(admin_url('admin.php?page=WFLS#top#settings')) . '" class="button" style="padding: 8px 16px; border-radius: 6px;">' . esc_html__('Configure Wordfence Login Security Settings', 'custom-woo-dashboard') . '</a>';
-			}
+		try {
+			echo '<div class="cwd-v2-section-heading" style="margin-bottom: 24px;">';
+			echo '<h3 style="margin: 0 0 6px 0; font-size: 20px; font-weight: 700; color: #0f172a;">' . esc_html__('Two-Factor Authentication (2FA) & Passkeys', 'custom-woo-dashboard') . '</h3>';
+			echo '<p style="margin: 0; font-size: 13.5px; color: #64748b;">' . esc_html__('Protect your account with mobile authenticator apps (Google Authenticator, Microsoft Authenticator, Authy) and biometric passkeys.', 'custom-woo-dashboard') . '</p>';
 			echo '</div>';
+
+			$rendered_pk = do_shortcode('[wordfence_passkey_management]');
+			$rendered_2fa = do_shortcode('[wordfence_2fa_management]');
+			$has_rendered = false;
+
+			if (! empty(trim($rendered_pk)) && false === strpos($rendered_pk, '[wordfence_passkey_management]')) {
+				echo '<div class="cwd-passkeys-wrapper" style="margin-bottom: 24px;">' . $rendered_pk . '</div>';
+				$has_rendered = true;
+			}
+
+			if (! empty(trim($rendered_2fa)) && false === strpos($rendered_2fa, '[wordfence_2fa_management]')) {
+				echo '<div class="cwd-2fa-wrapper">' . $rendered_2fa . '</div>';
+				$has_rendered = true;
+			}
+
+			if (! $has_rendered) {
+				echo '<div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 22px;">';
+				echo '<h4 style="margin: 0 0 10px 0; font-size: 16px; color: #1e293b;">' . esc_html__('Two-Factor Authentication Setup', 'custom-woo-dashboard') . '</h4>';
+				echo '<p style="font-size: 13.5px; color: #64748b; line-height: 1.6; margin-bottom: 12px;">' . esc_html__('To enable Two-Factor Authentication and Passkeys for customer accounts, please ensure 2FA is enabled for Customer roles under Wordfence > Login Security > Settings.', 'custom-woo-dashboard') . '</p>';
+				if (current_user_can('manage_options')) {
+					echo '<a href="' . esc_url(admin_url('admin.php?page=WFLS#top#settings')) . '" class="button button-primary" style="padding: 8px 16px; border-radius: 6px;">' . esc_html__('Configure Wordfence Login Security Settings', 'custom-woo-dashboard') . '</a>';
+				}
+				echo '</div>';
+			}
+		} catch (\Throwable $e) {
+			error_log('CWD WFLS 2FA Endpoint Error: ' . $e->getMessage());
 		}
 	}
 
@@ -247,7 +265,7 @@ class CWD_V2_Endpoints
 
 	/**
 	 * Remap 'credits' menu items to 'credit' in WooCommerce account menus,
-	 * and remove Wishlist & Wordfence 2FA from user account menu dropdown.
+	 * remove Wishlist, and ensure Two-Factor Auth (2FA) is clearly accessible in customer navigation.
 	 */
 	public static function filter_account_menu_items($items)
 	{
@@ -261,17 +279,34 @@ class CWD_V2_Endpoints
 			$items['credit'] = $title;
 		}
 
-		// Remove wishlist and 2FA from user menu dropdown
-		$remove_keys = array('wishlist', 'tinv_wishlist', 'yith_wcwl', 'wordfence-2fa', '2fa', 'two-factor-auth', 'wfls-2fa', 'wfls-passkeys', 'wfls');
+		// Remove wishlist from user menu
+		$remove_keys = array('wishlist', 'tinv_wishlist', 'yith_wcwl');
 		foreach ($remove_keys as $k) {
 			unset($items[$k]);
 		}
 
 		foreach (array_keys($items) as $key) {
 			$lower = strtolower((string) $key);
-			if (strpos($lower, 'wishlist') !== false || strpos($lower, 'wordfence') !== false || strpos($lower, '2fa') !== false || strpos($lower, 'wfls') !== false) {
+			if (strpos($lower, 'wishlist') !== false) {
 				unset($items[$key]);
 			}
+		}
+
+		// Place Two-Factor Auth (2FA) right before customer-logout so every customer can easily configure it
+		if (! isset($items['wfls-2fa'])) {
+			$new_items = array();
+			foreach ($items as $k => $v) {
+				if ($k === 'customer-logout') {
+					$new_items['wfls-2fa'] = __('Two-Factor Auth (2FA)', 'custom-woo-dashboard');
+				}
+				$new_items[$k] = $v;
+			}
+			if (! isset($new_items['wfls-2fa'])) {
+				$new_items['wfls-2fa'] = __('Two-Factor Auth (2FA)', 'custom-woo-dashboard');
+			}
+			$items = $new_items;
+		} else {
+			$items['wfls-2fa'] = __('Two-Factor Auth (2FA)', 'custom-woo-dashboard');
 		}
 
 		return $items;
@@ -279,7 +314,7 @@ class CWD_V2_Endpoints
 
 	/**
 	 * Ensure navigation menu items pointing to /my-account/credits point safely to /my-account/credit/,
-	 * and remove Wishlist and Wordfence 2FA from dropdown navigation menus.
+	 * and remove Wishlist from dropdown navigation menus.
 	 */
 	public static function filter_nav_menu_items($sorted_menu_items)
 	{
@@ -296,10 +331,8 @@ class CWD_V2_Endpoints
 			$url   = strtolower((string) $item->url);
 			$title = strtolower((string) ($item->title ?? ''));
 
-			// Exclude wishlist and wordfence 2fa from dropdowns
-			if (strpos($url, 'wishlist') !== false || strpos($title, 'wishlist') !== false ||
-				strpos($url, 'wordfence') !== false || strpos($url, 'wfls') !== false ||
-				strpos($title, '2fa') !== false || strpos($title, 'two-factor') !== false) {
+			// Exclude wishlist from dropdowns
+			if (strpos($url, 'wishlist') !== false || strpos($title, 'wishlist') !== false) {
 				continue;
 			}
 
