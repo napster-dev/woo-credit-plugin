@@ -2668,26 +2668,10 @@ class CWD_V2_Trade_Applications
 		echo '</div>';
 		echo '</div>';
 
-		// In-page shortcode container if available
-		$shortcode_content = do_shortcode('[wordfence_2fa_management]');
-		if (! empty(trim($shortcode_content)) && false === strpos($shortcode_content, '[wordfence_2fa_management]')) {
-			echo '<div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 24px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">';
-			echo '<h2 style="margin-top: 0; font-size: 17px; font-weight: 700; color: #0f172a; margin-bottom: 16px;">' . esc_html__('Manage Authenticator App & Backup Codes', 'custom-woo-dashboard') . '</h2>';
-			echo $shortcode_content;
-			echo '</div>';
+		// Interactive TOTP 2FA Setup Card (Always 100% accessible to every single user without permissions errors)
+		if (class_exists('CWD_V2_TOTP')) {
+			CWD_V2_TOTP::render_2fa_setup_ui($user_id);
 		}
-
-		// Direct Profile 2FA Setup Card (Always 100% accessible to every single user without permissions errors)
-		echo '<div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 24px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">';
-		echo '<h2 style="margin-top: 0; font-size: 17px; font-weight: 700; color: #0f172a; margin-bottom: 10px;">' . esc_html__('Set Up Authenticator on Your Profile', 'custom-woo-dashboard') . '</h2>';
-		echo '<p style="font-size: 13.5px; line-height: 1.6; color: #475569; margin-top: 0; margin-bottom: 18px;">';
-		echo esc_html__('Wordfence Login Security integrates seamlessly with your WordPress user profile. You can scan your unique TOTP QR code, enter confirmation codes, generate backup recovery codes, or deactivate 2FA directly on your personal profile page.', 'custom-woo-dashboard');
-		echo '</p>';
-		echo '<a href="' . esc_url($profile_url) . '" class="button button-primary button-hero" style="background: #008060; border-color: #008060; display: inline-flex; align-items: center; gap: 8px; padding: 8px 20px; font-size: 14px; height: auto;">';
-		echo '<span class="dashicons dashicons-admin-users" style="font-size: 18px; width: 18px; height: 18px;"></span> ';
-		echo esc_html__('Open My User Profile & Configure 2FA', 'custom-woo-dashboard') . ' &rarr;';
-		echo '</a>';
-		echo '</div>';
 
 		// Administrator Console Section (Only for users with manage_options to avoid "Sorry, you are not allowed" error)
 		if (current_user_can('manage_options')) {

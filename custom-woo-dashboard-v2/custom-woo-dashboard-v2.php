@@ -48,6 +48,7 @@ if (! function_exists('cwd_v2_init_plugin')) {
 			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-trade-number-migrator.php';
 			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-blink-express.php';
 			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-shipment-tracking.php';
+			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-totp.php';
 
 			CWD_V2_Activator::register_roles();
 			CWD_V2_Shortcode::init();
