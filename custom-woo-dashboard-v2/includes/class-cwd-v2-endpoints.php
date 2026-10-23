@@ -81,18 +81,29 @@ class CWD_V2_Endpoints
 		}
 		$rendered = true;
 
-		echo '<div class="cwd-v2-2fa-section" style="margin-top: 35px; border-top: 2px solid #e2e8f0; padding-top: 25px; clear: both;">';
-		echo '<h3 style="font-size: 18px; font-weight: 700; color: #1e293b; margin-bottom: 8px;">' . esc_html__('Two-Factor Authentication (2FA)', 'custom-woo-dashboard') . '</h3>';
-		echo '<p style="font-size: 13.5px; color: #64748b; margin-bottom: 12px;">' . esc_html__('Protect your account with mobile app two-factor authentication (Google Authenticator, Microsoft Authenticator, 1Password, Authy).', 'custom-woo-dashboard') . '</p>';
+		try {
+			echo '<div class="cwd-v2-2fa-section" style="margin-top: 35px; border-top: 2px solid #e2e8f0; padding-top: 25px; clear: both;">';
+			echo '<h3 style="font-size: 18px; font-weight: 700; color: #1e293b; margin-bottom: 8px;">' . esc_html__('Two-Factor Authentication (2FA)', 'custom-woo-dashboard') . '</h3>';
+			echo '<p style="font-size: 13.5px; color: #64748b; margin-bottom: 12px;">' . esc_html__('Protect your account with two-factor authentication (Google Authenticator, Microsoft Authenticator, 1Password, Authy).', 'custom-woo-dashboard') . '</p>';
 
-		$sc_out = do_shortcode('[wordfence_2fa_management]');
-		if (! empty(trim($sc_out)) && false === strpos($sc_out, '[wordfence_2fa_management]')) {
-			echo $sc_out;
-		} elseif (class_exists('CWD_V2_TOTP')) {
-			CWD_V2_TOTP::render_2fa_setup_ui(get_current_user_id());
+			$sc_out = do_shortcode('[wordfence_2fa_management]');
+			if (! empty(trim($sc_out)) && false === strpos($sc_out, '[wordfence_2fa_management]')) {
+				echo $sc_out;
+			} else {
+				$profile_url = admin_url('profile.php#wordfence-ls-user-2fa');
+				echo '<div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 18px 20px;">';
+				echo '<strong style="color: #0f172a; font-size: 14.5px; display: block; margin-bottom: 4px;">' . esc_html__('Two-Factor Authentication Protection', 'custom-woo-dashboard') . '</strong>';
+				echo '<p style="color: #64748b; font-size: 13px; margin: 0 0 10px 0; line-height: 1.5;">' . esc_html__('Your account can be secured with Two-Factor Authentication. If enabled on the site, you can configure your authenticator app on your account security profile.', 'custom-woo-dashboard') . '</p>';
+				if (is_user_logged_in() && is_admin_bar_showing()) {
+					echo '<a href="' . esc_url($profile_url) . '" class="button cwd-btn-primary" style="background: #008060; color: #fff; padding: 8px 16px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 13px; display: inline-block;">' . esc_html__('Open 2FA Profile Settings', 'custom-woo-dashboard') . ' &rarr;</a>';
+				}
+				echo '</div>';
+			}
+
+			echo '</div>';
+		} catch (\Throwable $e) {
+			error_log('CWD 2FA Render Error: ' . $e->getMessage());
 		}
-
-		echo '</div>';
 	}
 
 	public static function add_endpoints()

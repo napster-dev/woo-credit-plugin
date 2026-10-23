@@ -31,7 +31,11 @@ add_action('plugins_loaded', 'cwd_v2_init_plugin');
 if (! function_exists('cwd_v2_init_plugin')) {
 	function cwd_v2_init_plugin()
 	{
-		if (class_exists('WooCommerce')) {
+		if (! class_exists('WooCommerce')) {
+			return;
+		}
+
+		try {
 			// Include files only when WooCommerce is confirmed to be loaded
 			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-shortcode.php';
 			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-endpoints.php';
@@ -48,7 +52,6 @@ if (! function_exists('cwd_v2_init_plugin')) {
 			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-trade-number-migrator.php';
 			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-blink-express.php';
 			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-shipment-tracking.php';
-			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-totp.php';
 
 			CWD_V2_Activator::register_roles();
 			CWD_V2_Shortcode::init();
@@ -108,6 +111,8 @@ if (! function_exists('cwd_v2_init_plugin')) {
 			add_action('set_user_role', function ($user_id) {
 				cwd_v2_notify_odoo_customer_event($user_id);
 			}, 20, 1);
+		} catch (\Throwable $e) {
+			error_log('CWD Plugin Initialization Error: ' . $e->getMessage());
 		}
 	}
 }
@@ -232,48 +237,55 @@ if (! function_exists('cwd_v2_notify_odoo_order_event')) {
 			return;
 		}
 
-		$order = wc_get_order($order_id);
-		$acc_num = '';
-		if ($order instanceof WC_Order) {
-			$acc_num = (string) $order->get_meta('ews_account_number');
-			$user_id = $order->get_customer_id();
-			if (empty($acc_num) && $user_id) {
-				$acc_num = (string) get_user_meta($user_id, 'ews_account_number', true);
-				if (empty($acc_num)) {
-					$acc_num = (string) get_user_meta($user_id, 'cwd_ews_account_number', true);
-				}
-				if (empty($acc_num)) {
-					$acc_num = 'EWS-' . str_pad((string) $user_id, 6, '0', STR_PAD_LEFT);
-					update_user_meta($user_id, 'ews_account_number', $acc_num);
-				}
-				$order->update_meta_data('ews_account_number', $acc_num);
-				$order->save();
+		try {
+			if (! function_exists('wc_get_order')) {
+				return;
 			}
+			$order = wc_get_order($order_id);
+			$acc_num = '';
+			if ($order && is_a($order, 'WC_Order')) {
+				$acc_num = (string) $order->get_meta('ews_account_number');
+				$user_id = $order->get_customer_id();
+				if (empty($acc_num) && $user_id) {
+					$acc_num = (string) get_user_meta($user_id, 'ews_account_number', true);
+					if (empty($acc_num)) {
+						$acc_num = (string) get_user_meta($user_id, 'cwd_ews_account_number', true);
+					}
+					if (empty($acc_num)) {
+						$acc_num = 'EWS-' . str_pad((string) $user_id, 6, '0', STR_PAD_LEFT);
+						update_user_meta($user_id, 'ews_account_number', $acc_num);
+					}
+					$order->update_meta_data('ews_account_number', $acc_num);
+					$order->save();
+				}
+			}
+
+			$odoo_url = defined('CWD_ODOO_BASE_URL') ? CWD_ODOO_BASE_URL : get_option('cwd_odoo_base_url', '');
+			$odoo_url = apply_filters('cwd_v2_odoo_base_url', $odoo_url);
+			if (empty($odoo_url)) {
+				return;
+			}
+
+			$secret = defined('CWD_ODOO_SECRET_KEY') ? CWD_ODOO_SECRET_KEY : get_option('cwd_odoo_secret_key', '');
+			$endpoint = rtrim($odoo_url, '/') . '/la_woocommerce/webhook/order';
+
+			// Fire non-blocking asynchronous request so customer checkout is never delayed
+			wp_remote_post($endpoint, array(
+				'timeout'   => 5,
+				'blocking'  => false,
+				'headers'   => array(
+					'Content-Type'  => 'application/json',
+					'X-Odoo-Secret' => $secret,
+				),
+				'body'      => wp_json_encode(array(
+					'order_id'           => (int) $order_id,
+					'action'             => 'created',
+					'ews_account_number' => $acc_num,
+				)),
+			));
+		} catch (\Throwable $t) {
+			error_log('CWD Odoo Order Event Error: ' . $t->getMessage());
 		}
-
-		$odoo_url = defined('CWD_ODOO_BASE_URL') ? CWD_ODOO_BASE_URL : get_option('cwd_odoo_base_url', '');
-		$odoo_url = apply_filters('cwd_v2_odoo_base_url', $odoo_url);
-		if (empty($odoo_url)) {
-			return;
-		}
-
-		$secret = defined('CWD_ODOO_SECRET_KEY') ? CWD_ODOO_SECRET_KEY : get_option('cwd_odoo_secret_key', '');
-		$endpoint = rtrim($odoo_url, '/') . '/la_woocommerce/webhook/order';
-
-		// Fire non-blocking asynchronous request so customer checkout is never delayed
-		wp_remote_post($endpoint, array(
-			'timeout'   => 5,
-			'blocking'  => false,
-			'headers'   => array(
-				'Content-Type'  => 'application/json',
-				'X-Odoo-Secret' => $secret,
-			),
-			'body'      => wp_json_encode(array(
-				'order_id'           => (int) $order_id,
-				'action'             => 'created',
-				'ews_account_number' => $acc_num,
-			)),
-		));
 	}
 }
 
@@ -283,20 +295,24 @@ if (! function_exists('cwd_v2_attach_account_number_to_order')) {
 	 */
 	function cwd_v2_attach_account_number_to_order($order, $data = null)
 	{
-		if (! $order instanceof WC_Order) {
-			return;
-		}
-		$user_id = $order->get_customer_id();
-		if ($user_id) {
-			$acc = (string) get_user_meta($user_id, 'ews_account_number', true);
-			if (empty($acc)) {
-				$acc = (string) get_user_meta($user_id, 'cwd_ews_account_number', true);
+		try {
+			if (! $order || ! is_a($order, 'WC_Order')) {
+				return;
 			}
-			if (empty($acc)) {
-				$acc = 'EWS-' . str_pad((string) $user_id, 6, '0', STR_PAD_LEFT);
-				update_user_meta($user_id, 'ews_account_number', $acc);
+			$user_id = $order->get_customer_id();
+			if ($user_id) {
+				$acc = (string) get_user_meta($user_id, 'ews_account_number', true);
+				if (empty($acc)) {
+					$acc = (string) get_user_meta($user_id, 'cwd_ews_account_number', true);
+				}
+				if (empty($acc)) {
+					$acc = 'EWS-' . str_pad((string) $user_id, 6, '0', STR_PAD_LEFT);
+					update_user_meta($user_id, 'ews_account_number', $acc);
+				}
+				$order->update_meta_data('ews_account_number', $acc);
 			}
-			$order->update_meta_data('ews_account_number', $acc);
+		} catch (\Throwable $t) {
+			error_log('CWD Attach Account Error: ' . $t->getMessage());
 		}
 	}
 	add_action('woocommerce_checkout_create_order', 'cwd_v2_attach_account_number_to_order', 10, 2);
@@ -315,97 +331,58 @@ if (! function_exists('cwd_v2_notify_odoo_customer_event')) {
 			return;
 		}
 
-		$user = get_userdata($user_id);
-		if (! $user) {
-			return;
-		}
-
-		$odoo_url = defined('CWD_ODOO_BASE_URL') ? CWD_ODOO_BASE_URL : get_option('cwd_odoo_base_url', '');
-		$odoo_url = apply_filters('cwd_v2_odoo_base_url', $odoo_url);
-		if (empty($odoo_url)) {
-			$odoo_url = 'https://lahoreanalytica-ewsupplies-uk-uat-38561474.dev.odoo.com';
-		}
-
-		$endpoint = rtrim($odoo_url, '/') . '/la_woocommerce/webhook/customer';
-
-		$credit_limit   = class_exists('CWD_V2_Credit_Logic') ? CWD_V2_Credit_Logic::get_user_credit_limit($user_id) : (float) get_user_meta($user_id, '_credit_limit', true);
-		$credit_balance = class_exists('CWD_V2_Credit_Logic') ? CWD_V2_Credit_Logic::get_user_credit_balance($user_id) : (float) get_user_meta($user_id, '_credit_balance', true);
-		$due_date       = (string) get_user_meta($user_id, '_credit_due_date', true);
-		$account_number = (string) get_user_meta($user_id, 'ews_account_number', true);
-		if (empty($account_number)) {
-			$account_number = 'EWS-' . str_pad($user_id, 6, '0', STR_PAD_LEFT);
-			update_user_meta($user_id, 'ews_account_number', $account_number);
-		}
-
-		$roles = (array) $user->roles;
-		$primary_role = in_array('credit_account', $roles, true) ? 'credit_account' : ($roles[0] ?? 'customer');
-
-		wp_remote_post($endpoint, array(
-			'timeout'  => 5,
-			'blocking' => false,
-			'headers'  => array(
-				'Content-Type' => 'application/json',
-			),
-			'body'     => wp_json_encode(array(
-				'user_id'            => (int) $user_id,
-				'email'              => $user->user_email,
-				'username'           => $user->user_login,
-				'first_name'         => $user->first_name,
-				'last_name'          => $user->last_name,
-				'phone'              => (string) (get_user_meta($user_id, 'billing_phone', true) ?: ''),
-				'company'            => (string) (get_user_meta($user_id, 'billing_company', true) ?: ''),
-				'ews_account_number' => $account_number,
-				'role'               => $primary_role,
-				'roles'              => $roles,
-				'credit_limit'       => $credit_limit,
-				'credit_balance'     => $credit_balance,
-				'credit_due_date'    => $due_date,
-			)),
-		));
-	}
-}
-
-if (! function_exists('cwd_v2_ensure_wordfence_2fa_configuration')) {
-	/**
-	 * Automatically grant 2FA management capability to staff roles and enable 2FA for all roles in Wordfence.
-	 * Eliminates 'Sorry, you are not allowed to access this page' and ensures 2FA setup appears on user profiles.
-	 */
-	function cwd_v2_ensure_wordfence_2fa_configuration()
-	{
-		// 1. Grant 2FA management capability to administrator and shop_manager
-		foreach (array('administrator', 'shop_manager') as $role_slug) {
-			$role = get_role($role_slug);
-			if ($role && ! $role->has_cap('wf_manage_login_security')) {
-				$role->add_cap('wf_manage_login_security');
+		try {
+			$user = get_userdata($user_id);
+			if (! $user) {
+				return;
 			}
-		}
 
-		// 2. Programmatically configure Wordfence Login Security settings if available
-		if (class_exists('\WordfenceLS\Controller_Settings')) {
-			try {
-				$settings = \WordfenceLS\Controller_Settings::shared();
-				$allowed_roles = $settings->get_array(\WordfenceLS\Controller_Settings::KEY_2FA_ROLES, array());
-				$all_roles = array_keys(wp_roles()->roles);
-
-				// Ensure all user roles (including customer, credit_account, shop_manager) can use 2FA
-				$diff = array_diff($all_roles, $allowed_roles);
-				if (! empty($diff)) {
-					$merged = array_unique(array_merge($allowed_roles, $all_roles));
-					$settings->set_array(\WordfenceLS\Controller_Settings::KEY_2FA_ROLES, $merged);
-				}
-
-				if (! $settings->get_bool(\WordfenceLS\Controller_Settings::KEY_ENABLE_2FA_MANAGEMENT_SHORTCODE)) {
-					$settings->set_bool(\WordfenceLS\Controller_Settings::KEY_ENABLE_2FA_MANAGEMENT_SHORTCODE, true);
-				}
-				if (! $settings->get_bool(\WordfenceLS\Controller_Settings::KEY_ENABLE_WOOCOMMERCE_INTEGRATION)) {
-					$settings->set_bool(\WordfenceLS\Controller_Settings::KEY_ENABLE_WOOCOMMERCE_INTEGRATION, true);
-				}
-			} catch (\Exception $e) {
-				// Non-blocking
+			$odoo_url = defined('CWD_ODOO_BASE_URL') ? CWD_ODOO_BASE_URL : get_option('cwd_odoo_base_url', '');
+			$odoo_url = apply_filters('cwd_v2_odoo_base_url', $odoo_url);
+			if (empty($odoo_url)) {
+				$odoo_url = 'https://lahoreanalytica-ewsupplies-uk-uat-38561474.dev.odoo.com';
 			}
+
+			$endpoint = rtrim($odoo_url, '/') . '/la_woocommerce/webhook/customer';
+
+			$credit_limit   = class_exists('CWD_V2_Credit_Logic') ? CWD_V2_Credit_Logic::get_user_credit_limit($user_id) : (float) get_user_meta($user_id, '_credit_limit', true);
+			$credit_balance = class_exists('CWD_V2_Credit_Logic') ? CWD_V2_Credit_Logic::get_user_credit_balance($user_id) : (float) get_user_meta($user_id, '_credit_balance', true);
+			$due_date       = (string) get_user_meta($user_id, '_credit_due_date', true);
+			$account_number = (string) get_user_meta($user_id, 'ews_account_number', true);
+			if (empty($account_number)) {
+				$account_number = 'EWS-' . str_pad($user_id, 6, '0', STR_PAD_LEFT);
+				update_user_meta($user_id, 'ews_account_number', $account_number);
+			}
+
+			$roles = (array) $user->roles;
+			$primary_role = in_array('credit_account', $roles, true) ? 'credit_account' : ($roles[0] ?? 'customer');
+
+			wp_remote_post($endpoint, array(
+				'timeout'  => 5,
+				'blocking' => false,
+				'headers'  => array(
+					'Content-Type' => 'application/json',
+				),
+				'body'     => wp_json_encode(array(
+					'user_id'            => (int) $user_id,
+					'email'              => $user->user_email,
+					'username'           => $user->user_login,
+					'first_name'         => $user->first_name,
+					'last_name'          => $user->last_name,
+					'phone'              => (string) (get_user_meta($user_id, 'billing_phone', true) ?: ''),
+					'company'            => (string) (get_user_meta($user_id, 'billing_company', true) ?: ''),
+					'ews_account_number' => $account_number,
+					'role'               => $primary_role,
+					'roles'              => $roles,
+					'credit_limit'       => $credit_limit,
+					'credit_balance'     => $credit_balance,
+					'credit_due_date'    => $due_date,
+				)),
+			));
+		} catch (\Throwable $t) {
+			error_log('CWD Odoo Customer Event Error: ' . $t->getMessage());
 		}
 	}
-	add_action('admin_init', 'cwd_v2_ensure_wordfence_2fa_configuration');
 }
 
 

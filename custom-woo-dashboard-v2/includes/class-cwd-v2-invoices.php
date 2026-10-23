@@ -30,8 +30,15 @@ class CWD_V2_Invoices
 		add_action('woocommerce_order_status_refunded', array(__CLASS__, 'void_invoice_for_order'));
 		add_action('cwd_v2_sync_odoo_invoices', array(__CLASS__, 'sync_odoo_invoices'));
 		add_action('add_meta_boxes', array(__CLASS__, 'register_order_invoice_meta_box'), 25);
-		add_action('woocommerce_admin_order_data_after_order_details', array(__CLASS__, 'display_admin_order_invoice_meta'));
-		self::repair_same_day_due_dates();
+		// Run one-time legacy invoice due-date heal safely
+		if ('yes' !== get_option('cwd_v2_same_day_due_dates_repaired_v2')) {
+			try {
+				self::repair_same_day_due_dates();
+				update_option('cwd_v2_same_day_due_dates_repaired_v2', 'yes');
+			} catch (\Throwable $t) {
+				error_log('CWD Repair Due Dates Error: ' . $t->getMessage());
+			}
+		}
 	}
 
 	/**
@@ -745,24 +752,31 @@ class CWD_V2_Invoices
 	 */
 	public static function repair_same_day_due_dates()
 	{
-		global $wpdb;
-		$table = self::table_name();
-		if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $table)) !== $table) {
-			return;
-		}
+		try {
+			global $wpdb;
+			if (! $wpdb) {
+				return;
+			}
+			$table = self::table_name();
+			if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $table)) !== $table) {
+				return;
+			}
 
-		$rows = $wpdb->get_results(
-			"SELECT id, user_id, invoice_date, due_date FROM {$table}
-			 WHERE DATE(due_date) <= DATE(invoice_date) AND user_id > 0 LIMIT 200"
-		);
+			$rows = $wpdb->get_results(
+				"SELECT id, user_id, invoice_date, due_date FROM {$table}
+				 WHERE DATE(due_date) <= DATE(invoice_date) AND user_id > 0 LIMIT 200"
+			);
 
-		if (! empty($rows)) {
-			foreach ($rows as $r) {
-				$new_due = self::calculate_due_date_for_user((int) $r->user_id, $r->invoice_date);
-				if ($new_due && $new_due !== $r->due_date) {
-					$wpdb->update($table, array('due_date' => $new_due), array('id' => (int) $r->id));
+			if (! empty($rows)) {
+				foreach ($rows as $r) {
+					$new_due = self::calculate_due_date_for_user((int) $r->user_id, $r->invoice_date);
+					if ($new_due && $new_due !== $r->due_date) {
+						$wpdb->update($table, array('due_date' => $new_due), array('id' => (int) $r->id));
+					}
 				}
 			}
+		} catch (\Throwable $e) {
+			error_log('CWD repair_same_day_due_dates error: ' . $e->getMessage());
 		}
 	}
 }

@@ -314,44 +314,48 @@ class CWD_V2_REST_API
 	 */
 	public static function prepare_rest_order_response($response, $order, $request)
 	{
-		if (! $order instanceof WC_Order) {
-			return $response;
-		}
-
-		$user_id = $order->get_customer_id();
-		$acc_num = (string) $order->get_meta('ews_account_number');
-		if (empty($acc_num) && $user_id) {
-			$acc_num = (string) get_user_meta($user_id, 'ews_account_number', true);
-			if (empty($acc_num)) {
-				$acc_num = (string) get_user_meta($user_id, 'cwd_ews_account_number', true);
+		try {
+			if (! $order || ! is_a($order, 'WC_Order')) {
+				return $response;
 			}
-			if (empty($acc_num)) {
-				$acc_num = 'EWS-' . str_pad((string) $user_id, 6, '0', STR_PAD_LEFT);
-			}
-		}
 
-		if (! empty($acc_num)) {
-			$data = $response->get_data();
-			$meta_data = isset($data['meta_data']) && is_array($data['meta_data']) ? $data['meta_data'] : array();
-			$found = false;
-			foreach ($meta_data as &$m) {
-				if (isset($m['key']) && $m['key'] === 'ews_account_number') {
-					$m['value'] = $acc_num;
-					$found = true;
-					break;
+			$user_id = $order->get_customer_id();
+			$acc_num = (string) $order->get_meta('ews_account_number');
+			if (empty($acc_num) && $user_id) {
+				$acc_num = (string) get_user_meta($user_id, 'ews_account_number', true);
+				if (empty($acc_num)) {
+					$acc_num = (string) get_user_meta($user_id, 'cwd_ews_account_number', true);
+				}
+				if (empty($acc_num)) {
+					$acc_num = 'EWS-' . str_pad((string) $user_id, 6, '0', STR_PAD_LEFT);
 				}
 			}
-			unset($m);
-			if (! $found) {
-				$meta_data[] = array(
-					'id'    => 0,
-					'key'   => 'ews_account_number',
-					'value' => $acc_num,
-				);
+
+			if (! empty($acc_num) && is_object($response) && method_exists($response, 'get_data')) {
+				$data = $response->get_data();
+				$meta_data = isset($data['meta_data']) && is_array($data['meta_data']) ? $data['meta_data'] : array();
+				$found = false;
+				foreach ($meta_data as &$m) {
+					if (isset($m['key']) && $m['key'] === 'ews_account_number') {
+						$m['value'] = $acc_num;
+						$found = true;
+						break;
+					}
+				}
+				unset($m);
+				if (! $found) {
+					$meta_data[] = array(
+						'id'    => 0,
+						'key'   => 'ews_account_number',
+						'value' => $acc_num,
+					);
+				}
+				$data['meta_data'] = $meta_data;
+				$data['ews_account_number'] = $acc_num;
+				$response->set_data($data);
 			}
-			$data['meta_data'] = $meta_data;
-			$data['ews_account_number'] = $acc_num;
-			$response->set_data($data);
+		} catch (\Throwable $e) {
+			error_log('CWD REST Order Response Error: ' . $e->getMessage());
 		}
 
 		return $response;
