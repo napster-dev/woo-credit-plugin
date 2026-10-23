@@ -409,6 +409,16 @@ class CWD_V2_Trade_Applications
 			array(__CLASS__, 'render_settings_page')
 		);
 
+		// Submenu 4: Two-Factor Authentication (2FA) Administration
+		add_submenu_page(
+			'cwd-v2-trade-applications',
+			__('Two-Factor Authentication (2FA)', 'custom-woo-dashboard'),
+			__('Two-Factor Auth (2FA)', 'custom-woo-dashboard'),
+			'manage_woocommerce',
+			'cwd-v2-2fa-settings',
+			array(__CLASS__, 'render_2fa_admin_page')
+		);
+
 		// Alias submenu for legacy credit-accounts URL so any bookmarked links work seamlessly
 		add_submenu_page(
 			null,
@@ -2610,5 +2620,23 @@ class CWD_V2_Trade_Applications
 			'sanitize_callback' => 'esc_url_raw',
 			'default'           => '',
 		));
+	}
+
+	public static function render_2fa_admin_page()
+	{
+		echo '<div class="wrap">';
+		echo '<h1 style="margin-bottom: 8px;">' . esc_html__('Two-Factor Authentication (2FA) Administration', 'custom-woo-dashboard') . '</h1>';
+		echo '<p style="color: #64748b; margin-top: 0;">' . esc_html__('Manage Wordfence 2FA and Login Security for administrators and trade customers.', 'custom-woo-dashboard') . '</p>';
+
+		$admin_wfls = admin_url('admin.php?page=WFLS');
+		echo '<div style="background: #fff; border: 1px solid #ccd0d4; border-radius: 6px; padding: 24px; max-width: 850px; margin-top: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">';
+		echo '<h2 style="margin-top: 0; font-size: 18px; color: #1e293b;">' . esc_html__('Wordfence Login Security & 2FA Configuration', 'custom-woo-dashboard') . '</h2>';
+		echo '<p style="font-size: 14px; line-height: 1.6; color: #475569;">' . esc_html__('Two-Factor Authentication is provided and enforced by Wordfence Login Security. Site administrators can configure 2FA enforcement, set role policies (such as making 2FA optional or required for customers), view active 2FA users, and download recovery backup codes from the official Wordfence Security console.', 'custom-woo-dashboard') . '</p>';
+		echo '<div style="margin-top: 22px; display: flex; gap: 12px; flex-wrap: wrap;">';
+		echo '<a href="' . esc_url($admin_wfls) . '" class="button button-primary button-hero">' . esc_html__('Open Wordfence 2FA Dashboard', 'custom-woo-dashboard') . '</a>';
+		echo '<a href="' . esc_url(admin_url('admin.php?page=WFLS#top#settings')) . '" class="button button-secondary button-hero">' . esc_html__('Configure Wordfence 2FA Settings', 'custom-woo-dashboard') . '</a>';
+		echo '</div>';
+		echo '</div>';
+		echo '</div>';
 	}
 }

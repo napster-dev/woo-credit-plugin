@@ -42,7 +42,6 @@ class CWD_V2_Endpoints
 
 		// Render Wordfence 2FA on the account details page at the bottom
 		add_action('woocommerce_after_edit_account_form', array(__CLASS__, 'render_wordfence_2fa_section'), 99);
-		add_action('woocommerce_edit_account_form_end', array(__CLASS__, 'render_wordfence_2fa_section'), 99);
 
 		// Ensure endpoints are flushed once after this update
 		if ('yes' !== get_option('cwd_v2_endpoints_flushed_wfls_v4')) {
@@ -82,52 +81,17 @@ class CWD_V2_Endpoints
 		}
 		$rendered = true;
 
-		$wfls_url = wc_get_account_endpoint_url('wfls-2fa');
-
 		echo '<div class="cwd-v2-2fa-section" style="margin-top: 35px; border-top: 2px solid #e2e8f0; padding-top: 25px; clear: both;">';
 		echo '<h3 style="font-size: 18px; font-weight: 700; color: #1e293b; margin-bottom: 8px;">' . esc_html__('Two-Factor Authentication (2FA)', 'custom-woo-dashboard') . '</h3>';
 		echo '<p style="font-size: 13.5px; color: #64748b; margin-bottom: 18px;">' . esc_html__('Manage your Wordfence two-factor authentication security settings below.', 'custom-woo-dashboard') . '</p>';
 
-		$output = '';
-
-		// 1. Try Wordfence official WooCommerce endpoint action
-		ob_start();
-		do_action('woocommerce_account_wfls-2fa_endpoint');
-		$action_out = ob_get_clean();
-		if (! empty(trim($action_out))) {
-			$output = $action_out;
-		}
-
-		// 2. Try Wordfence official shortcodes
-		if (empty(trim($output))) {
-			$sc_out = do_shortcode('[wordfence_2fa_management]');
-			if (! empty(trim($sc_out)) && false === strpos($sc_out, '[wordfence_2fa_management]')) {
-				$output = $sc_out;
-			}
-		}
-
-		if (empty(trim($output))) {
-			$sc_out2 = do_shortcode('[wordfence_ls_user_settings]');
-			if (! empty(trim($sc_out2)) && false === strpos($sc_out2, '[wordfence_ls_user_settings]')) {
-				$output = $sc_out2;
-			}
-		}
-
-		// 3. Fallback to direct button/card to the Wordfence 2FA setup page
-		if (! empty(trim($output))) {
-			echo $output;
+		$sc_out = do_shortcode('[wordfence_2fa_management]');
+		if (! empty(trim($sc_out)) && false === strpos($sc_out, '[wordfence_2fa_management]')) {
+			echo $sc_out;
 		} else {
-			echo '<div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 15px;">';
-			echo '<div>';
-			echo '<strong style="color: #0f172a; font-size: 14.5px; display: block; margin-bottom: 4px;">' . esc_html__('Wordfence Two-Factor Authentication', 'custom-woo-dashboard') . '</strong>';
-			echo '<span style="color: #64748b; font-size: 13px;">' . esc_html__('Scan QR codes or configure authenticator app passkeys for enhanced login security.', 'custom-woo-dashboard') . '</span>';
-			echo '</div>';
-			echo '<div style="display: flex; gap: 10px; flex-wrap: wrap;">';
-			if (current_user_can('manage_options')) {
-				echo '<a href="' . esc_url(admin_url('admin.php?page=WFLS')) . '" class="button" style="padding: 10px 16px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 13px;">' . esc_html__('Wordfence 2FA Admin', 'custom-woo-dashboard') . '</a>';
-			}
-			echo '<a href="' . esc_url($wfls_url) . '" class="button cwd-btn-primary" style="background: #008060; color: #fff; padding: 10px 18px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 13.5px; display: inline-block;">' . esc_html__('Manage 2FA Settings', 'custom-woo-dashboard') . ' &rarr;</a>';
-			echo '</div>';
+			echo '<div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 18px 20px;">';
+			echo '<strong style="color: #0f172a; font-size: 14.5px; display: block; margin-bottom: 4px;">' . esc_html__('Two-Factor Authentication Protection', 'custom-woo-dashboard') . '</strong>';
+			echo '<p style="color: #64748b; font-size: 13px; margin: 0; line-height: 1.5;">' . esc_html__('Your account is protected by Wordfence Login Security. Two-factor verification will be prompted at sign-in when enforced for your account.', 'custom-woo-dashboard') . '</p>';
 			echo '</div>';
 		}
 
