@@ -694,3 +694,47 @@
 a[href*="page=WFLS#top#settings"] {
     display: none !important;
 }
+
+/* Force Wordfence 2FA layout side-by-side */
+.cwd-v2-2fa-section,
+.cwd-2fa-wrapper {
+    max-width: 100% !important;
+    width: 100% !important;
+}
+
+.cwd-v2-2fa-section #wfls-management-embedded,
+.cwd-2fa-wrapper #wfls-management-embedded,
+#wfls-management-embedded {
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: wrap !important;
+    gap: 24px !important;
+    align-items: stretch !important;
+    justify-content: space-between !important;
+    width: 100% !important;
+}
+
+.cwd-v2-2fa-section #wfls-management-embedded > div,
+.cwd-2fa-wrapper #wfls-management-embedded > div,
+#wfls-management-embedded > div,
+#wfls-management-embedded .wfls-block,
+#wfls-management-embedded .wfls-card {
+    flex: 1 1 45% !important;
+    min-width: 320px !important;
+    box-sizing: border-box !important;
+    margin: 0 !important;
+}
+
+@media (max-width: 768px) {
+    .cwd-v2-2fa-section #wfls-management-embedded,
+    .cwd-2fa-wrapper #wfls-management-embedded,
+    #wfls-management-embedded {
+        flex-direction: column !important;
+    }
+    .cwd-v2-2fa-section #wfls-management-embedded > div,
+    .cwd-2fa-wrapper #wfls-management-embedded > div,
+    #wfls-management-embedded > div {
+        flex: 1 1 100% !important;
+        min-width: 100% !important;
+    }
+}

@@ -60,6 +60,7 @@ class CWD_V2_Endpoints
 			.wfls-notice-passkeys-disabled,
 			#wfls-passkeys-management,
 			.woocommerce-MyAccount-navigation-link--wfls-passkeys,
+			a[href*="page=WFLS#top#settings"],
 			.menu-item-wfls-2fa,
 			.woodmart-my-account-links a[href*="wfls"],
 			.woodmart-my-account-links a[href*="2fa"],
@@ -72,6 +73,47 @@ class CWD_V2_Endpoints
 			.my-account-dropdown a[href*="wfls"],
 			.my-account-dropdown a[href*="2fa"] {
 				display: none !important;
+			}
+
+			/* Make Wordfence 2FA Cards display side-by-side */
+			.cwd-v2-2fa-section,
+			.cwd-2fa-wrapper {
+				max-width: 100% !important;
+				width: 100% !important;
+			}
+			.cwd-v2-2fa-section #wfls-management-embedded,
+			.cwd-2fa-wrapper #wfls-management-embedded,
+			#wfls-management-embedded {
+				display: flex !important;
+				flex-direction: row !important;
+				flex-wrap: wrap !important;
+				gap: 24px !important;
+				align-items: stretch !important;
+				justify-content: space-between !important;
+				width: 100% !important;
+			}
+			.cwd-v2-2fa-section #wfls-management-embedded > div,
+			.cwd-2fa-wrapper #wfls-management-embedded > div,
+			#wfls-management-embedded > div,
+			#wfls-management-embedded .wfls-block,
+			#wfls-management-embedded .wfls-card {
+				flex: 1 1 45% !important;
+				min-width: 320px !important;
+				box-sizing: border-box !important;
+				margin: 0 !important;
+			}
+			@media (max-width: 768px) {
+				.cwd-v2-2fa-section #wfls-management-embedded,
+				.cwd-2fa-wrapper #wfls-management-embedded,
+				#wfls-management-embedded {
+					flex-direction: column !important;
+				}
+				.cwd-v2-2fa-section #wfls-management-embedded > div,
+				.cwd-2fa-wrapper #wfls-management-embedded > div,
+				#wfls-management-embedded > div {
+					flex: 1 1 100% !important;
+					min-width: 100% !important;
+				}
 			}
 		</style>';
 	}
@@ -87,13 +129,13 @@ class CWD_V2_Endpoints
 		try {
 			echo '<div class="cwd-v2-2fa-section" style="margin-top: 35px; border-top: 2px solid #e2e8f0; padding-top: 25px; clear: both;">';
 			echo '<h3 style="font-size: 18px; font-weight: 700; color: #1e293b; margin-bottom: 8px;">' . esc_html__('Two-Factor Authentication (2FA)', 'custom-woo-dashboard') . '</h3>';
-			echo '<p style="font-size: 13.5px; color: #64748b; margin-bottom: 14px;">' . esc_html__('Protect your account with an authenticator app (Google Authenticator, Microsoft Authenticator, Authy).', 'custom-woo-dashboard') . '</p>';
+			echo '<p style="font-size: 13.5px; color: #64748b; margin-bottom: 16px;">' . esc_html__('Protect your account with an authenticator app (Google Authenticator, Microsoft Authenticator, Authy).', 'custom-woo-dashboard') . '</p>';
 
-			$sc_out = do_shortcode('[wordfence_2fa_management]');
+			$sc_out = do_shortcode('[wordfence_2fa_management stacked="false"]');
 			$has_rendered = false;
 
-			if (! empty(trim($sc_out)) && false === strpos($sc_out, '[wordfence_2fa_management]')) {
-				echo $sc_out;
+			if (! empty(trim($sc_out)) && false === strpos($sc_out, '[wordfence_2fa_management')) {
+				echo '<div class="cwd-2fa-wrapper">' . $sc_out . '</div>';
 				$has_rendered = true;
 			}
 
@@ -158,10 +200,10 @@ class CWD_V2_Endpoints
 			echo '<p style="margin: 0; font-size: 13.5px; color: #64748b;">' . esc_html__('Protect your account with mobile authenticator apps (Google Authenticator, Microsoft Authenticator, Authy).', 'custom-woo-dashboard') . '</p>';
 			echo '</div>';
 
-			$rendered_2fa = do_shortcode('[wordfence_2fa_management]');
+			$rendered_2fa = do_shortcode('[wordfence_2fa_management stacked="false"]');
 			$has_rendered = false;
 
-			if (! empty(trim($rendered_2fa)) && false === strpos($rendered_2fa, '[wordfence_2fa_management]')) {
+			if (! empty(trim($rendered_2fa)) && false === strpos($rendered_2fa, '[wordfence_2fa_management')) {
 				echo '<div class="cwd-2fa-wrapper">' . $rendered_2fa . '</div>';
 				$has_rendered = true;
 			}
