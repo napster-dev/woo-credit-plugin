@@ -314,6 +314,14 @@
     color: #607d8b;
 }
 
+.cwd-v2-status-written_off,
+.cwd-v2-status-marked_off {
+    background: #f1f5f9;
+    color: #334155;
+    border: 1px solid #cbd5e1;
+    font-weight: 700;
+}
+
 .cwd-v2-invoice-meta p {
     margin: 0 0 6px;
 }
@@ -673,4 +681,60 @@
     border-color: #94a3b8 !important;
     color: #0f172a !important;
     text-decoration: none !important;
+}
+
+/* Suppress Passkeys and Admin Configuration buttons on frontend */
+.cwd-passkeys-wrapper,
+#wfls-passkeys,
+.wfls-passkeys,
+.wfls-passkeys-container,
+.wfls-notice-passkeys-disabled,
+#wfls-passkeys-management,
+.woocommerce-MyAccount-navigation-link--wfls-passkeys,
+a[href*="page=WFLS#top#settings"] {
+    display: none !important;
+}
+
+/* Force Wordfence 2FA layout side-by-side */
+.cwd-v2-2fa-section,
+.cwd-2fa-wrapper {
+    max-width: 100% !important;
+    width: 100% !important;
+}
+
+.cwd-v2-2fa-section #wfls-management-embedded,
+.cwd-2fa-wrapper #wfls-management-embedded,
+#wfls-management-embedded {
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: wrap !important;
+    gap: 24px !important;
+    align-items: stretch !important;
+    justify-content: space-between !important;
+    width: 100% !important;
+}
+
+.cwd-v2-2fa-section #wfls-management-embedded > div,
+.cwd-2fa-wrapper #wfls-management-embedded > div,
+#wfls-management-embedded > div,
+#wfls-management-embedded .wfls-block,
+#wfls-management-embedded .wfls-card {
+    flex: 1 1 45% !important;
+    min-width: 320px !important;
+    box-sizing: border-box !important;
+    margin: 0 !important;
+}
+
+@media (max-width: 768px) {
+    .cwd-v2-2fa-section #wfls-management-embedded,
+    .cwd-2fa-wrapper #wfls-management-embedded,
+    #wfls-management-embedded {
+        flex-direction: column !important;
+    }
+    .cwd-v2-2fa-section #wfls-management-embedded > div,
+    .cwd-2fa-wrapper #wfls-management-embedded > div,
+    #wfls-management-embedded > div {
+        flex: 1 1 100% !important;
+        min-width: 100% !important;
+    }
 }

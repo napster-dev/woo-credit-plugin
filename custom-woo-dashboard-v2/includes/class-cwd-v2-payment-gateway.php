@@ -79,6 +79,29 @@ class WC_Gateway_Credit_Account_V2 extends WC_Payment_Gateway
 			return false;
 		}
 
+		// Prevent paying credit balance or invoice using credit account itself
+		if (class_exists('CWD_V2_Credit_Logic')) {
+			$product_id = (int) CWD_V2_Credit_Logic::get_credit_payment_product_id();
+			if ($product_id && isset(WC()->cart) && WC()->cart) {
+				foreach (WC()->cart->get_cart() as $cart_item) {
+					if ((int) ($cart_item['product_id'] ?? 0) === $product_id) {
+						return false;
+					}
+				}
+			}
+			if ($product_id && isset($_GET['pay_for_order'])) {
+				$order_id = absint(get_query_var('order-pay'));
+				$order = wc_get_order($order_id);
+				if ($order) {
+					foreach ($order->get_items() as $item) {
+						if ((int) $item->get_product_id() === $product_id) {
+							return false;
+						}
+					}
+				}
+			}
+		}
+
 		return true;
 	}
 

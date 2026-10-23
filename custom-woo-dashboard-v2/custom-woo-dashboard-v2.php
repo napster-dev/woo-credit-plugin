@@ -31,7 +31,11 @@ add_action('plugins_loaded', 'cwd_v2_init_plugin');
 if (! function_exists('cwd_v2_init_plugin')) {
 	function cwd_v2_init_plugin()
 	{
-		if (class_exists('WooCommerce')) {
+		if (! class_exists('WooCommerce')) {
+			return;
+		}
+
+		try {
 			// Include files only when WooCommerce is confirmed to be loaded
 			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-shortcode.php';
 			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-endpoints.php';
@@ -95,6 +99,20 @@ if (! function_exists('cwd_v2_init_plugin')) {
 
 			// Register WooCommerce Blocks payment method integration
 			add_action('woocommerce_blocks_loaded', 'cwd_v2_register_credit_gateway_blocks_support');
+
+			// Instant Order Sync with Odoo ERP
+			add_action('woocommerce_checkout_order_processed', 'cwd_v2_notify_odoo_order_event', 10, 1);
+			add_action('woocommerce_payment_complete', 'cwd_v2_notify_odoo_order_event', 10, 1);
+			add_action('woocommerce_order_status_changed', 'cwd_v2_notify_odoo_order_event', 10, 1);
+
+			// Instant Customer & Trade Account Sync with Odoo ERP
+			add_action('user_register', 'cwd_v2_notify_odoo_customer_event', 20, 1);
+			add_action('profile_update', 'cwd_v2_notify_odoo_customer_event', 20, 1);
+			add_action('set_user_role', function ($user_id) {
+				cwd_v2_notify_odoo_customer_event($user_id);
+			}, 20, 1);
+		} catch (\Throwable $e) {
+			error_log('CWD Plugin Initialization Error: ' . $e->getMessage());
 		}
 	}
 }
@@ -205,6 +223,168 @@ if (! function_exists('cwd_v2_fix_user_menu_credits_links')) {
 		<?php
 	}
 }
+
+if (! function_exists('cwd_v2_notify_odoo_order_event')) {
+	/**
+	 * Instant order event notification to Odoo ERP.
+	 * Dispatched asynchronously without blocking customer checkout.
+	 *
+	 * @param int $order_id WooCommerce Order ID
+	 */
+	function cwd_v2_notify_odoo_order_event($order_id)
+	{
+		if (! $order_id) {
+			return;
+		}
+
+		try {
+			if (! function_exists('wc_get_order')) {
+				return;
+			}
+			$order = wc_get_order($order_id);
+			$acc_num = '';
+			if ($order && is_a($order, 'WC_Order')) {
+				$acc_num = (string) $order->get_meta('ews_account_number');
+				$user_id = $order->get_customer_id();
+				if (empty($acc_num) && $user_id) {
+					$acc_num = (string) get_user_meta($user_id, 'ews_account_number', true);
+					if (empty($acc_num)) {
+						$acc_num = (string) get_user_meta($user_id, 'cwd_ews_account_number', true);
+					}
+					if (empty($acc_num)) {
+						$acc_num = 'EWS-' . str_pad((string) $user_id, 6, '0', STR_PAD_LEFT);
+						update_user_meta($user_id, 'ews_account_number', $acc_num);
+					}
+					$order->update_meta_data('ews_account_number', $acc_num);
+					$order->save();
+				}
+			}
+
+			$odoo_url = defined('CWD_ODOO_BASE_URL') ? CWD_ODOO_BASE_URL : get_option('cwd_odoo_base_url', '');
+			$odoo_url = apply_filters('cwd_v2_odoo_base_url', $odoo_url);
+			if (empty($odoo_url)) {
+				return;
+			}
+
+			$secret = defined('CWD_ODOO_SECRET_KEY') ? CWD_ODOO_SECRET_KEY : get_option('cwd_odoo_secret_key', '');
+			$endpoint = rtrim($odoo_url, '/') . '/la_woocommerce/webhook/order';
+
+			// Fire non-blocking asynchronous request so customer checkout is never delayed
+			wp_remote_post($endpoint, array(
+				'timeout'   => 5,
+				'blocking'  => false,
+				'headers'   => array(
+					'Content-Type'  => 'application/json',
+					'X-Odoo-Secret' => $secret,
+				),
+				'body'      => wp_json_encode(array(
+					'order_id'           => (int) $order_id,
+					'action'             => 'created',
+					'ews_account_number' => $acc_num,
+				)),
+			));
+		} catch (\Throwable $t) {
+			error_log('CWD Odoo Order Event Error: ' . $t->getMessage());
+		}
+	}
+}
+
+if (! function_exists('cwd_v2_attach_account_number_to_order')) {
+	/**
+	 * Automatically attach customer's authoritative EWS trade account number to new WooCommerce orders.
+	 */
+	function cwd_v2_attach_account_number_to_order($order, $data = null)
+	{
+		try {
+			if (! $order || ! is_a($order, 'WC_Order')) {
+				return;
+			}
+			$user_id = $order->get_customer_id();
+			if ($user_id) {
+				$acc = (string) get_user_meta($user_id, 'ews_account_number', true);
+				if (empty($acc)) {
+					$acc = (string) get_user_meta($user_id, 'cwd_ews_account_number', true);
+				}
+				if (empty($acc)) {
+					$acc = 'EWS-' . str_pad((string) $user_id, 6, '0', STR_PAD_LEFT);
+					update_user_meta($user_id, 'ews_account_number', $acc);
+				}
+				$order->update_meta_data('ews_account_number', $acc);
+			}
+		} catch (\Throwable $t) {
+			error_log('CWD Attach Account Error: ' . $t->getMessage());
+		}
+	}
+	add_action('woocommerce_checkout_create_order', 'cwd_v2_attach_account_number_to_order', 10, 2);
+}
+
+if (! function_exists('cwd_v2_notify_odoo_customer_event')) {
+	/**
+	 * Instant customer sync notification to Odoo ERP.
+	 * Dispatched asynchronously without blocking page loads or user checkout.
+	 *
+	 * @param int $user_id WordPress User ID
+	 */
+	function cwd_v2_notify_odoo_customer_event($user_id)
+	{
+		if (! $user_id) {
+			return;
+		}
+
+		try {
+			$user = get_userdata($user_id);
+			if (! $user) {
+				return;
+			}
+
+			$odoo_url = defined('CWD_ODOO_BASE_URL') ? CWD_ODOO_BASE_URL : get_option('cwd_odoo_base_url', '');
+			$odoo_url = apply_filters('cwd_v2_odoo_base_url', $odoo_url);
+			if (empty($odoo_url)) {
+				$odoo_url = 'https://lahoreanalytica-ewsupplies-uk-uat-38561474.dev.odoo.com';
+			}
+
+			$endpoint = rtrim($odoo_url, '/') . '/la_woocommerce/webhook/customer';
+
+			$credit_limit   = class_exists('CWD_V2_Credit_Logic') ? CWD_V2_Credit_Logic::get_user_credit_limit($user_id) : (float) get_user_meta($user_id, '_credit_limit', true);
+			$credit_balance = class_exists('CWD_V2_Credit_Logic') ? CWD_V2_Credit_Logic::get_user_credit_balance($user_id) : (float) get_user_meta($user_id, '_credit_balance', true);
+			$due_date       = (string) get_user_meta($user_id, '_credit_due_date', true);
+			$account_number = (string) get_user_meta($user_id, 'ews_account_number', true);
+			if (empty($account_number)) {
+				$account_number = 'EWS-' . str_pad($user_id, 6, '0', STR_PAD_LEFT);
+				update_user_meta($user_id, 'ews_account_number', $account_number);
+			}
+
+			$roles = (array) $user->roles;
+			$primary_role = in_array('credit_account', $roles, true) ? 'credit_account' : ($roles[0] ?? 'customer');
+
+			wp_remote_post($endpoint, array(
+				'timeout'  => 5,
+				'blocking' => false,
+				'headers'  => array(
+					'Content-Type' => 'application/json',
+				),
+				'body'     => wp_json_encode(array(
+					'user_id'            => (int) $user_id,
+					'email'              => $user->user_email,
+					'username'           => $user->user_login,
+					'first_name'         => $user->first_name,
+					'last_name'          => $user->last_name,
+					'phone'              => (string) (get_user_meta($user_id, 'billing_phone', true) ?: ''),
+					'company'            => (string) (get_user_meta($user_id, 'billing_company', true) ?: ''),
+					'ews_account_number' => $account_number,
+					'role'               => $primary_role,
+					'roles'              => $roles,
+					'credit_limit'       => $credit_limit,
+					'credit_balance'     => $credit_balance,
+					'credit_due_date'    => $due_date,
+				)),
+			));
+		} catch (\Throwable $t) {
+			error_log('CWD Odoo Customer Event Error: ' . $t->getMessage());
+		}
+	}
+}
+
 
 
 

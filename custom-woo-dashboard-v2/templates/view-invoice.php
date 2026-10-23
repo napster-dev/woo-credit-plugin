@@ -29,17 +29,18 @@ if (! $invoice) {
 
 $order = wc_get_order($invoice->order_id);
 
-$is_overdue   = CWD_V2_Invoices::is_overdue($invoice);
-$status_label = ucfirst($invoice->status);
-$status_class = 'cwd-v2-status-' . esc_attr($invoice->status);
+$is_written_off = in_array(strtolower((string) $invoice->status), array('written_off', 'marked_off'), true);
+$is_overdue   = ! $is_written_off && CWD_V2_Invoices::is_overdue($invoice);
+$status_label = $is_written_off ? __('MARKED OFF', 'custom-woo-dashboard') : ucfirst($invoice->status);
+$status_class = $is_written_off ? 'cwd-v2-status-written_off' : ('cwd-v2-status-' . esc_attr($invoice->status));
 if ($is_overdue) {
 	$status_label = __('Overdue', 'custom-woo-dashboard');
 	$status_class = 'cwd-v2-status-overdue';
 }
 
-$amount_due  = max(0, (float) $invoice->amount_total - (float) $invoice->amount_paid);
+$amount_due  = $is_written_off ? 0 : max(0, (float) $invoice->amount_total - (float) $invoice->amount_paid);
 $roles       = (array) $current_user->roles;
-$can_pay     = (CWD_V2_Invoices::STATUS_UNPAID === $invoice->status) && in_array('credit_account', $roles, true);
+$can_pay     = ! $is_written_off && (CWD_V2_Invoices::STATUS_UNPAID === $invoice->status) && in_array('credit_account', $roles, true);
 $document_url = apply_filters('cwd_v2_invoice_document_url', $invoice->document_url ?? '', $invoice);
 ?>
 <div class="cwd-v2-invoice-view" id="cwd-v2-invoice-print-area">
@@ -49,8 +50,11 @@ $document_url = apply_filters('cwd_v2_invoice_document_url', $invoice->document_
 			<p><span class="cwd-v2-status-badge <?php echo $status_class; ?>"><?php echo esc_html($status_label); ?></span></p>
 		</div>
 		<nav class="cwd-v2-section-links" aria-label="<?php esc_attr_e('Invoice actions', 'custom-woo-dashboard'); ?>">
-			<button type="button" class="cwd-v2-print-button" onclick="window.print();"><?php esc_html_e('Print / Save as PDF', 'custom-woo-dashboard'); ?></button>
-			<?php if ($document_url) : ?><a href="<?php echo esc_url($document_url); ?>" target="_blank" rel="noopener"><?php esc_html_e('Download Invoice', 'custom-woo-dashboard'); ?></a><?php endif; ?>
+			<?php if ($document_url) : ?>
+				<a href="<?php echo esc_url($document_url); ?>" class="cwd-v2-button cwd-v2-button-primary" target="_blank" rel="noopener">
+					<span class="dashicons dashicons-pdf" style="vertical-align: middle; margin-right: 4px;"></span><?php esc_html_e('Download Odoo Invoice (PDF)', 'custom-woo-dashboard'); ?>
+				</a>
+			<?php endif; ?>
 		</nav>
 	</div>
 

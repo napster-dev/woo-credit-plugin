@@ -10,7 +10,7 @@ $invoices = class_exists('CWD_V2_Invoices') ? CWD_V2_Invoices::get_invoices_for_
 $transactions = class_exists('CWD_V2_Account_Ledger') ? CWD_V2_Account_Ledger::get_transactions_for_user($user_id, 100) : array();
 $outstanding = 0;
 foreach ($invoices as $invoice) {
-    if (CWD_V2_Invoices::STATUS_PAID === $invoice->status || CWD_V2_Invoices::STATUS_VOID === $invoice->status) {
+    if (CWD_V2_Invoices::STATUS_PAID === $invoice->status || CWD_V2_Invoices::STATUS_VOID === $invoice->status || in_array(strtolower((string) $invoice->status), array('written_off', 'marked_off'), true)) {
         continue;
     }
     $outstanding += max(0, (float) $invoice->amount_total - (float) $invoice->amount_paid);

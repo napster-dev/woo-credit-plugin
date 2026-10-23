@@ -62,15 +62,15 @@
     box-sizing: border-box !important;
 }
 
-/* Each Button Slot: Standalone 240px wide, 48px height rounded black pill */
+/* Each Button Slot: Standalone 200px wide, 44px height rounded black pill */
 .cwd-blink-btn-slot {
-    flex: 0 1 240px !important;
-    width: 240px !important;
-    max-width: 260px !important;
-    min-width: 180px !important;
-    height: 48px !important;
-    min-height: 48px !important;
-    max-height: 48px !important;
+    flex: 0 1 200px !important;
+    width: 200px !important;
+    max-width: 210px !important;
+    min-width: 160px !important;
+    height: 44px !important;
+    min-height: 44px !important;
+    max-height: 44px !important;
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
@@ -92,8 +92,8 @@
 .cwd-blink-btn-slot .cwd-blink-pay-form {
     width: 100% !important;
     height: 100% !important;
-    min-height: 48px !important;
-    max-height: 48px !important;
+    min-height: 44px !important;
+    max-height: 44px !important;
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
@@ -120,9 +120,9 @@
 /* Google Pay #container */
 .cwd-blink-btn-slot #container {
     width: 100% !important;
-    height: 48px !important;
-    min-height: 48px !important;
-    max-height: 48px !important;
+    height: 44px !important;
+    min-height: 44px !important;
+    max-height: 44px !important;
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
@@ -140,9 +140,9 @@
 .cwd-blink-btn-slot #container > iframe,
 .cwd-blink-btn-slot .gpay-button {
     width: 100% !important;
-    height: 48px !important;
-    min-height: 48px !important;
-    max-height: 48px !important;
+    height: 44px !important;
+    min-height: 44px !important;
+    max-height: 44px !important;
     border-radius: 6px !important;
     cursor: pointer !important;
     box-sizing: border-box !important;
@@ -183,9 +183,9 @@
 /* Apple Pay wrapper and button */
 .cwd-blink-btn-slot #blinkApplePay {
     width: 100% !important;
-    height: 48px !important;
-    min-height: 48px !important;
-    max-height: 48px !important;
+    height: 44px !important;
+    min-height: 44px !important;
+    max-height: 44px !important;
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
@@ -199,14 +199,14 @@
 .cwd-blink-btn-slot #apple-pay-btn,
 apple-pay-button#apple-pay-btn {
     --apple-pay-button-width: 100% !important;
-    --apple-pay-button-height: 48px !important;
+    --apple-pay-button-height: 44px !important;
     --apple-pay-button-border-radius: 6px !important;
     --apple-pay-button-padding: 0px !important;
     --apple-pay-button-box-sizing: border-box !important;
     width: 100% !important;
-    height: 48px !important;
-    min-height: 48px !important;
-    max-height: 48px !important;
+    height: 44px !important;
+    min-height: 44px !important;
+    max-height: 44px !important;
     border-radius: 6px !important;
     cursor: pointer !important;
     box-sizing: border-box !important;
@@ -241,9 +241,9 @@ apple-pay-button#apple-pay-btn {
 /* Native placeholder buttons */
 .cwd-native-pay-btn {
     width: 100% !important;
-    height: 48px !important;
-    min-height: 48px !important;
-    max-height: 48px !important;
+    height: 44px !important;
+    min-height: 44px !important;
+    max-height: 44px !important;
     border-radius: 6px !important;
     border: none !important;
     cursor: pointer !important;

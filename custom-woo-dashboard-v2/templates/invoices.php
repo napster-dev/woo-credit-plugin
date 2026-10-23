@@ -57,9 +57,10 @@ $all_url  = esc_url(add_query_arg('cwd_status', 'all', wc_get_endpoint_url('invo
 				<tbody>
 					<?php foreach ($invoices as $invoice) : ?>
 						<?php
-						$is_overdue    = CWD_V2_Invoices::is_overdue($invoice);
-						$status_label  = ucfirst($invoice->status);
-						$status_class  = 'cwd-v2-status-' . esc_attr($invoice->status);
+						$is_written_off = in_array(strtolower((string) $invoice->status), array('written_off', 'marked_off'), true);
+						$is_overdue    = ! $is_written_off && CWD_V2_Invoices::is_overdue($invoice);
+						$status_label  = $is_written_off ? __('MARKED OFF', 'custom-woo-dashboard') : ucfirst($invoice->status);
+						$status_class  = $is_written_off ? 'cwd-v2-status-written_off' : ('cwd-v2-status-' . esc_attr($invoice->status));
 						if ($is_overdue) {
 							$status_label = __('Overdue', 'custom-woo-dashboard');
 							$status_class = 'cwd-v2-status-overdue';
@@ -89,7 +90,7 @@ $all_url  = esc_url(add_query_arg('cwd_status', 'all', wc_get_endpoint_url('invo
 								<?php echo esc_html(date_i18n(wc_date_format(), strtotime($invoice->due_date))); ?>
 							</td>
 							<td class="td-num" data-title="<?php esc_attr_e('Outstanding', 'custom-woo-dashboard'); ?>" style="font-weight: 600; color: #0f172a; white-space: nowrap;">
-								<?php echo wp_kses_post(wc_price(max(0, (float) $invoice->amount_total - (float) $invoice->amount_paid))); ?>
+								<?php echo wp_kses_post(wc_price($is_written_off ? 0 : max(0, (float) $invoice->amount_total - (float) $invoice->amount_paid))); ?>
 							</td>
 							<td data-title="<?php esc_attr_e('Status', 'woocommerce'); ?>" style="text-align: center; white-space: nowrap;">
 								<span class="cwd-v2-status-badge <?php echo $status_class; ?>"><?php echo esc_html($status_label); ?></span>

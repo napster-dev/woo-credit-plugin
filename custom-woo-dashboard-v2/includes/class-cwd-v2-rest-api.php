@@ -22,6 +22,9 @@ class CWD_V2_REST_API
 		// Expose credit info in WooCommerce REST API Customer response
 		add_filter('woocommerce_rest_prepare_customer', array(__CLASS__, 'prepare_rest_customer_response'), 10, 3);
 
+		// Expose EWS account number in WooCommerce REST API Order response
+		add_filter('woocommerce_rest_prepare_shop_order_object', array(__CLASS__, 'prepare_rest_order_response'), 10, 3);
+
 		// Register a dedicated direct sync route for Odoo
 		add_action('rest_api_init', array(__CLASS__, 'register_credit_sync_routes'));
 	}
@@ -121,6 +124,36 @@ class CWD_V2_REST_API
 								return true;
 							}
 						}
+					}
+				}
+			}
+
+			// 2.5 WooCommerce API Keys check (matches active WooCommerce instance keys)
+			$woo_ck = $request->get_header('X-Woo-Consumer-Key') ?: $request->get_param('consumer_key');
+			$woo_cs = $request->get_header('X-Woo-Consumer-Secret') ?: $request->get_param('consumer_secret');
+			if (empty($woo_ck) && 0 === stripos($raw_auth, 'basic ')) {
+				$decoded_auth = base64_decode(substr($raw_auth, 6));
+				if (false !== $decoded_auth && strpos($decoded_auth, ':') !== false) {
+					list($maybe_ck, $maybe_cs) = explode(':', $decoded_auth, 2);
+					if (0 === strpos($maybe_ck, 'ck_')) {
+						$woo_ck = $maybe_ck;
+						$woo_cs = $maybe_cs;
+					}
+				}
+			}
+
+			if (! empty($woo_ck) && ! empty($woo_cs) && function_exists('wc_api_hash')) {
+				global $wpdb;
+				$key = $wpdb->get_row($wpdb->prepare(
+					"SELECT user_id, permissions, consumer_secret FROM {$wpdb->prefix}woocommerce_api_keys WHERE consumer_key = %s",
+					wc_api_hash($woo_ck)
+				));
+				if ($key && hash_equals($key->consumer_secret, $woo_cs)) {
+					if (in_array($key->permissions, array('read_write', 'write'), true)) {
+						if (! empty($key->user_id)) {
+							wp_set_current_user($key->user_id);
+						}
+						return true;
 					}
 				}
 			}
@@ -228,6 +261,18 @@ class CWD_V2_REST_API
 		$available_credit = max(0, $credit_limit - $credit_balance);
 		$due_date         = (string) get_user_meta($user_id, '_credit_due_date', true);
 		$account_number   = (string) get_user_meta($user_id, 'ews_account_number', true);
+		if (empty($account_number)) {
+			$account_number = (string) get_user_meta($user_id, 'cwd_ews_account_number', true);
+		}
+		if (empty($account_number)) {
+			$account_number = (string) get_user_meta($user_id, 'trade_number', true);
+		}
+		if (empty($account_number)) {
+			$account_number = 'EWS-' . str_pad((string) $user_id, 6, '0', STR_PAD_LEFT);
+		}
+		if (get_user_meta($user_id, 'ews_account_number', true) !== $account_number) {
+			update_user_meta($user_id, 'ews_account_number', $account_number);
+		}
 
 		$data = $response->get_data();
 		$data['credit_account'] = array(
@@ -238,7 +283,80 @@ class CWD_V2_REST_API
 			'credit_due_date'    => $due_date,
 			'ews_account_number' => $account_number,
 		);
+
+		// Guarantee ews_account_number is also present in standard meta_data array
+		$meta_data = isset($data['meta_data']) && is_array($data['meta_data']) ? $data['meta_data'] : array();
+		$found_meta = false;
+		foreach ($meta_data as &$m_entry) {
+			if (isset($m_entry['key']) && $m_entry['key'] === 'ews_account_number') {
+				$m_entry['value'] = $account_number;
+				$found_meta = true;
+				break;
+			}
+		}
+		unset($m_entry);
+		if (! $found_meta) {
+			$meta_data[] = array(
+				'id'    => 0,
+				'key'   => 'ews_account_number',
+				'value' => $account_number,
+			);
+		}
+		$data['meta_data'] = $meta_data;
+
 		$response->set_data($data);
+
+		return $response;
+	}
+
+	/**
+	 * Ensure WooCommerce REST API Order response always includes authoritative ews_account_number in meta_data
+	 */
+	public static function prepare_rest_order_response($response, $order, $request)
+	{
+		try {
+			if (! $order || ! is_a($order, 'WC_Order')) {
+				return $response;
+			}
+
+			$user_id = $order->get_customer_id();
+			$acc_num = (string) $order->get_meta('ews_account_number');
+			if (empty($acc_num) && $user_id) {
+				$acc_num = (string) get_user_meta($user_id, 'ews_account_number', true);
+				if (empty($acc_num)) {
+					$acc_num = (string) get_user_meta($user_id, 'cwd_ews_account_number', true);
+				}
+				if (empty($acc_num)) {
+					$acc_num = 'EWS-' . str_pad((string) $user_id, 6, '0', STR_PAD_LEFT);
+				}
+			}
+
+			if (! empty($acc_num) && is_object($response) && method_exists($response, 'get_data')) {
+				$data = $response->get_data();
+				$meta_data = isset($data['meta_data']) && is_array($data['meta_data']) ? $data['meta_data'] : array();
+				$found = false;
+				foreach ($meta_data as &$m) {
+					if (isset($m['key']) && $m['key'] === 'ews_account_number') {
+						$m['value'] = $acc_num;
+						$found = true;
+						break;
+					}
+				}
+				unset($m);
+				if (! $found) {
+					$meta_data[] = array(
+						'id'    => 0,
+						'key'   => 'ews_account_number',
+						'value' => $acc_num,
+					);
+				}
+				$data['meta_data'] = $meta_data;
+				$data['ews_account_number'] = $acc_num;
+				$response->set_data($data);
+			}
+		} catch (\Throwable $e) {
+			error_log('CWD REST Order Response Error: ' . $e->getMessage());
+		}
 
 		return $response;
 	}
@@ -313,6 +431,23 @@ class CWD_V2_REST_API
 					'amount_paid'     => array( 'type' => 'number',  'required' => false ),
 					'status'          => array( 'type' => 'string',  'required' => false ),
 					'document_url'    => array( 'type' => 'string',  'required' => false ),
+				),
+			)
+		);
+
+		register_rest_route(
+			'cwd/v2',
+			'/sync-tracking',
+			array(
+				'methods'             => 'POST',
+				'callback'            => array( __CLASS__, 'handle_direct_tracking_sync' ),
+				'permission_callback' => array( __CLASS__, 'rest_meta_auth_callback' ),
+				'args'                => array(
+					'order_id'         => array( 'type' => 'string',  'required' => true ),
+					'carrier'          => array( 'type' => 'string',  'required' => false ),
+					'tracking_number'  => array( 'type' => 'string',  'required' => true ),
+					'tracking_url'     => array( 'type' => 'string',  'required' => false ),
+					'notify_customer'  => array( 'type' => 'boolean', 'required' => false ),
 				),
 			)
 		);
@@ -468,6 +603,108 @@ class CWD_V2_REST_API
 				'credit_balance' => $live_balance,
 			),
 			$ok ? 200 : 500
+		);
+	}
+
+	/**
+	 * Process direct tracking sync request from Odoo
+	 *
+	 * @param WP_REST_Request $request
+	 * @return WP_REST_Response
+	 */
+	public static function handle_direct_tracking_sync($request)
+	{
+		$order_id        = sanitize_text_field($request->get_param('order_id'));
+		$carrier         = sanitize_text_field($request->get_param('carrier') ?: 'Royal Mail');
+		$tracking_number = sanitize_text_field($request->get_param('tracking_number'));
+		$tracking_url    = esc_url_raw($request->get_param('tracking_url') ?: '');
+		$notify_customer = (bool) $request->get_param('notify_customer');
+
+		if (empty($order_id) || empty($tracking_number)) {
+			return new WP_REST_Response(
+				array('success' => false, 'message' => __('Order ID and tracking number are required.', 'custom-woo-dashboard')),
+				400
+			);
+		}
+
+		$order = wc_get_order($order_id);
+		if (! $order instanceof WC_Order) {
+			return new WP_REST_Response(
+				array('success' => false, 'message' => __('Order not found.', 'custom-woo-dashboard')),
+				404
+			);
+		}
+
+		// 1. Save using CWD_V2_Shipment_Tracking if available
+		if (class_exists('CWD_V2_Shipment_Tracking')) {
+			CWD_V2_Shipment_Tracking::add_tracking_item(
+				$order,
+				array(
+					'tracking_provider'    => $carrier,
+					'tracking_number'      => $tracking_number,
+					'custom_tracking_link' => $tracking_url,
+					'date_shipped'         => current_time('Y-m-d'),
+				),
+				$notify_customer
+			);
+		}
+
+		// 2. Set standard WooCommerce, AST, and ParcelPanel/ParcelWILL meta
+		$order->update_meta_data('_tracking_number', $tracking_number);
+		$order->update_meta_data('tracking_number', $tracking_number);
+		$order->update_meta_data('_tracking_provider', $carrier);
+		$order->update_meta_data('tracking_provider', $carrier);
+		if (! empty($tracking_url)) {
+			$order->update_meta_data('_custom_tracking_link', $tracking_url);
+			$order->update_meta_data('custom_tracking_link', $tracking_url);
+		}
+		$order->update_meta_data('_parcelpanel_tracking_number', $tracking_number);
+		$order->update_meta_data('_parcelpanel_carrier', $carrier);
+		$order->update_meta_data('_parcelpanel_tracking_url', $tracking_url);
+
+		// Also populate standard WooCommerce Shipment Tracking items array
+		$existing_items = $order->get_meta('_wc_shipment_tracking_items', true);
+		if (! is_array($existing_items)) {
+			$existing_items = array();
+		}
+		$item_exists = false;
+		foreach ($existing_items as $ei) {
+			if (($ei['tracking_number'] ?? '') === $tracking_number) {
+				$item_exists = true;
+				break;
+			}
+		}
+		if (! $item_exists) {
+			$existing_items[] = array(
+				'tracking_provider'    => $carrier,
+				'tracking_number'      => $tracking_number,
+				'custom_tracking_link' => $tracking_url,
+				'date_shipped'         => current_time('Y-m-d'),
+			);
+			$order->update_meta_data('_wc_shipment_tracking_items', $existing_items);
+			$order->update_meta_data('_shipment_tracking_items', $existing_items);
+		}
+
+		// Add note to order history
+		$note = sprintf(
+			__('Tracking details updated from Odoo: %1$s - %2$s', 'custom-woo-dashboard'),
+			$carrier,
+			$tracking_number
+		);
+		if (! empty($tracking_url)) {
+			$note .= ' (' . $tracking_url . ')';
+		}
+		$order->add_order_note($note, $notify_customer);
+		$order->save();
+
+		return new WP_REST_Response(
+			array(
+				'success'         => true,
+				'order_id'        => $order->get_id(),
+				'tracking_number' => $tracking_number,
+				'carrier'         => $carrier,
+			),
+			200
 		);
 	}
 }
