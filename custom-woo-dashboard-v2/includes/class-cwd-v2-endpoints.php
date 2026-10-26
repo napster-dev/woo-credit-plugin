@@ -46,9 +46,9 @@ class CWD_V2_Endpoints
 		add_action('woocommerce_after_edit_account_form', array(__CLASS__, 'render_wordfence_2fa_section'), 99);
 
 		// Ensure endpoints are flushed once after this update
-		if ('yes' !== get_option('cwd_v2_endpoints_flushed_unplaced_v1')) {
+		if ('yes' !== get_option('cwd_v2_endpoints_flushed_unplaced_v2')) {
 			flush_rewrite_rules(false);
-			update_option('cwd_v2_endpoints_flushed_unplaced_v1', 'yes');
+			update_option('cwd_v2_endpoints_flushed_unplaced_v2', 'yes');
 		}
 	}
 
@@ -324,6 +324,19 @@ class CWD_V2_Endpoints
 				$myaccount = wc_get_page_permalink('myaccount');
 				if ($myaccount) {
 					$target = trailingslashit($myaccount) . 'credit/';
+				}
+			}
+			self::$filtering_endpoint = false;
+			return $target;
+		}
+
+		if ('unplaced-orders' === $endpoint) {
+			self::$filtering_endpoint = true;
+			$target = str_replace('/unplaced-orders', '/saved-baskets', (string) $url);
+			if (strpos($target, '/saved-baskets') === false && function_exists('wc_get_page_permalink')) {
+				$myaccount = wc_get_page_permalink('myaccount');
+				if ($myaccount) {
+					$target = trailingslashit($myaccount) . 'saved-baskets/';
 				}
 			}
 			self::$filtering_endpoint = false;

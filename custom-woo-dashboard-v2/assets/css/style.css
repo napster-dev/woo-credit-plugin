@@ -791,7 +791,7 @@ a[href*="page=WFLS#top#settings"] {
 }
 
 .cwd-btn-new-order {
-    background: #9333ea !important;
+    background: #0284c7 !important;
     color: #ffffff !important;
     font-size: 13px !important;
     font-weight: 700 !important;
@@ -805,10 +805,11 @@ a[href*="page=WFLS#top#settings"] {
     transition: background 0.15s ease, transform 0.1s ease !important;
     border: none !important;
     cursor: pointer !important;
+    box-shadow: 0 2px 6px rgba(2, 132, 199, 0.3) !important;
 }
 
 .cwd-btn-new-order:hover {
-    background: #7e22ce !important;
+    background: #0369a1 !important;
     color: #ffffff !important;
     text-decoration: none !important;
     transform: translateY(-1px);
@@ -868,7 +869,7 @@ a[href*="page=WFLS#top#settings"] {
 }
 
 .cwd-nav-item.is-active {
-    color: #9333ea;
+    color: #0284c7;
     background: #ffffff;
     font-weight: 700;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
@@ -881,7 +882,7 @@ a[href*="page=WFLS#top#settings"] {
     top: 6px;
     bottom: 6px;
     width: 4px;
-    background: #9333ea;
+    background: #0284c7;
     border-radius: 4px 0 0 4px;
 }
 
@@ -896,8 +897,8 @@ a[href*="page=WFLS#top#settings"] {
 }
 
 .cwd-nav-item.is-active .cwd-nav-badge {
-    background: #f3e8ff;
-    color: #9333ea;
+    background: #e0f2fe;
+    color: #0284c7;
 }
 
 /* Search Bar */
@@ -919,8 +920,8 @@ a[href*="page=WFLS#top#settings"] {
 }
 
 .cwd-search-inner:focus-within {
-    border-color: #9333ea;
-    box-shadow: 0 0 0 3px rgba(147, 51, 234, 0.15);
+    border-color: #0284c7;
+    box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.15);
 }
 
 .cwd-search-icon {
@@ -966,13 +967,13 @@ a[href*="page=WFLS#top#settings"] {
     box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
 }
 
-/* Micro pink labels */
+/* Micro theme labels */
 .cwd-micro-label {
     font-size: 10.5px !important;
     font-weight: 700 !important;
     text-transform: uppercase !important;
     letter-spacing: 0.06em !important;
-    color: #ec4899 !important;
+    color: #0284c7 !important;
     display: block !important;
     margin-bottom: 4px !important;
     line-height: 1.2 !important;
@@ -990,7 +991,7 @@ a[href*="page=WFLS#top#settings"] {
 
 .cwd-card-po-title {
     margin: 0 0 2px 0 !important;
-    font-size: 20px !important;
+    font-size: 19px !important;
     font-weight: 800 !important;
     color: #0f172a !important;
     line-height: 1.2 !important;
@@ -1020,9 +1021,9 @@ a[href*="page=WFLS#top#settings"] {
 }
 
 .cwd-badge-processing {
-    background: #e0e7ff;
-    color: #3730a3;
-    border: 1px solid #c7d2fe;
+    background: #e0f2fe;
+    color: #0369a1;
+    border: 1px solid #bae6fd;
 }
 
 .cwd-badge-on-hold {
@@ -1044,7 +1045,7 @@ a[href*="page=WFLS#top#settings"] {
 }
 
 .cwd-btn-card-action {
-    background: #4f46e5 !important;
+    background: #0284c7 !important;
     color: #ffffff !important;
     padding: 9px 16px !important;
     border-radius: 6px !important;
@@ -1057,11 +1058,11 @@ a[href*="page=WFLS#top#settings"] {
     justify-content: center !important;
     white-space: nowrap !important;
     transition: background 0.15s ease !important;
-    box-shadow: 0 1px 2px rgba(79, 70, 229, 0.2) !important;
+    box-shadow: 0 1px 3px rgba(2, 132, 199, 0.25) !important;
 }
 
 .cwd-btn-card-action:hover {
-    background: #4338ca !important;
+    background: #0369a1 !important;
     color: #ffffff !important;
     text-decoration: none !important;
 }
@@ -1101,7 +1102,7 @@ a[href*="page=WFLS#top#settings"] {
     width: 24px;
     height: 24px;
     border-radius: 50%;
-    background: #166534;
+    background: #0284c7;
     color: #ffffff;
     font-size: 12px;
     font-weight: 700;
@@ -1250,7 +1251,7 @@ a[href*="page=WFLS#top#settings"] {
 }
 
 .cwd-estimate-tracking a {
-    color: #4f46e5;
+    color: #0284c7;
     font-weight: 600;
     font-size: 12.5px;
     text-decoration: none;
@@ -1407,7 +1408,7 @@ a[href*="page=WFLS#top#settings"] {
 
 .cwd-btn-start-order {
     display: inline-block !important;
-    background: #9333ea !important;
+    background: #0284c7 !important;
     color: #ffffff !important;
     padding: 10px 22px !important;
     border-radius: 6px !important;
@@ -1417,7 +1418,7 @@ a[href*="page=WFLS#top#settings"] {
 }
 
 .cwd-btn-start-order:hover {
-    background: #7e22ce !important;
+    background: #0369a1 !important;
     color: #ffffff !important;
     text-decoration: none !important;
 }

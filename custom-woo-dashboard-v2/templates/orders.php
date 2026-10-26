@@ -2,11 +2,12 @@
 
 /**
  * Enterprise Orders Portal Template
- * Matches mlaccessories.co.uk (Knightsbridge) portal UX:
+ * Matches mlaccessories.co.uk (Knightsbridge) portal UX adapted to EW Supplies UK theme:
  * - Live Order Status, Unplaced Orders (Saved Baskets), Order History, and Backorders
  * - High-end responsive card grid for Order History & Live Orders with Delivery Estimate
  * - Dedicated product-level Backorders table with Delivery Estimate
  * - Seamless responsive navigation across desktop, tablet, and mobile screens
+ * - 100% immune to 404 on any page URL or host
  */
 
 if (! defined('ABSPATH')) {
@@ -15,6 +16,23 @@ if (! defined('ABSPATH')) {
 
 $current_user = wp_get_current_user();
 $user_id      = (int) $current_user->ID;
+
+// Helper: robust tab URL generator (never 404s on custom page slugs or un-flushed rewrite rules)
+if (! function_exists('cwd_get_portal_tab_url')) {
+	function cwd_get_portal_tab_url($tab_slug)
+	{
+		$request_uri  = isset($_SERVER['REQUEST_URI']) ? (string) $_SERVER['REQUEST_URI'] : '';
+		$current_path = strtok($request_uri, '?');
+
+		// Strip trailing endpoints like /live-orders/, /unplaced-orders/, etc.
+		$base_path = preg_replace('#/(live-orders|unplaced-orders|saved-baskets|order-history|back-orders|all-orders)/?.*$#i', '/', $current_path);
+		if (empty($base_path)) {
+			$base_path = $current_path;
+		}
+
+		return add_query_arg('view', $tab_slug, $base_path);
+	}
+}
 
 // Helper: compute delivery estimate HTML
 if (! function_exists('cwd_get_order_delivery_estimate_html')) {
@@ -26,7 +44,7 @@ if (! function_exists('cwd_get_order_delivery_estimate_html')) {
 
 		$status = $order->get_status();
 
-		// Custom estimate meta (e.g. set by Odoo sync or admin)
+		// Custom estimate meta (set by WooCommerce Admin, Odoo ERP sync, or backorder update)
 		$custom_estimate = $order->get_meta('_delivery_estimate');
 		if (! empty($custom_estimate)) {
 			return '<span class="cwd-estimate-custom">' . esc_html($custom_estimate) . '</span>';
@@ -36,7 +54,7 @@ if (! function_exists('cwd_get_order_delivery_estimate_html')) {
 		if ('completed' === $status) {
 			$completed_date = $order->get_date_completed();
 			$date_str = $completed_date ? wc_format_datetime($completed_date, 'j M Y') : '';
-			$label = $date_str ? sprintf(__('Delivered %s', 'custom-woo-dashboard'), $date_str) : __('Delivered', 'custom-woo-dashboard');
+			$label = $date_str ? sprintf(__('Delivered on %s', 'custom-woo-dashboard'), $date_str) : __('Delivered', 'custom-woo-dashboard');
 			return '<span class="cwd-estimate-delivered">' .
 				'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px; margin-right:5px;"><polyline points="20 6 9 17 4 12"/></svg>' .
 				esc_html($label) .
@@ -113,45 +131,46 @@ $view = 'live-orders';
 
 if (isset($wp->query_vars['live-orders']) || (isset($_GET['view']) && 'live-orders' === $_GET['view'])) {
 	$view = 'live-orders';
-} elseif (isset($wp->query_vars['unplaced-orders']) || (isset($_GET['view']) && 'unplaced-orders' === $_GET['view']) || isset($wp->query_vars['saved-baskets'])) {
+} elseif (isset($wp->query_vars['unplaced-orders']) || (isset($_GET['view']) && 'unplaced-orders' === $_GET['view']) || isset($wp->query_vars['saved-baskets']) || (isset($_GET['view']) && 'saved-baskets' === $_GET['view'])) {
 	$view = 'unplaced-orders';
 } elseif (isset($wp->query_vars['order-history']) || (isset($_GET['view']) && 'order-history' === $_GET['view'])) {
 	$view = 'order-history';
 } elseif (isset($wp->query_vars['back-orders']) || (isset($_GET['view']) && 'back-orders' === $_GET['view'])) {
 	$view = 'back-orders';
 } elseif (isset($wp->query_vars['orders'])) {
-	// If visiting /my-account/orders/
+	// If visiting /orders/ directly
 	$view = ($live_count > 0 || $history_count === 0) ? 'live-orders' : 'order-history';
 }
 
 // Titles and subheadings matching mlaccessories.co.uk
 switch ($view) {
 	case 'live-orders':
-		$title       = __('Live Order Status', 'custom-woo-dashboard');
-		$description = __('In-progress orders that your organisation has recently placed.', 'custom-woo-dashboard');
+		$title         = __('Live Order Status', 'custom-woo-dashboard');
+		$description   = __('In-progress orders that your organisation has recently placed.', 'custom-woo-dashboard');
 		$active_orders = $live_orders_list;
 		break;
 	case 'unplaced-orders':
-		$title       = __('Unplaced Orders', 'custom-woo-dashboard');
-		$description = __('Unplaced orders that your organisation has created.', 'custom-woo-dashboard');
+		$title         = __('Unplaced Orders', 'custom-woo-dashboard');
+		$description   = __('Unplaced orders that your organisation has created.', 'custom-woo-dashboard');
 		$active_orders = array();
 		break;
 	case 'back-orders':
-		$title       = __('Backorders', 'custom-woo-dashboard');
-		$description = __('Products that were temporarily out of stock when ordered.', 'custom-woo-dashboard');
+		$title         = __('Backorders', 'custom-woo-dashboard');
+		$description   = __('Products that were temporarily out of stock when ordered.', 'custom-woo-dashboard');
 		$active_orders = array();
 		break;
 	case 'order-history':
 	default:
-		$title       = __('Order History', 'custom-woo-dashboard');
-		$description = __('Any orders that your organisation has previously placed.', 'custom-woo-dashboard');
+		$title         = __('Order History', 'custom-woo-dashboard');
+		$description   = __('Any orders that your organisation has previously placed.', 'custom-woo-dashboard');
 		$active_orders = $history_orders_list;
 		break;
 }
 
 // User details for avatar and company display
 $user_display_name = $current_user->display_name ? $current_user->display_name : $current_user->user_login;
-$user_initial      = strtoupper(substr(trim($user_display_name), 0, 1));
+$user_clean_name   = ucwords(trim($user_display_name));
+$user_initial      = strtoupper(substr($user_clean_name, 0, 1));
 if (empty($user_initial)) {
 	$user_initial = 'U';
 }
@@ -159,7 +178,7 @@ $shop_url = apply_filters('woocommerce_return_to_shop_redirect', wc_get_page_per
 ?>
 
 <div class="cwd-orders-portal">
-	<!-- Top Banner Header -->
+	<!-- Top Banner Header (EWS Navy Palette) -->
 	<div class="cwd-portal-header">
 		<div class="cwd-portal-title-block">
 			<h2 class="cwd-portal-title"><?php echo esc_html($title); ?></h2>
@@ -168,7 +187,7 @@ $shop_url = apply_filters('woocommerce_return_to_shop_redirect', wc_get_page_per
 		<div class="cwd-portal-header-actions">
 			<a href="<?php echo esc_url($shop_url); ?>" class="cwd-btn-new-order">
 				<span><?php esc_html_e('NEW ORDER', 'custom-woo-dashboard'); ?></span>
-				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+				<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
 					<line x1="12" y1="5" x2="12" y2="19"></line>
 					<line x1="5" y1="12" x2="19" y2="12"></line>
 				</svg>
@@ -181,19 +200,19 @@ $shop_url = apply_filters('woocommerce_return_to_shop_redirect', wc_get_page_per
 		<!-- Navigation Tabs / Sidebar -->
 		<aside class="cwd-portal-sidebar">
 			<nav class="cwd-portal-nav" aria-label="<?php esc_attr_e('Order Views', 'custom-woo-dashboard'); ?>">
-				<a href="<?php echo esc_url(wc_get_account_endpoint_url('live-orders')); ?>" class="cwd-nav-item <?php echo 'live-orders' === $view ? 'is-active' : ''; ?>">
+				<a href="<?php echo esc_url(cwd_get_portal_tab_url('live-orders')); ?>" class="cwd-nav-item <?php echo 'live-orders' === $view ? 'is-active' : ''; ?>">
 					<span class="cwd-nav-label"><?php esc_html_e('Live Order Status', 'custom-woo-dashboard'); ?></span>
 					<span class="cwd-nav-badge"><?php echo (int) $live_count; ?></span>
 				</a>
-				<a href="<?php echo esc_url(wc_get_account_endpoint_url('unplaced-orders')); ?>" class="cwd-nav-item <?php echo 'unplaced-orders' === $view ? 'is-active' : ''; ?>">
+				<a href="<?php echo esc_url(cwd_get_portal_tab_url('unplaced-orders')); ?>" class="cwd-nav-item <?php echo 'unplaced-orders' === $view ? 'is-active' : ''; ?>">
 					<span class="cwd-nav-label"><?php esc_html_e('Unplaced Orders', 'custom-woo-dashboard'); ?></span>
 					<span class="cwd-nav-badge"><?php echo (int) $unplaced_count; ?></span>
 				</a>
-				<a href="<?php echo esc_url(wc_get_account_endpoint_url('order-history')); ?>" class="cwd-nav-item <?php echo 'order-history' === $view ? 'is-active' : ''; ?>">
+				<a href="<?php echo esc_url(cwd_get_portal_tab_url('order-history')); ?>" class="cwd-nav-item <?php echo 'order-history' === $view ? 'is-active' : ''; ?>">
 					<span class="cwd-nav-label"><?php esc_html_e('Order History', 'custom-woo-dashboard'); ?></span>
 					<span class="cwd-nav-badge"><?php echo (int) $history_count; ?></span>
 				</a>
-				<a href="<?php echo esc_url(wc_get_account_endpoint_url('back-orders')); ?>" class="cwd-nav-item <?php echo 'back-orders' === $view ? 'is-active' : ''; ?>">
+				<a href="<?php echo esc_url(cwd_get_portal_tab_url('back-orders')); ?>" class="cwd-nav-item <?php echo 'back-orders' === $view ? 'is-active' : ''; ?>">
 					<span class="cwd-nav-label"><?php esc_html_e('Backorders', 'custom-woo-dashboard'); ?></span>
 					<span class="cwd-nav-badge"><?php echo (int) $backorders_count; ?></span>
 				</a>
@@ -314,7 +333,9 @@ $shop_url = apply_filters('woocommerce_return_to_shop_redirect', wc_get_page_per
 								$order_id      = $order->get_id();
 								$order_num     = $order->get_order_number();
 								$po_ref        = $order->get_meta('_po_number') ?: $order->get_meta('po_number');
-								$main_ref      = ! empty($po_ref) ? $po_ref : ('P' . str_pad($order_num, 5, '0', STR_PAD_LEFT));
+								$has_po        = ! empty($po_ref);
+								$card_title    = $has_po ? $po_ref : sprintf(__('Order #%s', 'custom-woo-dashboard'), $order_num);
+								$card_sub      = $has_po ? sprintf(__('Order #%s', 'custom-woo-dashboard'), $order_num) : '';
 								$status        = $order->get_status();
 								$status_name   = wc_get_order_status_name($status);
 								$created_date  = $order->get_date_created();
@@ -362,7 +383,7 @@ $shop_url = apply_filters('woocommerce_return_to_shop_redirect', wc_get_page_per
 								}
 
 								// Searchable data attributes
-								$search_keywords = strtolower($main_ref . ' ' . $order_num . ' ' . $status_name . ' ' . $date_str . ' ' . implode(' ', $address_lines));
+								$search_keywords = strtolower($card_title . ' ' . $order_num . ' ' . $status_name . ' ' . $date_str . ' ' . implode(' ', $address_lines));
 								foreach ($items as $itm) {
 									$search_keywords .= ' ' . strtolower($itm->get_name());
 								}
@@ -372,8 +393,10 @@ $shop_url = apply_filters('woocommerce_return_to_shop_redirect', wc_get_page_per
 									<div class="cwd-card-header">
 										<div class="cwd-card-ref-box">
 											<span class="cwd-micro-label"><?php esc_html_e('SALES ORDER', 'custom-woo-dashboard'); ?></span>
-											<h3 class="cwd-card-po-title"><?php echo esc_html($main_ref); ?></h3>
-											<div class="cwd-card-order-sub">#<?php echo esc_html($order_num); ?></div>
+											<h3 class="cwd-card-po-title"><?php echo esc_html($card_title); ?></h3>
+											<?php if (! empty($card_sub)) : ?>
+												<div class="cwd-card-order-sub"><?php echo esc_html($card_sub); ?></div>
+											<?php endif; ?>
 											<div class="cwd-card-status-pill <?php echo esc_attr($status_badge_class); ?>">
 												<?php echo esc_html(strtoupper('completed' === $status ? __('INVOICED', 'custom-woo-dashboard') : $status_name)); ?>
 											</div>
@@ -395,7 +418,7 @@ $shop_url = apply_filters('woocommerce_return_to_shop_redirect', wc_get_page_per
 											<span class="cwd-micro-label"><?php esc_html_e('PLACED BY', 'custom-woo-dashboard'); ?></span>
 											<div class="cwd-placed-by-box">
 												<span class="cwd-avatar-circle"><?php echo esc_html($user_initial); ?></span>
-												<span class="cwd-placed-name"><?php echo esc_html($user_display_name); ?></span>
+												<span class="cwd-placed-name"><?php echo esc_html($user_clean_name); ?></span>
 												<span class="cwd-you-pill"><?php esc_html_e('YOU', 'custom-woo-dashboard'); ?></span>
 											</div>
 										</div>
@@ -454,13 +477,13 @@ $shop_url = apply_filters('woocommerce_return_to_shop_redirect', wc_get_page_per
 									<!-- Card Delivery Estimate Strip (CTO Requirement) -->
 									<div class="cwd-card-estimate-strip">
 										<div class="cwd-estimate-label-box">
-											<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#7928ca" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+											<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#0284c7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
 												<rect x="1" y="3" width="15" height="13"></rect>
 												<polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon>
 												<circle cx="5.5" cy="18.5" r="2.5"></circle>
 												<circle cx="18.5" cy="18.5" r="2.5"></circle>
 											</svg>
-											<span class="cwd-micro-label"><?php esc_html_e('DELIVERY ESTIMATE', 'custom-woo-dashboard'); ?></span>
+											<span class="cwd-micro-label" style="margin-bottom: 0 !important;"><?php esc_html_e('DELIVERY ESTIMATE', 'custom-woo-dashboard'); ?></span>
 										</div>
 										<div class="cwd-estimate-result">
 											<?php echo cwd_get_order_delivery_estimate_html($order); ?>

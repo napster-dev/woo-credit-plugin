@@ -13,7 +13,7 @@ if (! defined('ABSPATH')) {
 
 define('CWD_V2_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CWD_V2_PLUGIN_URL', plugin_dir_url(__FILE__));
-define('CWD_V2_VERSION', '2.2.16');
+define('CWD_V2_VERSION', '2.2.17');
 
 // Include activator right away for the hook
 require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-activator.php';
