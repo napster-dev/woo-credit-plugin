@@ -1,19 +1,21 @@
 <?php
 
 /**
- * Saved Baskets Endpoint Template
- * Displays customer's saved baskets, allowing them to view items, rename, delete, or restore to cart.
+ * Saved Baskets / Unplaced Orders Endpoint Template
+ * Displays customer's active checkout cart session alongside saved baskets.
+ * Matches mlaccessories.co.uk (Knightsbridge) enterprise portal architecture.
  */
 
 if (! defined('ABSPATH')) {
 	exit;
 }
 
-$user_id = get_current_user_id();
-$baskets = class_exists('CWD_V2_Saved_Baskets') ? CWD_V2_Saved_Baskets::get_user_baskets($user_id) : array();
-$cart_has_items = isset(WC()->cart) && ! WC()->cart->is_empty();
-$ajax_url = admin_url('admin-ajax.php');
-$nonce = wp_create_nonce('cwd_saved_baskets_nonce');
+$user_id         = get_current_user_id();
+$baskets         = class_exists('CWD_V2_Saved_Baskets') ? CWD_V2_Saved_Baskets::get_user_baskets($user_id) : array();
+$cart_has_items  = isset(WC()->cart) && ! WC()->cart->is_empty();
+$total_unplaced  = ($cart_has_items ? 1 : 0) + count($baskets);
+$ajax_url        = admin_url('admin-ajax.php');
+$nonce           = wp_create_nonce('cwd_saved_baskets_nonce');
 ?>
 
 <div class="cwd-v2-saved-baskets-wrap" style="max-width: 1000px; margin: 0 auto; font-family: inherit;">
@@ -22,7 +24,7 @@ $nonce = wp_create_nonce('cwd_saved_baskets_nonce');
 		<?php if (empty($view)) : ?>
 			<div>
 				<h2 style="margin: 0 0 6px 0; font-size: 24px; font-weight: 700; color: #0f172a; display: flex; align-items: center; gap: 10px;">
-					<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#9333ea" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+					<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0284c7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
 						<path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"></path>
 						<path d="M3 6h18"></path>
 						<path d="M16 10a4 4 0 0 1-8 0"></path>
@@ -35,12 +37,18 @@ $nonce = wp_create_nonce('cwd_saved_baskets_nonce');
 			</div>
 		<?php else : ?>
 			<div style="font-size: 14px; color: #475569; font-weight: 600;">
-				<?php echo esc_html(sprintf(__('Showing %d unplaced %s', 'custom-woo-dashboard'), count($baskets), _n('order.', 'orders.', count($baskets), 'custom-woo-dashboard'))); ?>
+				<?php
+				if ($cart_has_items && count($baskets) > 0) {
+					echo esc_html(sprintf(__('Showing 1 active checkout order and %d saved %s', 'custom-woo-dashboard'), count($baskets), _n('basket.', 'baskets.', count($baskets), 'custom-woo-dashboard')));
+				} else {
+					echo esc_html(sprintf(__('Showing %d unplaced %s', 'custom-woo-dashboard'), $total_unplaced, _n('order.', 'orders.', $total_unplaced, 'custom-woo-dashboard')));
+				}
+				?>
 			</div>
 		<?php endif; ?>
 
 		<?php if ($cart_has_items) : ?>
-			<button type="button" class="button cwd-trigger-save-basket" style="background: #9333ea; color: #fff; border: none; padding: 10px 18px; border-radius: 6px; font-weight: 600; font-size: 13.5px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px;">
+			<button type="button" class="button cwd-trigger-save-basket" style="background: #0284c7; color: #fff; border: none; padding: 10px 18px; border-radius: 6px; font-weight: 600; font-size: 13.5px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px;">
 				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
 					<line x1="12" y1="5" x2="12" y2="19"></line>
 					<line x1="5" y1="12" x2="19" y2="12"></line>
@@ -50,7 +58,7 @@ $nonce = wp_create_nonce('cwd_saved_baskets_nonce');
 		<?php endif; ?>
 	</div>
 
-	<?php if (empty($baskets)) : ?>
+	<?php if (! $cart_has_items && empty($baskets)) : ?>
 		<!-- Empty State -->
 		<div style="background: #ffffff; border: 2px dashed #cbd5e1; border-radius: 12px; padding: 50px 20px; text-align: center; margin: 30px 0;">
 			<div style="width: 64px; height: 64px; margin: 0 auto 16px auto; background: #f0f9ff; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #0284c7;">
@@ -61,25 +69,156 @@ $nonce = wp_create_nonce('cwd_saved_baskets_nonce');
 				</svg>
 			</div>
 			<h3 style="margin: 0 0 8px 0; font-size: 18px; font-weight: 700; color: #1e293b;">
-				<?php esc_html_e('No Saved Baskets Yet', 'custom-woo-dashboard'); ?>
+				<?php esc_html_e('No Unplaced Orders Yet', 'custom-woo-dashboard'); ?>
 			</h3>
 			<p style="margin: 0 auto 20px auto; max-width: 480px; font-size: 14px; color: #64748b; line-height: 1.5;">
-				<?php esc_html_e('You haven\'t saved any baskets yet. Add items to your cart anytime and click "Save as Named Basket" to keep standard project materials and recurring stock handy.', 'custom-woo-dashboard'); ?>
+				<?php esc_html_e('Your checkout cart is empty and you haven\'t saved any baskets yet. Add items to your cart anytime to view them here or save standard materials handy.', 'custom-woo-dashboard'); ?>
 			</p>
-			<?php if ($cart_has_items) : ?>
-				<button type="button" class="button cwd-trigger-save-basket" style="background: #0284c7; color: #fff; padding: 10px 20px; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; border: none;">
-					<?php esc_html_e('Save Current Cart Items Now', 'custom-woo-dashboard'); ?>
-				</button>
-			<?php else : ?>
-				<a href="<?php echo esc_url(apply_filters('woocommerce_return_to_shop_redirect', wc_get_page_permalink('shop'))); ?>" class="button" style="background: #0284c7; color: #fff; padding: 10px 20px; border-radius: 6px; font-size: 14px; font-weight: 600; text-decoration: none; display: inline-block;">
-					<?php esc_html_e('Browse Products & Start Cart', 'custom-woo-dashboard'); ?>
-				</a>
-			<?php endif; ?>
+			<a href="<?php echo esc_url(apply_filters('woocommerce_return_to_shop_redirect', wc_get_page_permalink('shop'))); ?>" class="button" style="background: #0284c7; color: #fff; padding: 10px 20px; border-radius: 6px; font-size: 14px; font-weight: 600; text-decoration: none; display: inline-block;">
+				<?php esc_html_e('Browse Products & Start Cart', 'custom-woo-dashboard'); ?>
+			</a>
 		</div>
 	<?php else : ?>
-		<!-- Baskets List -->
+		<!-- Unplaced Orders List -->
 		<div style="display: flex; flex-direction: column; gap: 20px;">
-			<?php foreach ($baskets as $basket) : 
+
+			<?php if ($cart_has_items) :
+				$cart             = WC()->cart;
+				$cart_contents    = $cart->get_cart();
+				$cart_items_count = $cart->get_cart_contents_count();
+				$cart_total       = $cart->get_total();
+				$checkout_url     = wc_get_checkout_url();
+				$cart_url         = wc_get_cart_url();
+			?>
+				<!-- ROW 1: ACTIVE CHECKOUT CART (Knightsbridge MLA Architecture) -->
+				<div class="cwd-current-order-card" style="background: #ffffff; border: 1px solid #fed7aa; border-left: 4px solid #f59e0b; border-radius: 10px; box-shadow: 0 2px 6px rgba(0,0,0,0.03); overflow: hidden;">
+					<!-- Card Header -->
+					<div style="padding: 18px 20px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; background: #fffbeb; border-bottom: 1px solid #fef3c7;">
+						<div>
+							<div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+								<span style="background: #fef3c7; color: #b45309; border: 1px solid #fde68a; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.05em; display: inline-flex; align-items: center; gap: 6px;">
+									<span style="width: 7px; height: 7px; border-radius: 50%; background: #f59e0b; display: inline-block;"></span>
+									<?php esc_html_e('CURRENT ORDER', 'custom-woo-dashboard'); ?>
+								</span>
+								<h3 style="margin: 0; font-size: 17px; font-weight: 700; color: #0f172a;">
+									<?php esc_html_e('Active Checkout Basket', 'custom-woo-dashboard'); ?>
+								</h3>
+							</div>
+							<div style="font-size: 13px; color: #64748b; margin-top: 5px;">
+								<span><?php echo esc_html(sprintf(_n('%d item', '%d items', $cart_items_count, 'custom-woo-dashboard'), $cart_items_count)); ?></span>
+								<span style="margin: 0 6px;">•</span>
+								<strong style="color: #0f172a;"><?php echo wp_strip_all_tags($cart_total); ?></strong>
+								<span style="margin: 0 6px;">•</span>
+								<span style="color: #0284c7; font-weight: 600;"><?php esc_html_e('Ready in your active checkout cart', 'custom-woo-dashboard'); ?></span>
+							</div>
+						</div>
+
+						<!-- Action Buttons -->
+						<div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+							<a href="<?php echo esc_url($checkout_url); ?>" class="button" style="background: #0284c7; color: #fff; border: none; padding: 9px 18px; border-radius: 6px; font-size: 13.5px; font-weight: 600; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;">
+								<span><?php esc_html_e('Proceed to Checkout', 'custom-woo-dashboard'); ?></span>
+								<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+									<line x1="5" y1="12" x2="19" y2="12"></line>
+									<polyline points="12 5 19 12 12 19"></polyline>
+								</svg>
+							</a>
+
+							<a href="<?php echo esc_url($cart_url); ?>" class="button" style="background: #ffffff; color: #1e293b; border: 1px solid #cbd5e1; padding: 9px 14px; border-radius: 6px; font-size: 13.5px; font-weight: 600; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;">
+								<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+									<circle cx="8" cy="21" r="1"></circle>
+									<circle cx="19" cy="21" r="1"></circle>
+									<path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"></path>
+								</svg>
+								<?php esc_html_e('View / Edit Cart', 'custom-woo-dashboard'); ?>
+							</a>
+
+							<button type="button" class="button cwd-trigger-save-basket" style="background: #f8fafc; color: #334155; border: 1px solid #cbd5e1; padding: 9px 14px; border-radius: 6px; font-size: 13.5px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
+								<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+									<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+									<polyline points="17 21 17 13 7 13 7 21"></polyline>
+									<polyline points="7 3 7 8 15 8"></polyline>
+								</svg>
+								<?php esc_html_e('Save as Named Basket', 'custom-woo-dashboard'); ?>
+							</button>
+						</div>
+					</div>
+
+					<!-- Items List Table -->
+					<div style="padding: 12px 20px; overflow-x: auto;">
+						<table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+							<thead>
+								<tr style="border-bottom: 1px solid #f1f5f9; color: #64748b; font-size: 11.5px; text-transform: uppercase; text-align: left;">
+									<th style="padding: 8px 6px;"><?php esc_html_e('Product', 'custom-woo-dashboard'); ?></th>
+									<th style="padding: 8px 6px; width: 90px; text-align: center;"><?php esc_html_e('Qty', 'custom-woo-dashboard'); ?></th>
+									<th style="padding: 8px 6px; width: 100px; text-align: right;"><?php esc_html_e('Price', 'custom-woo-dashboard'); ?></th>
+									<th style="padding: 8px 6px; width: 110px; text-align: right;"><?php esc_html_e('Subtotal', 'custom-woo-dashboard'); ?></th>
+								</tr>
+							</thead>
+							<tbody>
+								<?php foreach ($cart_contents as $cart_item_key => $cart_item) :
+									$_product = apply_filters('woocommerce_cart_item_product', $cart_item['data'], $cart_item, $cart_item_key);
+									if (! $_product || ! $_product->exists() || $cart_item['quantity'] <= 0) {
+										continue;
+									}
+									$product_permalink = apply_filters('woocommerce_cart_item_permalink', $_product->is_visible() ? $_product->get_permalink($cart_item) : '', $cart_item, $cart_item_key);
+									$thumbnail         = $_product->get_image(array(38, 38), array('style' => 'width:38px; height:38px; object-fit:cover; border-radius:6px; border:1px solid #e2e8f0; flex-shrink:0;'));
+									$name              = $_product->get_name();
+									$sku               = $_product->get_sku();
+									$price             = WC()->cart->get_product_price($_product);
+									$subtotal          = WC()->cart->get_product_subtotal($_product, $cart_item['quantity']);
+								?>
+									<tr style="border-bottom: 1px solid #f8fafc;">
+										<td style="padding: 10px 6px;">
+											<div style="display: flex; align-items: center; gap: 12px;">
+												<?php echo $thumbnail; ?>
+												<div>
+													<?php if ($product_permalink) : ?>
+														<a href="<?php echo esc_url($product_permalink); ?>" style="color: #1e293b; font-weight: 600; text-decoration: none; line-height: 1.3; display: block;">
+															<?php echo esc_html($name); ?>
+														</a>
+													<?php else : ?>
+														<span style="color: #1e293b; font-weight: 600; line-height: 1.3; display: block;">
+															<?php echo esc_html($name); ?>
+														</span>
+													<?php endif; ?>
+													<?php if ($sku) : ?>
+														<span style="font-size: 11.5px; color: #94a3b8;"><?php echo esc_html__('SKU:', 'custom-woo-dashboard') . ' ' . esc_html($sku); ?></span>
+													<?php endif; ?>
+												</div>
+											</div>
+										</td>
+										<td style="padding: 10px 6px; text-align: center; font-weight: 600; color: #334155;">
+											<?php echo (int) $cart_item['quantity']; ?>
+										</td>
+										<td style="padding: 10px 6px; text-align: right; color: #64748b;">
+											<?php echo wp_strip_all_tags($price); ?>
+										</td>
+										<td style="padding: 10px 6px; text-align: right; font-weight: 600; color: #0f172a;">
+											<?php echo wp_strip_all_tags($subtotal); ?>
+										</td>
+									</tr>
+								<?php endforeach; ?>
+							</tbody>
+						</table>
+					</div>
+				</div>
+			<?php endif; ?>
+
+			<?php if ($cart_has_items && empty($baskets)) : ?>
+				<!-- Friendly Tip when cart exists but no permanent saved baskets yet -->
+				<div style="background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 14px 18px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+					<div style="font-size: 13.5px; color: #64748b;">
+						<strong style="color: #0f172a;"><?php esc_html_e('Tip:', 'custom-woo-dashboard'); ?></strong>
+						<?php esc_html_e('Save recurring job supplies or van stock into permanent Named Baskets to reorder anytime.', 'custom-woo-dashboard'); ?>
+					</div>
+					<button type="button" class="button cwd-trigger-save-basket" style="background: #ffffff; color: #0284c7; border: 1px solid #0284c7; padding: 6px 14px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer;">
+						<?php esc_html_e('Save Current Cart Now', 'custom-woo-dashboard'); ?>
+					</button>
+				</div>
+			<?php endif; ?>
+
+			<!-- SAVED BASKETS -->
+			<?php foreach ($baskets as $basket) :
 				$basket_id   = (int) $basket['id'];
 				$title       = esc_html($basket['title']);
 				$items_count = (int) $basket['items_count'];
@@ -91,7 +230,10 @@ $nonce = wp_create_nonce('cwd_saved_baskets_nonce');
 					<!-- Card Header / Summary -->
 					<div style="padding: 18px 20px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; background: #fafafa; border-bottom: 1px solid #e2e8f0;">
 						<div>
-							<div style="display: flex; align-items: center; gap: 10px;">
+							<div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+								<span style="background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.05em;">
+									<?php esc_html_e('SAVED BASKET', 'custom-woo-dashboard'); ?>
+								</span>
 								<h3 class="cwd-basket-title-text" style="margin: 0; font-size: 17px; font-weight: 700; color: #0f172a;">
 									<?php echo $title; ?>
 								</h3>
@@ -101,7 +243,7 @@ $nonce = wp_create_nonce('cwd_saved_baskets_nonce');
 									</svg>
 								</button>
 							</div>
-							<div style="font-size: 13px; color: #64748b; margin-top: 4px;">
+							<div style="font-size: 13px; color: #64748b; margin-top: 5px;">
 								<span><?php echo esc_html(sprintf(_n('%d item', '%d items', $items_count, 'custom-woo-dashboard'), $items_count)); ?></span>
 								<span style="margin: 0 6px;">•</span>
 								<strong style="color: #0f172a;"><?php echo wp_strip_all_tags(wc_price($total)); ?></strong>
@@ -143,7 +285,7 @@ $nonce = wp_create_nonce('cwd_saved_baskets_nonce');
 								</tr>
 							</thead>
 							<tbody>
-								<?php foreach ($items as $item) : 
+								<?php foreach ($items as $item) :
 									$img_url  = esc_url($item['image_url'] ?? wc_placeholder_img_src());
 									$name     = esc_html($item['name'] ?? __('Product', 'custom-woo-dashboard'));
 									$sku      = esc_html($item['sku'] ?? '');

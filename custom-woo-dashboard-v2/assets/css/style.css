@@ -1261,6 +1261,20 @@ a[href*="page=WFLS#top#settings"] {
     text-decoration: underline;
 }
 
+.cwd-estimate-collection {
+    color: #0284c7;
+    font-size: 12.5px;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+}
+
+.cwd-estimate-processing {
+    color: #0f172a;
+    font-size: 12.5px;
+    font-weight: 500;
+}
+
 /* Backorders Table */
 .cwd-backorders-panel {
     width: 100%;

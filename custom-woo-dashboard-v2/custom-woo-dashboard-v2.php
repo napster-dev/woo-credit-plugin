@@ -13,7 +13,7 @@ if (! defined('ABSPATH')) {
 
 define('CWD_V2_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CWD_V2_PLUGIN_URL', plugin_dir_url(__FILE__));
-define('CWD_V2_VERSION', '2.2.17');
+define('CWD_V2_VERSION', '2.2.18');
 
 // Include activator right away for the hook
 require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-activator.php';
@@ -130,30 +130,59 @@ if (! function_exists('cwd_v2_render_order_details_delivery_estimate')) {
 
 		$status = $order->get_status();
 		$custom_estimate = $order->get_meta('_delivery_estimate');
+		$shipping_title = $order->get_shipping_method();
+		$is_collection = false;
+
+		if (! empty($shipping_title) && (stripos($shipping_title, 'collection') !== false || stripos($shipping_title, 'pickup') !== false || stripos($shipping_title, 'pick up') !== false)) {
+			$is_collection = true;
+		} else {
+			foreach ($order->get_shipping_methods() as $shipping_item) {
+				$method_id = $shipping_item->get_method_id();
+				if (strpos($method_id, 'pickup') !== false || strpos($method_id, 'local') !== false) {
+					$is_collection = true;
+					break;
+				}
+			}
+		}
+
+		$badge_title = $is_collection ? __('COLLECTION ESTIMATE', 'custom-woo-dashboard') : __('DELIVERY ESTIMATE', 'custom-woo-dashboard');
 		$estimate_html = '';
 
 		if (! empty($custom_estimate)) {
-			$estimate_html = '<span style="font-weight:600; color:#1e293b;">' . esc_html($custom_estimate) . '</span>';
+			$estimate_html = '<span style="font-weight:600; color:#0f172a;">' . esc_html($custom_estimate) . '</span>';
 		} elseif ('completed' === $status) {
 			$completed_date = $order->get_date_completed();
 			$date_str = $completed_date ? wc_format_datetime($completed_date, 'j M Y') : '';
-			$label = $date_str ? sprintf(__('Delivered on %s', 'custom-woo-dashboard'), $date_str) : __('Delivered', 'custom-woo-dashboard');
+			$label = $is_collection
+				? ($date_str ? sprintf(__('Collected on %s', 'custom-woo-dashboard'), $date_str) : __('Collected from Warehouse', 'custom-woo-dashboard'))
+				: ($date_str ? sprintf(__('Delivered on %s', 'custom-woo-dashboard'), $date_str) : __('Delivered', 'custom-woo-dashboard'));
 			$estimate_html = '<span style="color:#16a34a; font-weight:700; display:inline-flex; align-items:center;">' .
 				'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px; margin-right:5px;"><polyline points="20 6 9 17 4 12"/></svg>' .
 				esc_html($label) .
 				'</span>';
+		} elseif ($is_collection) {
+			$estimate_html = '<span style="color:#0284c7; font-weight:600; display:inline-flex; align-items:center;">' .
+				'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#0284c7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px; margin-right:6px;"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>' .
+				esc_html__('Collection from EWS Warehouse (Ready during warehouse hours)', 'custom-woo-dashboard') .
+				'</span>';
 		} elseif (class_exists('CWD_V2_Shipment_Tracking') && ($tracking_items = CWD_V2_Shipment_Tracking::get_tracking_items($order->get_id())) && ! empty($tracking_items[0]['custom_link'])) {
 			$provider = ! empty($tracking_items[0]['provider_label']) ? $tracking_items[0]['provider_label'] : __('Courier', 'custom-woo-dashboard');
-			$estimate_html = '<span style="color:#4f46e5; font-weight:600;"><a href="' . esc_url($tracking_items[0]['custom_link']) . '" target="_blank" rel="noopener">' .
+			$estimate_html = '<span style="color:#0284c7; font-weight:600;"><a href="' . esc_url($tracking_items[0]['custom_link']) . '" target="_blank" rel="noopener" style="color:#0284c7; text-decoration:none;">' .
 				esc_html(sprintf(__('Dispatched via %s - Track Consignment', 'custom-woo-dashboard'), $provider)) . ' &rarr;</a></span>';
+		} elseif (in_array($status, array('processing', 'on-hold'), true)) {
+			$estimate_html = '<span style="color:#0f172a; font-weight:500;">' . esc_html__('In preparation – Standard Delivery (1–2 working days)', 'custom-woo-dashboard') . '</span>';
 		} else {
-			$estimate_html = '<span style="color:#64748b; font-size:13px;">' . esc_html__('Sorry, an estimate is currently unavailable.', 'custom-woo-dashboard') . '</span>';
+			$estimate_html = '<span style="color:#64748b; font-size:13px;">' . esc_html__('Estimated at dispatch', 'custom-woo-dashboard') . '</span>';
 		}
 
-		echo '<div class="cwd-view-order-estimate-card" style="background:#ffffff; border:1px solid #e2e8f0; border-radius:8px; padding:16px 20px; margin-bottom:24px; box-shadow:0 1px 3px rgba(0,0,0,0.03); display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">';
+		$icon_svg = $is_collection
+			? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0284c7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>'
+			: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0284c7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="1" y="3" width="15" height="13"></rect><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon><circle cx="5.5" cy="18.5" r="2.5"></circle><circle cx="18.5" cy="18.5" r="2.5"></circle></svg>';
+
+		echo '<div class="cwd-view-order-estimate-card" style="background:#ffffff; border:1px solid #e2e8f0; border-left:4px solid #0284c7; border-radius:8px; padding:16px 20px; margin-bottom:24px; box-shadow:0 1px 3px rgba(0,0,0,0.03); display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">';
 		echo '<div style="display:flex; align-items:center; gap:8px;">';
-		echo '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#7928ca" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="1" y="3" width="15" height="13"></rect><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon><circle cx="5.5" cy="18.5" r="2.5"></circle><circle cx="18.5" cy="18.5" r="2.5"></circle></svg>';
-		echo '<span style="font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:#ec4899;">' . esc_html__('DELIVERY ESTIMATE', 'custom-woo-dashboard') . '</span>';
+		echo $icon_svg;
+		echo '<span style="font-size:11.5px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:#0284c7;">' . esc_html($badge_title) . '</span>';
 		echo '</div>';
 		echo '<div>' . $estimate_html . '</div>';
 		echo '</div>';

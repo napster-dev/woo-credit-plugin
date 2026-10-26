@@ -43,6 +43,20 @@ if (! function_exists('cwd_get_order_delivery_estimate_html')) {
 		}
 
 		$status = $order->get_status();
+		$shipping_title = $order->get_shipping_method();
+		$is_collection = false;
+
+		if (! empty($shipping_title) && (stripos($shipping_title, 'collection') !== false || stripos($shipping_title, 'pickup') !== false || stripos($shipping_title, 'pick up') !== false)) {
+			$is_collection = true;
+		} else {
+			foreach ($order->get_shipping_methods() as $shipping_item) {
+				$method_id = $shipping_item->get_method_id();
+				if (strpos($method_id, 'pickup') !== false || strpos($method_id, 'local') !== false) {
+					$is_collection = true;
+					break;
+				}
+			}
+		}
 
 		// Custom estimate meta (set by WooCommerce Admin, Odoo ERP sync, or backorder update)
 		$custom_estimate = $order->get_meta('_delivery_estimate');
@@ -54,10 +68,20 @@ if (! function_exists('cwd_get_order_delivery_estimate_html')) {
 		if ('completed' === $status) {
 			$completed_date = $order->get_date_completed();
 			$date_str = $completed_date ? wc_format_datetime($completed_date, 'j M Y') : '';
-			$label = $date_str ? sprintf(__('Delivered on %s', 'custom-woo-dashboard'), $date_str) : __('Delivered', 'custom-woo-dashboard');
+			$label = $is_collection
+				? ($date_str ? sprintf(__('Collected on %s', 'custom-woo-dashboard'), $date_str) : __('Collected from Warehouse', 'custom-woo-dashboard'))
+				: ($date_str ? sprintf(__('Delivered on %s', 'custom-woo-dashboard'), $date_str) : __('Delivered', 'custom-woo-dashboard'));
 			return '<span class="cwd-estimate-delivered">' .
 				'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px; margin-right:5px;"><polyline points="20 6 9 17 4 12"/></svg>' .
 				esc_html($label) .
+				'</span>';
+		}
+
+		// Collection orders
+		if ($is_collection) {
+			return '<span class="cwd-estimate-collection" style="color:#0284c7; font-weight:600; display:inline-flex; align-items:center;">' .
+				'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0284c7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px; margin-right:5px;"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>' .
+				esc_html__('Collection from EWS Warehouse', 'custom-woo-dashboard') .
 				'</span>';
 		}
 
@@ -71,8 +95,12 @@ if (! function_exists('cwd_get_order_delivery_estimate_html')) {
 			}
 		}
 
-		// Fallback exact text from Knightsbridge (MLA) reference
-		return '<span class="cwd-estimate-unavailable">' . esc_html__('Sorry, an estimate is currently unavailable.', 'custom-woo-dashboard') . '</span>';
+		if (in_array($status, array('pending', 'processing', 'on-hold'), true)) {
+			return '<span class="cwd-estimate-processing" style="color:#0f172a; font-weight:500;">' . esc_html__('In preparation – 1–2 working days', 'custom-woo-dashboard') . '</span>';
+		}
+
+		// Fallback exact text
+		return '<span class="cwd-estimate-unavailable">' . esc_html__('Estimated at dispatch', 'custom-woo-dashboard') . '</span>';
 	}
 }
 
@@ -120,10 +148,12 @@ foreach ($all_customer_orders as $ord) {
 	}
 }
 
-$live_count       = count($live_orders_list);
-$unplaced_count   = class_exists('CWD_V2_Saved_Baskets') ? CWD_V2_Saved_Baskets::get_user_baskets_count($user_id) : 0;
-$history_count    = count($history_orders_list);
-$backorders_count = count($backorder_items);
+$live_count          = count($live_orders_list);
+$cart_has_items      = (isset(WC()->cart) && ! WC()->cart->is_empty());
+$saved_baskets_count = class_exists('CWD_V2_Saved_Baskets') ? CWD_V2_Saved_Baskets::get_user_baskets_count($user_id) : 0;
+$unplaced_count      = ($cart_has_items ? 1 : 0) + $saved_baskets_count;
+$history_count       = count($history_orders_list);
+$backorders_count    = count($backorder_items);
 
 // Determine active view
 global $wp;
