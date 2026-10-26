@@ -79,7 +79,17 @@ class CWD_V2_Endpoints
 			.my-account-dropdown a[href*="2fa"],
 			.my-account-dropdown a[href*="wishlist"],
 			.woocommerce-MyAccount-navigation-link--wishlist,
-			.woocommerce-MyAccount-navigation-link--woodmart-wishlist {
+			.woocommerce-MyAccount-navigation-link--woodmart-wishlist,
+			.wd-wishlist-btn,
+			.wd-action-btn.wd-wishlist-btn,
+			.woodmart-wishlist-btn,
+			.product-actions .wd-wishlist-btn,
+			.single-product .wd-wishlist-btn,
+			.single-product a.woodmart-tinv-wishlist,
+			.single-product .tinv-wraper,
+			.single-product .yith-wcwl-add-to-wishlist,
+			.wd-header-wishlist,
+			a[href*="wishlist"] {
 				display: none !important;
 			}
 
