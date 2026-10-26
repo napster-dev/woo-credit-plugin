@@ -29,6 +29,7 @@ class CWD_V2_Endpoints
 		add_filter('woocommerce_endpoint_order-history_title', array(__CLASS__, 'order_history_title'));
 		add_filter('woocommerce_endpoint_track-order_title', array(__CLASS__, 'track_order_title'));
 		add_filter('woocommerce_endpoint_saved-baskets_title', array(__CLASS__, 'saved_baskets_title'));
+		add_filter('woocommerce_endpoint_unplaced-orders_title', array(__CLASS__, 'unplaced_orders_title'));
 		add_filter('woocommerce_endpoint_wfls-2fa_title', array(__CLASS__, 'wfls_2fa_title'));
 		add_action('woocommerce_account_wfls-2fa_endpoint', array(__CLASS__, 'endpoint_wfls_2fa'));
 
@@ -45,9 +46,9 @@ class CWD_V2_Endpoints
 		add_action('woocommerce_after_edit_account_form', array(__CLASS__, 'render_wordfence_2fa_section'), 99);
 
 		// Ensure endpoints are flushed once after this update
-		if ('yes' !== get_option('cwd_v2_endpoints_flushed_baskets_v1')) {
+		if ('yes' !== get_option('cwd_v2_endpoints_flushed_unplaced_v1')) {
 			flush_rewrite_rules(false);
-			update_option('cwd_v2_endpoints_flushed_baskets_v1', 'yes');
+			update_option('cwd_v2_endpoints_flushed_unplaced_v1', 'yes');
 		}
 	}
 
@@ -186,6 +187,7 @@ class CWD_V2_Endpoints
 		add_rewrite_endpoint('order-history', EP_ROOT | EP_PAGES);
 		add_rewrite_endpoint('track-order', EP_ROOT | EP_PAGES);
 		add_rewrite_endpoint('saved-baskets', EP_ROOT | EP_PAGES);
+		add_rewrite_endpoint('unplaced-orders', EP_ROOT | EP_PAGES);
 		add_rewrite_endpoint('wfls-2fa', EP_ROOT | EP_PAGES);
 	}
 
@@ -203,6 +205,7 @@ class CWD_V2_Endpoints
 		$vars[] = 'order-history';
 		$vars[] = 'track-order';
 		$vars[] = 'saved-baskets';
+		$vars[] = 'unplaced-orders';
 		$vars[] = 'wfls-2fa';
 		return $vars;
 	}
@@ -274,17 +277,22 @@ class CWD_V2_Endpoints
 
 	public static function live_orders_title()
 	{
-		return __('Live Orders', 'custom-woo-dashboard');
+		return __('Live Order Status', 'custom-woo-dashboard');
 	}
 
 	public static function back_orders_title()
 	{
-		return __('Back Orders', 'custom-woo-dashboard');
+		return __('Backorders', 'custom-woo-dashboard');
 	}
 
 	public static function order_history_title()
 	{
 		return __('Order History', 'custom-woo-dashboard');
+	}
+
+	public static function unplaced_orders_title()
+	{
+		return __('Unplaced Orders', 'custom-woo-dashboard');
 	}
 
 	public static function track_order_title()
@@ -294,7 +302,7 @@ class CWD_V2_Endpoints
 
 	public static function saved_baskets_title()
 	{
-		return __('Saved Baskets', 'custom-woo-dashboard');
+		return __('Unplaced Orders', 'custom-woo-dashboard');
 	}
 
 	private static $filtering_endpoint = false;

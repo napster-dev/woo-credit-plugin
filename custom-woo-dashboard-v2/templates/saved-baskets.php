@@ -17,24 +17,30 @@ $nonce = wp_create_nonce('cwd_saved_baskets_nonce');
 ?>
 
 <div class="cwd-v2-saved-baskets-wrap" style="max-width: 1000px; margin: 0 auto; font-family: inherit;">
-	<!-- Page Header -->
-	<div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px; border-bottom: 1px solid #e2e8f0; padding-bottom: 18px;">
-		<div>
-			<h2 style="margin: 0 0 6px 0; font-size: 24px; font-weight: 700; color: #0f172a; display: flex; align-items: center; gap: 10px;">
-				<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0284c7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-					<path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"></path>
-					<path d="M3 6h18"></path>
-					<path d="M16 10a4 4 0 0 1-8 0"></path>
-				</svg>
-				<?php esc_html_e('Saved Baskets', 'custom-woo-dashboard'); ?>
-			</h2>
-			<p style="margin: 0; font-size: 14px; color: #64748b;">
-				<?php esc_html_e('Create, manage, and quickly restore multiple saved shopping lists for instant reordering.', 'custom-woo-dashboard'); ?>
-			</p>
-		</div>
+	<!-- Page Header / Actions -->
+	<div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px; <?php echo ! empty($view) ? '' : 'border-bottom: 1px solid #e2e8f0; padding-bottom: 18px;'; ?>">
+		<?php if (empty($view)) : ?>
+			<div>
+				<h2 style="margin: 0 0 6px 0; font-size: 24px; font-weight: 700; color: #0f172a; display: flex; align-items: center; gap: 10px;">
+					<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#9333ea" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+						<path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"></path>
+						<path d="M3 6h18"></path>
+						<path d="M16 10a4 4 0 0 1-8 0"></path>
+					</svg>
+					<?php esc_html_e('Unplaced Orders', 'custom-woo-dashboard'); ?>
+				</h2>
+				<p style="margin: 0; font-size: 14px; color: #64748b;">
+					<?php esc_html_e('Unplaced orders that your organisation has created.', 'custom-woo-dashboard'); ?>
+				</p>
+			</div>
+		<?php else : ?>
+			<div style="font-size: 14px; color: #475569; font-weight: 600;">
+				<?php echo esc_html(sprintf(__('Showing %d unplaced %s', 'custom-woo-dashboard'), count($baskets), _n('order.', 'orders.', count($baskets), 'custom-woo-dashboard'))); ?>
+			</div>
+		<?php endif; ?>
 
 		<?php if ($cart_has_items) : ?>
-			<button type="button" class="button cwd-trigger-save-basket" style="background: #0284c7; color: #fff; border: none; padding: 10px 18px; border-radius: 6px; font-weight: 600; font-size: 13.5px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px;">
+			<button type="button" class="button cwd-trigger-save-basket" style="background: #9333ea; color: #fff; border: none; padding: 10px 18px; border-radius: 6px; font-weight: 600; font-size: 13.5px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px;">
 				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
 					<line x1="12" y1="5" x2="12" y2="19"></line>
 					<line x1="5" y1="12" x2="19" y2="12"></line>

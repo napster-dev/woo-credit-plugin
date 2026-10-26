@@ -28,6 +28,7 @@ class CWD_V2_Shortcode
 		add_action('woocommerce_account_order-history_endpoint', array(__CLASS__, 'order_history_content'));
 		add_action('woocommerce_account_track-order_endpoint', array(__CLASS__, 'track_order_content'));
 		add_action('woocommerce_account_saved-baskets_endpoint', array(__CLASS__, 'saved_baskets_content'));
+		add_action('woocommerce_account_unplaced-orders_endpoint', array(__CLASS__, 'unplaced_orders_content'));
 		add_action('template_redirect', array(__CLASS__, 'handle_change_password'));
 	}
 
@@ -76,7 +77,8 @@ class CWD_V2_Shortcode
 			'back-orders',
 			'order-history',
 			'track-order',
-			'saved-baskets'
+			'saved-baskets',
+			'unplaced-orders'
 		);
 
 		foreach ($endpoints as $endpoint) {
@@ -170,6 +172,11 @@ class CWD_V2_Shortcode
 	}
 
 	public static function saved_baskets_content()
+	{
+		include CWD_V2_PLUGIN_DIR . 'templates/saved-baskets.php';
+	}
+
+	public static function unplaced_orders_content()
 	{
 		include CWD_V2_PLUGIN_DIR . 'templates/saved-baskets.php';
 	}
