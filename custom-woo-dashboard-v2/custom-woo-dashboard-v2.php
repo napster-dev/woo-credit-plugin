@@ -13,7 +13,7 @@ if (! defined('ABSPATH')) {
 
 define('CWD_V2_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CWD_V2_PLUGIN_URL', plugin_dir_url(__FILE__));
-define('CWD_V2_VERSION', '2.2.14');
+define('CWD_V2_VERSION', '2.2.15');
 
 // Include activator right away for the hook
 require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-activator.php';
@@ -52,6 +52,7 @@ if (! function_exists('cwd_v2_init_plugin')) {
 			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-trade-number-migrator.php';
 			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-blink-express.php';
 			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-shipment-tracking.php';
+			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-saved-baskets.php';
 
 			CWD_V2_Activator::register_roles();
 			CWD_V2_Shortcode::init();
@@ -66,6 +67,7 @@ if (! function_exists('cwd_v2_init_plugin')) {
 			CWD_V2_Credits_Bridge::init();
 			CWD_V2_Blink_Express::init();
 			CWD_V2_Shipment_Tracking::init();
+			CWD_V2_Saved_Baskets::init();
 
 			// Enqueue dashboard styles across all front-end pages
 			add_action('wp_enqueue_scripts', 'cwd_v2_enqueue_frontend_styles', 20);
@@ -76,9 +78,9 @@ if (! function_exists('cwd_v2_init_plugin')) {
 			// Refresh rewrite rules after WordPress has initialized its rewrite object.
 			add_action('init', 'cwd_v2_refresh_rewrite_rules', 20);
 
-			// Create the invoices/ledger/trade application tables for sites where the plugin was
+			// Create the invoices/ledger/trade application/saved baskets tables for sites where the plugin was
 			// already active before this feature was added.
-			$tables_version = '5';
+			$tables_version = '6';
 			if (get_option('cwd_v2_tables_version') !== $tables_version) {
 				CWD_V2_Activator::activate();
 				update_option('cwd_v2_tables_version', $tables_version);
@@ -100,8 +102,7 @@ if (! function_exists('cwd_v2_init_plugin')) {
 			// Register WooCommerce Blocks payment method integration
 			add_action('woocommerce_blocks_loaded', 'cwd_v2_register_credit_gateway_blocks_support');
 
-			// Instant Order Sync with Odoo ERP
-			add_action('woocommerce_checkout_order_processed', 'cwd_v2_notify_odoo_order_event', 10, 1);
+			// Instant Order Sync with Odoo ERP (Only fires when payment completed or status changed)
 			add_action('woocommerce_payment_complete', 'cwd_v2_notify_odoo_order_event', 10, 1);
 			add_action('woocommerce_order_status_changed', 'cwd_v2_notify_odoo_order_event', 10, 1);
 
@@ -242,6 +243,18 @@ if (! function_exists('cwd_v2_notify_odoo_order_event')) {
 				return;
 			}
 			$order = wc_get_order($order_id);
+			if (! $order || ! is_a($order, 'WC_Order')) {
+				return;
+			}
+
+			// Only notify Odoo if payment has successfully completed on website
+			$status = strtolower((string) $order->get_status());
+			$allowed_paid_statuses = array('processing', 'completed');
+			$is_paid_credit = in_array($order->get_payment_method(), array('cwd_v2_credit_account', 'trade_credit'), true) && in_array($status, array('processing', 'completed', 'on-hold'), true);
+			if (! in_array($status, $allowed_paid_statuses, true) && ! $is_paid_credit) {
+				return;
+			}
+
 			$acc_num = '';
 			if ($order && is_a($order, 'WC_Order')) {
 				$acc_num = (string) $order->get_meta('ews_account_number');

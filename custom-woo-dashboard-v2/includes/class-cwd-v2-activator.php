@@ -143,6 +143,22 @@ class CWD_V2_Activator
 		) {$charset_collate};";
 		dbDelta($sql_returns);
 
+		$saved_baskets_table = $wpdb->prefix . 'cwd_v2_saved_baskets';
+		$sql_saved_baskets = "CREATE TABLE {$saved_baskets_table} (
+			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+			user_id BIGINT UNSIGNED NOT NULL,
+			title VARCHAR(255) NOT NULL,
+			items_data LONGTEXT NOT NULL,
+			items_count INT UNSIGNED NOT NULL DEFAULT 0,
+			total_amount DECIMAL(18,2) NOT NULL DEFAULT 0.00,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			PRIMARY KEY  (id),
+			KEY user_id (user_id),
+			KEY created_at (created_at)
+		) {$charset_collate};";
+		dbDelta($sql_saved_baskets);
+
 		// Trade Applications table
 		if (class_exists('CWD_V2_Trade_Applications')) {
 			CWD_V2_Trade_Applications::create_table();

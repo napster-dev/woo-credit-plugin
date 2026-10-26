@@ -28,6 +28,7 @@ class CWD_V2_Endpoints
 		add_filter('woocommerce_endpoint_back-orders_title', array(__CLASS__, 'back_orders_title'));
 		add_filter('woocommerce_endpoint_order-history_title', array(__CLASS__, 'order_history_title'));
 		add_filter('woocommerce_endpoint_track-order_title', array(__CLASS__, 'track_order_title'));
+		add_filter('woocommerce_endpoint_saved-baskets_title', array(__CLASS__, 'saved_baskets_title'));
 		add_filter('woocommerce_endpoint_wfls-2fa_title', array(__CLASS__, 'wfls_2fa_title'));
 		add_action('woocommerce_account_wfls-2fa_endpoint', array(__CLASS__, 'endpoint_wfls_2fa'));
 
@@ -44,9 +45,9 @@ class CWD_V2_Endpoints
 		add_action('woocommerce_after_edit_account_form', array(__CLASS__, 'render_wordfence_2fa_section'), 99);
 
 		// Ensure endpoints are flushed once after this update
-		if ('yes' !== get_option('cwd_v2_endpoints_flushed_wfls_v4')) {
+		if ('yes' !== get_option('cwd_v2_endpoints_flushed_baskets_v1')) {
 			flush_rewrite_rules(false);
-			update_option('cwd_v2_endpoints_flushed_wfls_v4', 'yes');
+			update_option('cwd_v2_endpoints_flushed_baskets_v1', 'yes');
 		}
 	}
 
@@ -64,14 +65,21 @@ class CWD_V2_Endpoints
 			.menu-item-wfls-2fa,
 			.woodmart-my-account-links a[href*="wfls"],
 			.woodmart-my-account-links a[href*="2fa"],
+			.woodmart-my-account-links a[href*="wishlist"],
 			.wd-dropdown-my-account a[href*="wfls"],
 			.wd-dropdown-my-account a[href*="2fa"],
+			.wd-dropdown-my-account a[href*="wishlist"],
 			.sub-menu-dropdown a[href*="wfls"],
 			.sub-menu-dropdown a[href*="2fa"],
+			.sub-menu-dropdown a[href*="wishlist"],
 			.wd-sub-menu a[href*="wfls"],
 			.wd-sub-menu a[href*="2fa"],
+			.wd-sub-menu a[href*="wishlist"],
 			.my-account-dropdown a[href*="wfls"],
-			.my-account-dropdown a[href*="2fa"] {
+			.my-account-dropdown a[href*="2fa"],
+			.my-account-dropdown a[href*="wishlist"],
+			.woocommerce-MyAccount-navigation-link--wishlist,
+			.woocommerce-MyAccount-navigation-link--woodmart-wishlist {
 				display: none !important;
 			}
 
@@ -167,6 +175,7 @@ class CWD_V2_Endpoints
 		add_rewrite_endpoint('back-orders', EP_ROOT | EP_PAGES);
 		add_rewrite_endpoint('order-history', EP_ROOT | EP_PAGES);
 		add_rewrite_endpoint('track-order', EP_ROOT | EP_PAGES);
+		add_rewrite_endpoint('saved-baskets', EP_ROOT | EP_PAGES);
 		add_rewrite_endpoint('wfls-2fa', EP_ROOT | EP_PAGES);
 	}
 
@@ -183,6 +192,7 @@ class CWD_V2_Endpoints
 		$vars[] = 'back-orders';
 		$vars[] = 'order-history';
 		$vars[] = 'track-order';
+		$vars[] = 'saved-baskets';
 		$vars[] = 'wfls-2fa';
 		return $vars;
 	}
@@ -270,6 +280,11 @@ class CWD_V2_Endpoints
 	public static function track_order_title()
 	{
 		return __('Track Order', 'custom-woo-dashboard');
+	}
+
+	public static function saved_baskets_title()
+	{
+		return __('Saved Baskets', 'custom-woo-dashboard');
 	}
 
 	private static $filtering_endpoint = false;
