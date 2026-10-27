@@ -1075,17 +1075,35 @@ class CWD_V2_Invoices
 		}
 		$odoo_base = rtrim($odoo_base, '/');
 
+		$secret = defined('CWD_ODOO_SECRET_KEY') ? CWD_ODOO_SECRET_KEY : get_option('cwd_odoo_secret_key', '');
+
 		// Candidate URLs to fetch Odoo PDF
 		$candidates = array();
+
+		// Priority 1: Direct authenticated Odoo API endpoint from la_woocommerce module
+		if (! empty($odoo_id) || ! empty($order_id)) {
+			$api_args = array();
+			if (! empty($odoo_id)) {
+				$api_args['invoice_id'] = $odoo_id;
+			}
+			if (! empty($order_id)) {
+				$api_args['order_id'] = $order_id;
+			}
+			if (! empty($secret)) {
+				$api_args['secret'] = $secret;
+			}
+			$candidates[] = add_query_arg($api_args, $odoo_base . '/la_woocommerce/dashboard/v1/invoice-pdf');
+		}
+
 		if (! empty($document_url)) {
 			$candidates[] = add_query_arg(array('report_type' => 'pdf', 'download' => 'true'), $document_url);
 		}
 		if (! empty($odoo_id)) {
-			// 1. Direct custom template report endpoint
+			// 2. Direct custom template report endpoint
 			$candidates[] = $odoo_base . '/report/pdf/ews_invoice.report_ews_invoice/' . rawurlencode($odoo_id);
-			// 2. Portal download endpoint
+			// 3. Portal download endpoint
 			$candidates[] = $odoo_base . '/my/invoices/' . rawurlencode($odoo_id) . '?report_type=pdf&download=true';
-			// 3. Standard account report endpoint
+			// 4. Standard account report endpoint
 			$candidates[] = $odoo_base . '/report/pdf/account.report_invoice/' . rawurlencode($odoo_id);
 		}
 
@@ -1093,13 +1111,18 @@ class CWD_V2_Invoices
 
 		// Attempt to fetch PDF binary directly from Odoo
 		foreach ($candidates as $cand_url) {
+			$headers = array(
+				'Accept' => 'application/pdf',
+			);
+			if (! empty($secret)) {
+				$headers['X-Odoo-Secret'] = $secret;
+			}
+
 			$response = wp_remote_get($cand_url, array(
 				'timeout'     => 15,
 				'sslverify'   => false,
 				'redirection' => 5,
-				'headers'     => array(
-					'Accept' => 'application/pdf',
-				),
+				'headers'     => $headers,
 			));
 
 			if (! is_wp_error($response)) {
@@ -1107,7 +1130,7 @@ class CWD_V2_Invoices
 				$body = wp_remote_retrieve_body($response);
 				$content_type = wp_remote_retrieve_header($response, 'content-type');
 
-				// Check if response is valid PDF
+				// Check if response is valid PDF binary
 				if (200 === $code && (strpos($body, '%PDF') === 0 || stripos((string) $content_type, 'application/pdf') !== false)) {
 					// Serve as direct file download
 					nocache_headers();
@@ -1122,9 +1145,16 @@ class CWD_V2_Invoices
 			}
 		}
 
-		// Fallback: If direct binary streaming was redirected, redirect browser directly to the candidate portal download URL
-		if (! empty($candidates)) {
-			wp_redirect($candidates[0]);
+		// Fallback: If portal URL has a valid access token, the browser can open it directly without login
+		if (! empty($document_url) && stripos($document_url, 'access_token=') !== false) {
+			wp_redirect($document_url);
+			exit;
+		}
+
+		// Fallback: If no direct PDF stream could be retrieved, do NOT redirect to Odoo login page!
+		// Keep the customer securely on the website and view the invoice details.
+		if ($invoice && ! empty($invoice->id)) {
+			wp_safe_redirect(wc_get_endpoint_url('view-invoice', $invoice->id, wc_get_endpoint_url('invoices')));
 			exit;
 		}
 

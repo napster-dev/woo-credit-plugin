@@ -866,16 +866,76 @@ class CWD_V2_Credit_Logic
 			return 0.0;
 		}
 
+		// 1. If user has an unapproved pending application, they have no credit and owe 0.0
+		if (class_exists('CWD_V2_Trade_Applications')) {
+			global $wpdb;
+			$apps_table = CWD_V2_Trade_Applications::get_table_name();
+			if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $apps_table)) === $apps_table) {
+				$u = get_userdata($user_id);
+				$has_pending = (int) $wpdb->get_var($wpdb->prepare(
+					"SELECT COUNT(*) FROM {$apps_table} WHERE (user_id = %d OR applicant_email = %s) AND status = 'pending'",
+					$user_id,
+					$u ? $u->user_email : ''
+				));
+				$has_approved = (int) $wpdb->get_var($wpdb->prepare(
+					"SELECT COUNT(*) FROM {$apps_table} WHERE (user_id = %d OR applicant_email = %s) AND status = 'approved' AND reviewed_by > 0",
+					$user_id,
+					$u ? $u->user_email : ''
+				));
+				if ($has_pending > 0 && $has_approved === 0) {
+					update_user_meta($user_id, '_credit_balance', 0.0);
+					return 0.0;
+				}
+			}
+		}
+
 		if (metadata_exists('user', $user_id, '_credit_balance')) {
-			return max(0.0, (float) get_user_meta($user_id, '_credit_balance', true));
+			$raw_balance = max(0.0, (float) get_user_meta($user_id, '_credit_balance', true));
+			if ($raw_balance > 0) {
+				// Verify if balance is genuine or a phantom balance equal to the limit
+				$has_invoices = 0;
+				if (class_exists('CWD_V2_Invoices')) {
+					global $wpdb;
+					$inv_table = CWD_V2_Invoices::table_name();
+					if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $inv_table)) === $inv_table) {
+						$has_invoices = (int) $wpdb->get_var($wpdb->prepare(
+							"SELECT COUNT(*) FROM {$inv_table} WHERE user_id = %d AND status NOT IN ('paid', 'void', 'written_off', 'marked_off')",
+							$user_id
+						));
+					}
+				}
+
+				$has_credit_orders = 0;
+				$user_orders = wc_get_orders(array(
+					'customer_id' => $user_id,
+					'limit'       => 10,
+					'status'      => array('processing', 'completed', 'on-hold', 'pending'),
+				));
+				foreach ($user_orders as $ord) {
+					$pm = strtolower((string) $ord->get_payment_method());
+					if (strpos($pm, 'credit') !== false || 'yes' === $ord->get_meta('_paid_with_credit') || (float) $ord->get_meta('_credit_charged_amount') > 0) {
+						$has_credit_orders++;
+					}
+				}
+
+				// If user has zero unpaid invoices and zero credit orders in WooCommerce:
+				// They have never used credit! Reset the corrupted ghost balance to 0.0
+				if ($has_invoices === 0 && $has_credit_orders === 0) {
+					self::sync_user_credit_balance($user_id, 0.0);
+					return 0.0;
+				}
+			}
+			return $raw_balance;
 		}
 
 		$balance = 0.0;
+		// Outstanding / owed keys ONLY (never credit_balance or _user_credit_balance which mean available credit!)
 		$keys = array(
 			'total_outstanding_amount', '_total_outstanding_amount',
 			'wc_cs_total_outstanding_amount', '_wc_cs_total_outstanding_amount',
-			'_fp_used_credit', '_user_credit_balance', 'credit_balance',
-			'total_outstanding', '_total_outstanding'
+			'total_outstanding', '_total_outstanding',
+			'outstanding_credits', 'wc_cs_outstanding_credits',
+			'used_credits', '_used_credits', '_fp_used_credit'
 		);
 		foreach ($keys as $k) {
 			$val = (float) get_user_meta($user_id, $k, true);
@@ -1037,13 +1097,13 @@ class CWD_V2_Credit_Logic
 		}
 
 		update_user_meta($user_id, '_credit_balance', $balance);
+		// Outstanding / owed keys ONLY (never credit_balance or _user_credit_balance which mean available credit in third-party plugins!)
 		$keys = array(
-			'_fp_used_credit', '_user_credit_balance', 'credit_balance',
+			'_fp_used_credit', 'used_credits', '_used_credits', '_credit_used',
 			'total_outstanding', '_total_outstanding', 'wc_cs_total_outstanding',
 			'_wc_cs_total_outstanding', 'outstanding_credits', 'wc_cs_outstanding_credits',
 			'total_outstanding_amount', '_total_outstanding_amount',
-			'wc_cs_total_outstanding_amount', '_wc_cs_total_outstanding_amount',
-			'used_credits', '_used_credits', '_credit_used'
+			'wc_cs_total_outstanding_amount', '_wc_cs_total_outstanding_amount'
 		);
 		foreach ($keys as $k) {
 			update_user_meta($user_id, $k, $balance);
@@ -1054,7 +1114,8 @@ class CWD_V2_Credit_Logic
 		$avail_keys = array(
 			'_available_credits', 'available_credits',
 			'_wc_cs_available_credits', 'wc_cs_available_credits',
-			'fpc_available_credits', 'available_credit'
+			'fpc_available_credits', 'available_credit',
+			'credit_balance', '_user_credit_balance'
 		);
 		foreach ($avail_keys as $ak) {
 			update_user_meta($user_id, $ak, $avail);
@@ -1129,9 +1190,29 @@ class CWD_V2_Credit_Logic
 			}
 		}
 
-		// 2. If no invoices, use stored balance or fallback
-		if ($total_unpaid <= 0) {
-			$total_unpaid = (float) get_user_meta($user_id, '_credit_balance', true);
+		// 2. Add unsettled WooCommerce credit orders not yet invoiced
+		$credit_orders = wc_get_orders(array(
+			'customer_id' => $user_id,
+			'limit'       => 100,
+			'status'      => array('processing', 'completed', 'on-hold', 'pending'),
+		));
+		$has_credit_order = false;
+		foreach ($credit_orders as $ord) {
+			$pm = strtolower((string) $ord->get_payment_method());
+			$is_credit_ord = in_array($pm, array('cwd_v2_credit_account', 'credits', 'wc_cs', 'wc_cs_credits', 'fpc_credits', 'trade_credit'), true)
+				|| ('yes' === $ord->get_meta('_paid_with_credit'))
+				|| ((float) $ord->get_meta('_credit_charged_amount') > 0);
+			if ($is_credit_ord) {
+				$has_credit_order = true;
+				if ($ord->get_meta('_credit_order_settled') !== 'yes' && ! $ord->get_meta('_invoiced')) {
+					$total_unpaid += (float) $ord->get_total();
+				}
+			}
+		}
+
+		// 3. If user has no orders and no invoices, balance is strictly 0.0
+		if ($total_unpaid <= 0 && ! $has_credit_order) {
+			$total_unpaid = 0.0;
 		}
 
 		self::sync_user_credit_balance($user_id, $total_unpaid);

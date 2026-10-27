@@ -941,7 +941,14 @@ class CWD_V2_Credits_Bridge
 				'available_credit'                       => $is_active ? $avail_credit : 0.0,
 				'total_outstanding'                      => $user_balance,
 				'_total_outstanding'                     => $user_balance,
+				'total_outstanding_amount'               => $user_balance,
+				'_total_outstanding_amount'              => $user_balance,
 				'outstanding_credits'                    => $user_balance,
+				'_outstanding_credits'                   => $user_balance,
+				'used_credits'                           => $user_balance,
+				'_used_credits'                          => $user_balance,
+				'used_amount'                            => $user_balance,
+				'_used_amount'                           => $user_balance,
 				'approved_credits'                       => $effective_limit,
 				'_approved_credits'                      => $effective_limit,
 				'approved_credit'                        => $effective_limit,
@@ -966,8 +973,12 @@ class CWD_V2_Credits_Bridge
 				'_wc_cs_available_credits'               => $is_active ? $avail_credit : 0.0,
 				'wc_cs_total_outstanding'                => $user_balance,
 				'_wc_cs_total_outstanding'               => $user_balance,
+				'wc_cs_total_outstanding_amount'         => $user_balance,
+				'_wc_cs_total_outstanding_amount'        => $user_balance,
 				'wc_cs_outstanding_credits'              => $user_balance,
 				'_wc_cs_outstanding_credits'             => $user_balance,
+				'wc_cs_used_credits'                     => $user_balance,
+				'_wc_cs_used_credits'                    => $user_balance,
 				'wc_cs_status'                           => $credit_status_val,
 				'_wc_cs_status'                          => $credit_status_val,
 				'wc_cs_credit_status'                    => $credit_status_val,
@@ -1231,7 +1242,9 @@ class CWD_V2_Credits_Bridge
 							update_post_meta($target_post_id, $k, $email);
 						} elseif (preg_match('/user/i', $k)) {
 							update_post_meta($target_post_id, $k, $user_id);
-						} elseif (preg_match('/(limit|amount)/i', $k)) {
+						} elseif (preg_match('/(outstanding|used|balance|due)/i', $k)) {
+							update_post_meta($target_post_id, $k, (float) $user_balance);
+						} elseif (preg_match('/(credit_limit|_limit|approved_credit)/i', $k)) {
 							update_post_meta($target_post_id, $k, (float) $limit);
 						} elseif (preg_match('/company/i', $k)) {
 							update_post_meta($target_post_id, $k, $company_name);
@@ -1444,7 +1457,7 @@ class CWD_V2_Credits_Bridge
 		}
 
 		// Check if the updated key is a credit balance key
-		$balance_keys = array('_credit_balance', 'credit_balance', 'total_outstanding', '_total_outstanding', 'total_outstanding_amount', '_total_outstanding_amount');
+		$balance_keys = array('_credit_balance', 'total_outstanding', '_total_outstanding', 'total_outstanding_amount', '_total_outstanding_amount');
 		if (in_array($meta_key, $balance_keys, true)) {
 			$bal = max(0.0, (float) $_meta_value);
 			if (class_exists('CWD_V2_Credit_Logic')) {
@@ -1523,6 +1536,31 @@ class CWD_V2_Credits_Bridge
 			if (class_exists('CWD_V2_Credit_Logic')) {
 				self::$is_syncing = true;
 				try {
+					if ($bal > 0) {
+						$has_activity = false;
+						if (class_exists('CWD_V2_Invoices')) {
+							global $wpdb;
+							$inv_table = CWD_V2_Invoices::table_name();
+							if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $inv_table)) === $inv_table) {
+								$has_unpaid = (int) $wpdb->get_var($wpdb->prepare(
+									"SELECT COUNT(*) FROM {$inv_table} WHERE user_id = %d AND status NOT IN ('paid', 'void', 'written_off', 'marked_off')",
+									$user_id
+								));
+								if ($has_unpaid > 0) {
+									$has_activity = true;
+								}
+							}
+						}
+						if (! $has_activity) {
+							$orders = wc_get_orders(array('customer_id' => $user_id, 'limit' => 5));
+							if (! empty($orders)) {
+								$has_activity = true;
+							}
+						}
+						if (! $has_activity) {
+							$bal = 0.0;
+						}
+					}
 					CWD_V2_Credit_Logic::sync_user_credit_balance($user_id, $bal);
 				} finally {
 					self::$is_syncing = false;
@@ -2275,6 +2313,20 @@ class CWD_V2_Credits_Bridge
 				update_user_meta($user_id, $lk, 0.0);
 			}
 
+			// Clear user balance / debt keys
+			$debt_keys = array(
+				'_credit_balance', 'total_outstanding', '_total_outstanding',
+				'total_outstanding_amount', '_total_outstanding_amount',
+				'used_credits', '_used_credits', 'used_amount', '_used_amount',
+				'outstanding_credits', 'wc_cs_outstanding_credits',
+				'wc_cs_total_outstanding', '_wc_cs_total_outstanding',
+				'wc_cs_total_outstanding_amount', '_wc_cs_total_outstanding_amount',
+				'wc_cs_used_credits', '_wc_cs_used_credits'
+			);
+			foreach ($debt_keys as $dk) {
+				update_user_meta($user_id, $dk, 0.0);
+			}
+
 			// Set status keys to pending
 			foreach (self::$credit_status_keys as $sk) {
 				update_user_meta($user_id, $sk, 'pending');
@@ -2297,12 +2349,27 @@ class CWD_V2_Credits_Bridge
 					update_post_meta((int) $pid, 'credit_limit', 0.0);
 					update_post_meta((int) $pid, '_credit_limit', 0.0);
 					update_post_meta((int) $pid, 'approved_credits', 0.0);
+					update_post_meta((int) $pid, 'total_outstanding', 0.0);
+					update_post_meta((int) $pid, '_total_outstanding', 0.0);
+					update_post_meta((int) $pid, 'total_outstanding_amount', 0.0);
+					update_post_meta((int) $pid, '_total_outstanding_amount', 0.0);
+					update_post_meta((int) $pid, 'used_credits', 0.0);
+					update_post_meta((int) $pid, '_used_credits', 0.0);
+					update_post_meta((int) $pid, 'outstanding_credits', 0.0);
 					clean_post_cache((int) $pid);
 				}
 			}
 
 			// Update external DB tables
 			self::sync_to_external_credits_tables($user_id, 'pending', 0.0, $wp_user ? $wp_user->user_email : $email);
+		}
+
+		// Sanitize phantom balances across all existing users (both old users and new users)
+		$users_with_bal = $wpdb->get_col("SELECT DISTINCT user_id FROM {$wpdb->usermeta} WHERE meta_key = '_credit_balance' AND CAST(meta_value AS DECIMAL(10,2)) > 0");
+		if (! empty($users_with_bal) && class_exists('CWD_V2_Credit_Logic')) {
+			foreach ($users_with_bal as $chk_uid) {
+				CWD_V2_Credit_Logic::get_user_credit_balance((int) $chk_uid);
+			}
 		}
 	}
 }
