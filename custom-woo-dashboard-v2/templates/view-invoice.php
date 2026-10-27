@@ -52,17 +52,50 @@ if (empty($document_url) && ! empty($invoice->odoo_invoice_id)) {
 		$document_url = rtrim($odoo_base, '/') . '/my/invoices/' . rawurlencode($invoice->odoo_invoice_id) . '?report_type=pdf&download=true';
 	}
 }
+
+// Suppress broken Xero or localhost document URLs
+if (! empty($document_url) && (stripos($document_url, 'xero') !== false || stripos($document_url, 'localhost') !== false)) {
+	$document_url = '';
+}
 ?>
+<style>
+@media print {
+	body * {
+		visibility: hidden !important;
+	}
+	#cwd-v2-invoice-print-area, #cwd-v2-invoice-print-area * {
+		visibility: visible !important;
+	}
+	#cwd-v2-invoice-print-area {
+		position: absolute !important;
+		left: 0 !important;
+		top: 0 !important;
+		width: 100% !important;
+		margin: 0 !important;
+		padding: 20px !important;
+		background: #ffffff !important;
+		box-shadow: none !important;
+		border: none !important;
+	}
+	.cwd-v2-no-print, header, footer, nav, .site-header, .site-footer, .woocommerce-MyAccount-navigation {
+		display: none !important;
+	}
+}
+</style>
 <div class="cwd-v2-invoice-view" id="cwd-v2-invoice-print-area">
 	<div class="cwd-v2-section-heading cwd-v2-no-print">
 		<div>
 			<h3><?php printf(esc_html__('Invoice %s', 'custom-woo-dashboard'), esc_html($invoice->invoice_number)); ?></h3>
 			<p><span class="cwd-v2-status-badge <?php echo $status_class; ?>"><?php echo esc_html($status_label); ?></span></p>
 		</div>
-		<nav class="cwd-v2-section-links" aria-label="<?php esc_attr_e('Invoice actions', 'custom-woo-dashboard'); ?>">
-			<?php if ($document_url) : ?>
-				<a href="<?php echo esc_url($document_url); ?>" class="cwd-v2-button cwd-v2-button-primary" target="_blank" rel="noopener">
-					<span class="dashicons dashicons-pdf" style="vertical-align: middle; margin-right: 4px;"></span><?php esc_html_e('Download Odoo Invoice (PDF)', 'custom-woo-dashboard'); ?>
+		<nav class="cwd-v2-section-links" aria-label="<?php esc_attr_e('Invoice actions', 'custom-woo-dashboard'); ?>" style="display:flex; gap:10px; align-items:center;">
+			<button type="button" onclick="window.print();" class="cwd-v2-button cwd-v2-button-primary" style="cursor:pointer; display:inline-flex; align-items:center; gap:6px; background:#0284c7; color:#fff; border:1px solid #0284c7; padding:8px 16px; border-radius:6px; font-weight:600; font-size:13.5px;">
+				<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+				<?php esc_html_e('Download / Print PDF', 'custom-woo-dashboard'); ?>
+			</button>
+			<?php if (! empty($document_url)) : ?>
+				<a href="<?php echo esc_url($document_url); ?>" class="cwd-v2-button" style="background:#f1f5f9; color:#334155; border:1px solid #cbd5e1; padding:8px 16px; border-radius:6px; font-weight:600; font-size:13.5px; text-decoration:none; display:inline-flex; align-items:center; gap:6px;" target="_blank" rel="noopener" download>
+					<span class="dashicons dashicons-pdf" style="vertical-align: middle;"></span><?php esc_html_e('Direct PDF File', 'custom-woo-dashboard'); ?>
 				</a>
 			<?php endif; ?>
 		</nav>
@@ -71,17 +104,6 @@ if (empty($document_url) && ! empty($invoice->odoo_invoice_id)) {
 	<div class="cwd-v2-invoice-meta">
 		<p><strong><?php esc_html_e('Invoice Date:', 'custom-woo-dashboard'); ?></strong> <?php echo esc_html(date_i18n(wc_date_format(), strtotime($invoice->invoice_date))); ?></p>
 		<p><strong><?php esc_html_e('Due Date:', 'custom-woo-dashboard'); ?></strong> <?php echo esc_html(date_i18n(wc_date_format(), strtotime($invoice->due_date))); ?></p>
-		<p>
-			<strong><?php esc_html_e('Source:', 'custom-woo-dashboard'); ?></strong> 
-			<?php if (CWD_V2_Invoices::SOURCE_ODOO === $invoice->source) : ?>
-				<span style="background: #ede9fe; color: #5b21b6; font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 4px; border: 1px solid #ddd6fe;">Odoo ERP</span>
-				<?php if (! empty($invoice->odoo_invoice_id)) : ?>
-					<span style="font-size: 12px; color: #64748b; margin-left: 4px;">(#<?php echo esc_html($invoice->odoo_invoice_id); ?>)</span>
-				<?php endif; ?>
-			<?php else : ?>
-				<span>Website</span>
-			<?php endif; ?>
-		</p>
 		<?php if ($order) : ?>
 			<p><strong><?php esc_html_e('Linked Order:', 'custom-woo-dashboard'); ?></strong> <a href="<?php echo esc_url($order->get_view_order_url()); ?>" style="font-weight: 600; color: #0284c7;">#<?php echo esc_html($order->get_order_number()); ?></a></p>
 		<?php endif; ?>

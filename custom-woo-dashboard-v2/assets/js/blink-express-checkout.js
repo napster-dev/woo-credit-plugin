@@ -274,6 +274,18 @@
         fixPhoneOptionalTag();
     });
 
+    // Re-mount and re-align when WooCommerce updates checkout via AJAX
+    if (window.jQuery) {
+        window.jQuery(document.body).on('updated_checkout', function () {
+            mountExpressContainer();
+            alignButtons();
+            fixPhoneOptionalTag();
+        });
+        window.jQuery(document.body).on('checkout_error', function () {
+            alignButtons();
+        });
+    }
+
     // Fetch intent and load native Blink scripts
     function initBlinkElements() {
         // Prevent removal of Apple Pay button on desktop browsers

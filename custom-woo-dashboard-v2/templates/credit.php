@@ -58,6 +58,32 @@ if ( $latest_approved_limit > 0 && $latest_approved_limit != $credit_limit ) {
 // 3. Resolve live balance (amount owed) and compute available credit
 $credit_balance   = class_exists( 'CWD_V2_Credit_Logic' ) ? CWD_V2_Credit_Logic::get_user_credit_balance( $user_id ) : (float) get_user_meta( $user_id, '_credit_balance', true );
 $due_date         = (string) get_user_meta( $user_id, '_credit_due_date', true );
+$user_terms       = get_user_meta( $user_id, '_credit_payment_terms', true ) ?: '30 Days End of Month';
+
+// Auto-sync due date if agreed terms are End of Month / Net EOM
+$terms_lower = strtolower( trim( (string) $user_terms ) );
+if ( strpos( $terms_lower, 'month' ) !== false || strpos( $terms_lower, 'eom' ) !== false ) {
+	$eom_date = date( 'Y-m-t', current_time( 'timestamp' ) );
+	if ( empty( $due_date ) || strtotime( $due_date ) < strtotime( $eom_date ) ) {
+		$due_date = $eom_date;
+		update_user_meta( $user_id, '_credit_due_date', $due_date );
+
+		if ( class_exists( 'CWD_V2_Invoices' ) ) {
+			global $wpdb;
+			$inv_tbl = CWD_V2_Invoices::table_name();
+			if ( $wpdb->get_var( $wpdb->prepare( "SHOW TABLES LIKE %s", $inv_tbl ) ) === $inv_tbl ) {
+				$wpdb->query( $wpdb->prepare(
+					"UPDATE {$inv_tbl} SET due_date = %s WHERE user_id = %d AND status = %s AND due_date < %s",
+					$due_date . ' 23:59:59',
+					$user_id,
+					'unpaid',
+					$due_date . ' 00:00:00'
+				) );
+			}
+		}
+	}
+}
+
 $account_number   = (string) get_user_meta( $user_id, 'ews_account_number', true );
 $available_credit = max( 0, $credit_limit - $credit_balance );
 
@@ -677,86 +703,6 @@ wc_print_notices();
 
 	</div>
 
-	<!-- Trade Applications & Facility Requests Section -->
-	<div class="cwd-v2-section-box">
-		<div class="cwd-v2-section-top">
-			<div>
-				<h3><?php esc_html_e( 'Trade Applications & Limit Requests', 'custom-woo-dashboard' ); ?></h3>
-				<p><?php esc_html_e( 'Track the real-time review status of your trade facility and credit limit adjustment requests.', 'custom-woo-dashboard' ); ?></p>
-			</div>
-			<span style="font-size: 12px; font-weight: 600; color: #475569; background: #f1f5f9; border-radius: 4px; padding: 4px 10px;">
-				<?php printf( esc_html__( '%d Total Requests', 'custom-woo-dashboard' ), count( $user_trade_requests ) ); ?>
-			</span>
-		</div>
-
-		<?php if ( ! empty( $user_trade_requests ) ) : ?>
-			<div class="cwd-v2-table-wrapper">
-				<table class="cwd-v2-data-table">
-					<thead>
-						<tr>
-							<th><?php esc_html_e( 'Request ID', 'custom-woo-dashboard' ); ?></th>
-							<th><?php esc_html_e( 'Date', 'custom-woo-dashboard' ); ?></th>
-							<th><?php esc_html_e( 'Type', 'custom-woo-dashboard' ); ?></th>
-							<th class="th-num"><?php esc_html_e( 'Requested Limit', 'custom-woo-dashboard' ); ?></th>
-							<th class="th-num"><?php esc_html_e( 'Approved Limit', 'custom-woo-dashboard' ); ?></th>
-							<th style="text-align: center;"><?php esc_html_e( 'Status', 'custom-woo-dashboard' ); ?></th>
-							<th><?php esc_html_e( 'Notes / Decision', 'custom-woo-dashboard' ); ?></th>
-						</tr>
-					</thead>
-					<tbody>
-						<?php foreach ( $user_trade_requests as $req ) : ?>
-							<?php
-							$is_increase = ( (int) $req->forminator_form_id === 0 );
-							$type_label  = $is_increase ? __( 'Credit Limit Increase', 'custom-woo-dashboard' ) : __( 'Trade Account Application', 'custom-woo-dashboard' );
-							$badge_bg    = '#fef3c7';
-							$badge_color = '#92400e';
-							$badge_border = '#fde68a';
-							if ( 'approved' === $req->status ) {
-								$badge_bg     = '#f0fdf4';
-								$badge_color  = '#166534';
-								$badge_border = '#bbf7d0';
-							} elseif ( 'rejected' === $req->status ) {
-								$badge_bg     = '#fef2f2';
-								$badge_color  = '#991b1b';
-								$badge_border = '#fecaca';
-							}
-							?>
-							<tr>
-								<td style="font-weight: 600; color: #0f172a; white-space: nowrap;">
-									#<?php echo esc_html( $req->id ); ?>
-								</td>
-								<td style="color: #64748b; white-space: nowrap;">
-									<?php echo esc_html( date_i18n( get_option( 'date_format' ), strtotime( $req->created_at ) ) ); ?>
-								</td>
-								<td style="color: #334155; font-weight: 500; white-space: nowrap;">
-									<?php echo esc_html( $type_label ); ?>
-								</td>
-								<td class="td-num" style="font-weight: 600; color: #0f172a; white-space: nowrap;">
-									<?php echo wp_kses_post( wc_price( $req->requested_limit ) ); ?>
-								</td>
-								<td class="td-num" style="font-weight: 600; color: #0f172a; white-space: nowrap;">
-									<?php echo ( 'approved' === $req->status && $req->approved_limit !== null ) ? wp_kses_post( wc_price( $req->approved_limit ) ) : '&ndash;'; ?>
-								</td>
-								<td style="text-align: center; white-space: nowrap;">
-									<span class="cwd-v2-status-pill" style="background: <?php echo esc_attr( $badge_bg ); ?>; color: <?php echo esc_attr( $badge_color ); ?>; border: 1px solid <?php echo esc_attr( $badge_border ); ?>;">
-										<?php echo esc_html( ucfirst( $req->status ) ); ?>
-									</span>
-								</td>
-								<td style="color: #64748b; min-width: 180px; max-width: 280px; word-break: break-word; line-height: 1.4;">
-									<?php echo ! empty( $req->admin_note ) ? esc_html( $req->admin_note ) : '&ndash;'; ?>
-								</td>
-							</tr>
-						<?php endforeach; ?>
-					</tbody>
-				</table>
-			</div>
-		<?php else : ?>
-			<div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 14px 16px; font-size: 13px; color: #64748b;">
-				<?php esc_html_e( 'No previous trade credit requests submitted.', 'custom-woo-dashboard' ); ?>
-			</div>
-		<?php endif; ?>
-	</div>
-
 	<!-- Credit Purchase History & Payoff Table -->
 	<div class="cwd-v2-section-box">
 		<div class="cwd-v2-section-top">
@@ -955,6 +901,86 @@ wc_print_notices();
 				<a href="<?php echo esc_url( apply_filters( 'woocommerce_return_to_shop_redirect', wc_get_page_permalink( 'shop' ) ) ); ?>" style="color: #0f172a; font-weight: 600; text-decoration: underline;">
 					<?php esc_html_e( 'Browse Products', 'woocommerce' ); ?>
 				</a>
+			</div>
+		<?php endif; ?>
+	</div>
+
+	<!-- Trade Applications & Facility Requests Section (Bottom) -->
+	<div class="cwd-v2-section-box">
+		<div class="cwd-v2-section-top">
+			<div>
+				<h3><?php esc_html_e( 'Trade Applications & Limit Requests', 'custom-woo-dashboard' ); ?></h3>
+				<p><?php esc_html_e( 'Track the real-time review status of your trade facility and credit limit adjustment requests.', 'custom-woo-dashboard' ); ?></p>
+			</div>
+			<span style="font-size: 12px; font-weight: 600; color: #475569; background: #f1f5f9; border-radius: 4px; padding: 4px 10px;">
+				<?php printf( esc_html__( '%d Total Requests', 'custom-woo-dashboard' ), count( $user_trade_requests ) ); ?>
+			</span>
+		</div>
+
+		<?php if ( ! empty( $user_trade_requests ) ) : ?>
+			<div class="cwd-v2-table-wrapper">
+				<table class="cwd-v2-data-table">
+					<thead>
+						<tr>
+							<th><?php esc_html_e( 'Request ID', 'custom-woo-dashboard' ); ?></th>
+							<th><?php esc_html_e( 'Date', 'custom-woo-dashboard' ); ?></th>
+							<th><?php esc_html_e( 'Type', 'custom-woo-dashboard' ); ?></th>
+							<th class="th-num"><?php esc_html_e( 'Requested Limit', 'custom-woo-dashboard' ); ?></th>
+							<th class="th-num"><?php esc_html_e( 'Approved Limit', 'custom-woo-dashboard' ); ?></th>
+							<th style="text-align: center;"><?php esc_html_e( 'Status', 'custom-woo-dashboard' ); ?></th>
+							<th><?php esc_html_e( 'Notes / Decision', 'custom-woo-dashboard' ); ?></th>
+						</tr>
+					</thead>
+					<tbody>
+						<?php foreach ( $user_trade_requests as $req ) : ?>
+							<?php
+							$is_increase = ( (int) $req->forminator_form_id === 0 );
+							$type_label  = $is_increase ? __( 'Credit Limit Increase', 'custom-woo-dashboard' ) : __( 'Trade Account Application', 'custom-woo-dashboard' );
+							$badge_bg    = '#fef3c7';
+							$badge_color = '#92400e';
+							$badge_border = '#fde68a';
+							if ( 'approved' === $req->status ) {
+								$badge_bg     = '#f0fdf4';
+								$badge_color  = '#166534';
+								$badge_border = '#bbf7d0';
+							} elseif ( 'rejected' === $req->status ) {
+								$badge_bg     = '#fef2f2';
+								$badge_color  = '#991b1b';
+								$badge_border = '#fecaca';
+							}
+							?>
+							<tr>
+								<td style="font-weight: 600; color: #0f172a; white-space: nowrap;">
+									#<?php echo esc_html( $req->id ); ?>
+								</td>
+								<td style="color: #64748b; white-space: nowrap;">
+									<?php echo esc_html( date_i18n( get_option( 'date_format' ), strtotime( $req->created_at ) ) ); ?>
+								</td>
+								<td style="color: #334155; font-weight: 500; white-space: nowrap;">
+									<?php echo esc_html( $type_label ); ?>
+								</td>
+								<td class="td-num" style="font-weight: 600; color: #0f172a; white-space: nowrap;">
+									<?php echo wp_kses_post( wc_price( $req->requested_limit ) ); ?>
+								</td>
+								<td class="td-num" style="font-weight: 600; color: #0f172a; white-space: nowrap;">
+									<?php echo ( 'approved' === $req->status && $req->approved_limit !== null ) ? wp_kses_post( wc_price( $req->approved_limit ) ) : '&ndash;'; ?>
+								</td>
+								<td style="text-align: center; white-space: nowrap;">
+									<span class="cwd-v2-status-pill" style="background: <?php echo esc_attr( $badge_bg ); ?>; color: <?php echo esc_attr( $badge_color ); ?>; border: 1px solid <?php echo esc_attr( $badge_border ); ?>;">
+										<?php echo esc_html( ucfirst( $req->status ) ); ?>
+									</span>
+								</td>
+								<td style="color: #64748b; min-width: 180px; max-width: 280px; word-break: break-word; line-height: 1.4;">
+									<?php echo ! empty( $req->admin_note ) ? esc_html( $req->admin_note ) : '&ndash;'; ?>
+								</td>
+							</tr>
+						<?php endforeach; ?>
+					</tbody>
+				</table>
+			</div>
+		<?php else : ?>
+			<div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 14px 16px; font-size: 13px; color: #64748b;">
+				<?php esc_html_e( 'No previous trade credit requests submitted.', 'custom-woo-dashboard' ); ?>
 			</div>
 		<?php endif; ?>
 	</div>

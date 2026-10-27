@@ -227,32 +227,61 @@ if (! function_exists('cwd_v2_render_order_details_odoo_invoice')) {
 			}
 		}
 
-		if (empty($odoo_inv_num) && empty($odoo_inv_url)) {
+		// Suppress broken Xero or localhost document URLs
+		if (! empty($odoo_inv_url) && (stripos($odoo_inv_url, 'xero') !== false || stripos($odoo_inv_url, 'localhost') !== false)) {
+			$odoo_inv_url = '';
+		}
+
+		// Always suppress broken third-party Xero links and cluttering tax buttons on order details
+		echo '<style>
+			a[href*="xero-invoice"], a[href*="xero"], .xero-invoice-button, .wc-xero-invoice, a.invoice-button[href*="xero"], a[href*="download-tax"], .tax-document-button {
+				display: none !important;
+			}
+		</style>';
+		echo '<script>
+			(function() {
+				function hideBadLinks() {
+					var links = document.querySelectorAll("a[href*=\'xero-invoice\'], a[href*=\'xero\'], .xero-invoice-button, .wc-xero-invoice, a[href*=\'download-tax\']");
+					links.forEach(function(el) {
+						if (!el.closest(".cwd-view-order-invoice-card")) {
+							el.style.setProperty("display", "none", "important");
+						}
+					});
+				}
+				if (document.readyState === "loading") {
+					document.addEventListener("DOMContentLoaded", hideBadLinks);
+				} else {
+					hideBadLinks();
+				}
+				setTimeout(hideBadLinks, 400);
+				setTimeout(hideBadLinks, 1200);
+			})();
+		</script>';
+
+		if (empty($odoo_inv_num) && empty($odoo_inv_url) && $inv_id <= 0) {
 			return;
 		}
 
-		echo '<div class="cwd-view-order-invoice-card" style="background:#ffffff; border:1px solid #e2e8f0; border-left:4px solid #10b981; border-radius:8px; padding:16px 20px; margin-top:20px; margin-bottom:24px; box-shadow:0 1px 3px rgba(0,0,0,0.03); display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">';
-		echo '<div style="display:flex; align-items:center; gap:10px;">';
-		echo '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>';
+		$primary_link = $inv_id > 0 ? wc_get_endpoint_url('view-invoice', $inv_id) : $odoo_inv_url;
+		if (empty($primary_link)) {
+			return;
+		}
+
+		echo '<div class="cwd-view-order-invoice-card" style="background:#ffffff; border:1px solid #e2e8f0; border-left:4px solid #0284c7; border-radius:8px; padding:16px 20px; margin-top:20px; margin-bottom:24px; box-shadow:0 1px 3px rgba(0,0,0,0.03); display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">';
+		echo '<div style="display:flex; align-items:center; gap:12px;">';
+		echo '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0284c7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>';
 		echo '<div>';
-		echo '<span style="display:block; font-size:11.5px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; color:#059669;">' . esc_html__('ODOO TAX INVOICE', 'custom-woo-dashboard') . '</span>';
+		echo '<span style="display:block; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; color:#0284c7;">' . esc_html__('OFFICIAL VAT INVOICE', 'custom-woo-dashboard') . '</span>';
 		if (! empty($odoo_inv_num)) {
 			echo '<span style="font-size:15px; font-weight:700; color:#0f172a;">' . esc_html($odoo_inv_num) . '</span>';
 		}
 		echo '</div>';
 		echo '</div>';
-		echo '<div style="display:flex; gap:8px; flex-wrap:wrap;">';
-		if (! empty($odoo_inv_url)) {
-			echo '<a href="' . esc_url($odoo_inv_url) . '" target="_blank" rel="noopener" class="button" style="background:#0284c7; color:#fff; border-color:#0284c7; display:inline-flex; align-items:center; gap:6px; font-weight:600; font-size:13px; padding:6px 14px; text-decoration:none; border-radius:5px;">';
-			echo '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>';
-			echo esc_html__('Download Odoo PDF', 'custom-woo-dashboard');
-			echo '</a>';
-		}
-		if ($inv_id > 0) {
-			echo '<a href="' . esc_url(wc_get_endpoint_url('view-invoice', $inv_id)) . '" class="button" style="background:#f1f5f9; color:#334155; border:1px solid #cbd5e1; font-weight:600; font-size:13px; padding:6px 14px; text-decoration:none; border-radius:5px;">';
-			echo esc_html__('View Invoice Details', 'custom-woo-dashboard');
-			echo '</a>';
-		}
+		echo '<div>';
+		echo '<a href="' . esc_url($primary_link) . '" class="button" style="background:#0284c7; color:#fff; border-color:#0284c7; display:inline-flex; align-items:center; gap:6px; font-weight:600; font-size:13px; padding:8px 16px; text-decoration:none; border-radius:6px; box-shadow:0 1px 2px rgba(2,132,199,0.2);">';
+		echo '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>';
+		echo esc_html__('View & Download Invoice', 'custom-woo-dashboard');
+		echo '</a>';
 		echo '</div>';
 		echo '</div>';
 	}
