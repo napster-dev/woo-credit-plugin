@@ -727,6 +727,32 @@ class CWD_V2_Credit_Logic
 			return 0.0;
 		}
 
+		// Safeguard: Check if this user has a pending trade application and NO approved application.
+		// If so, their approved limit is strictly 0.00 until an admin manually approves them!
+		if (class_exists('CWD_V2_Trade_Applications')) {
+			global $wpdb;
+			$apps_table = CWD_V2_Trade_Applications::get_table_name();
+			if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $apps_table)) === $apps_table) {
+				$u = get_userdata($user_id);
+				$email = $u ? $u->user_email : '';
+				$has_approved = (int) $wpdb->get_var($wpdb->prepare(
+					"SELECT COUNT(*) FROM {$apps_table}
+					 WHERE (user_id = %d OR (applicant_email = %s AND applicant_email != '')) AND status = 'approved' AND approved_limit > 0",
+					$user_id,
+					$email
+				));
+				$has_pending = (int) $wpdb->get_var($wpdb->prepare(
+					"SELECT COUNT(*) FROM {$apps_table}
+					 WHERE (user_id = %d OR (applicant_email = %s AND applicant_email != '')) AND status = 'pending'",
+					$user_id,
+					$email
+				));
+				if ($has_pending > 0 && $has_approved === 0) {
+					return 0.0;
+				}
+			}
+		}
+
 		// 1. Authoritative check: If _credit_limit is set in usermeta, it is the absolute source of truth.
 		// Never override an explicitly set admin limit with older legacy values.
 		if (metadata_exists('user', $user_id, '_credit_limit')) {
@@ -786,11 +812,11 @@ class CWD_V2_Credit_Logic
 			"SELECT pm.meta_value FROM {$wpdb->postmeta} pm
 			 INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
 			 WHERE p.post_type IN ('wc_cs_credits', 'credits', 'fpc_credits')
-			   AND p.post_status != 'trash'
+			   AND p.post_status = 'publish'
 			   AND pm.meta_key IN (
 			       'approved_credits', '_approved_credits', 'wc_cs_approved_credits',
 			       'credit_limit', '_credit_limit', 'wc_cs_credit_limit', '_wc_cs_credit_limit',
-			       'fpc_credit_limit', '_fpc_credit_limit', '31596', '41978'
+			       'fpc_credit_limit', '_fpc_credit_limit'
 			   )
 			   AND CAST(pm.meta_value AS DECIMAL(10,2)) > 0
 			   AND (
@@ -980,7 +1006,7 @@ class CWD_V2_Credit_Logic
 				$wpdb->query($wpdb->prepare(
 					"UPDATE {$apps_table} 
 					 SET approved_limit = %f, user_id = %d, updated_at = %s 
-					 WHERE (user_id = %d OR (applicant_email = %s AND applicant_email != ''))",
+					 WHERE (user_id = %d OR (applicant_email = %s AND applicant_email != '')) AND status = 'approved'",
 					$limit,
 					$user_id,
 					current_time('mysql'),

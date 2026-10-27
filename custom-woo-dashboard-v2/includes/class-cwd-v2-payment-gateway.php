@@ -69,6 +69,27 @@ class WC_Gateway_Credit_Account_V2 extends WC_Payment_Gateway
 		$user_id      = $current_user->ID;
 		$credit_limit = class_exists('CWD_V2_Credit_Logic') ? CWD_V2_Credit_Logic::get_user_credit_limit($user_id) : (float) get_user_meta($user_id, '_credit_limit', true);
 
+		// If user has an unapproved pending trade application, they cannot checkout with credit
+		if (! current_user_can('manage_options') && ! current_user_can('manage_woocommerce') && class_exists('CWD_V2_Trade_Applications')) {
+			global $wpdb;
+			$apps_table = CWD_V2_Trade_Applications::get_table_name();
+			if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $apps_table)) === $apps_table) {
+				$has_approved = (int) $wpdb->get_var($wpdb->prepare(
+					"SELECT COUNT(*) FROM {$apps_table} WHERE (user_id = %d OR (applicant_email = %s AND applicant_email != '')) AND status = 'approved' AND approved_limit > 0",
+					$user_id,
+					$current_user->user_email
+				));
+				$has_pending = (int) $wpdb->get_var($wpdb->prepare(
+					"SELECT COUNT(*) FROM {$apps_table} WHERE (user_id = %d OR (applicant_email = %s AND applicant_email != '')) AND status = 'pending'",
+					$user_id,
+					$current_user->user_email
+				));
+				if ($has_pending > 0 && $has_approved === 0) {
+					return false;
+				}
+			}
+		}
+
 		// Available for credit_account role, users with approved credit limit, or administrators/shop managers
 		if (! in_array('credit_account', $roles, true) && $credit_limit <= 0 && ! current_user_can('manage_options') && ! current_user_can('manage_woocommerce')) {
 			return false;
