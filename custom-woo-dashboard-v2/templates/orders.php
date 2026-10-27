@@ -441,21 +441,13 @@ $shop_url = apply_filters('woocommerce_return_to_shop_redirect', wc_get_page_per
 											if ($inv_row && ! empty($inv_row->invoice_number)) {
 												$odoo_inv_num = $inv_row->invoice_number;
 											}
-											$inv_target_url = '';
-											if ($inv_row) {
-												$inv_target_url = wc_get_endpoint_url('view-invoice', $inv_row->id);
-											} elseif (! empty($order->get_meta('_odoo_invoice_url'))) {
-												$raw_url = $order->get_meta('_odoo_invoice_url');
-												if (stripos($raw_url, 'xero') === false && stripos($raw_url, 'localhost') === false) {
-													$inv_target_url = $raw_url;
-												}
-											}
-
-											if (! empty($inv_target_url)) :
-												$btn_label = ! empty($odoo_inv_num) ? sprintf(__('INVOICE %s', 'custom-woo-dashboard'), $odoo_inv_num) : __('VAT INVOICE', 'custom-woo-dashboard');
+											$has_invoice = ($inv_row || ! empty($odoo_inv_num) || ! empty($order->get_meta('_odoo_invoice_url')));
+											if ($has_invoice && class_exists('CWD_V2_Invoices')) :
+												$download_url = CWD_V2_Invoices::get_invoice_download_url($inv_row ? $inv_row->id : 0, $order->get_id());
+												$btn_label    = ! empty($odoo_inv_num) ? sprintf(__('DOWNLOAD INVOICE (%s)', 'custom-woo-dashboard'), $odoo_inv_num) : __('DOWNLOAD INVOICE', 'custom-woo-dashboard');
 											?>
-												<a href="<?php echo esc_url($inv_target_url); ?>" class="cwd-btn-card-action" style="background:#0284c7; color:#fff; border-color:#0284c7;">
-													<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px; margin-right:4px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+												<a href="<?php echo esc_url($download_url); ?>" class="cwd-btn-card-action" style="background:#0284c7; color:#fff; border-color:#0284c7;" download>
+													<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px; margin-right:4px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
 													<?php echo esc_html($btn_label); ?>
 												</a>
 											<?php endif; ?>

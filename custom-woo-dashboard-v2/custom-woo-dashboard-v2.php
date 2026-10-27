@@ -262,8 +262,8 @@ if (! function_exists('cwd_v2_render_order_details_odoo_invoice')) {
 			return;
 		}
 
-		$primary_link = $inv_id > 0 ? wc_get_endpoint_url('view-invoice', $inv_id) : $odoo_inv_url;
-		if (empty($primary_link)) {
+		$download_url = class_exists('CWD_V2_Invoices') ? CWD_V2_Invoices::get_invoice_download_url($inv_id, $order->get_id()) : $odoo_inv_url;
+		if (empty($download_url)) {
 			return;
 		}
 
@@ -278,9 +278,9 @@ if (! function_exists('cwd_v2_render_order_details_odoo_invoice')) {
 		echo '</div>';
 		echo '</div>';
 		echo '<div>';
-		echo '<a href="' . esc_url($primary_link) . '" class="button" style="background:#0284c7; color:#fff; border-color:#0284c7; display:inline-flex; align-items:center; gap:6px; font-weight:600; font-size:13px; padding:8px 16px; text-decoration:none; border-radius:6px; box-shadow:0 1px 2px rgba(2,132,199,0.2);">';
+		echo '<a href="' . esc_url($download_url) . '" class="button" style="background:#0284c7; color:#fff; border-color:#0284c7; display:inline-flex; align-items:center; gap:6px; font-weight:600; font-size:13px; padding:8px 16px; text-decoration:none; border-radius:6px; box-shadow:0 1px 2px rgba(2,132,199,0.2);" download>';
 		echo '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>';
-		echo esc_html__('View & Download Invoice', 'custom-woo-dashboard');
+		echo esc_html__('Download Odoo PDF Invoice', 'custom-woo-dashboard');
 		echo '</a>';
 		echo '</div>';
 		echo '</div>';

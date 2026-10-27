@@ -88,16 +88,12 @@ if (! empty($document_url) && (stripos($document_url, 'xero') !== false || strip
 			<h3><?php printf(esc_html__('Invoice %s', 'custom-woo-dashboard'), esc_html($invoice->invoice_number)); ?></h3>
 			<p><span class="cwd-v2-status-badge <?php echo $status_class; ?>"><?php echo esc_html($status_label); ?></span></p>
 		</div>
+		<?php $download_url = CWD_V2_Invoices::get_invoice_download_url($invoice->id, $invoice->order_id); ?>
 		<nav class="cwd-v2-section-links" aria-label="<?php esc_attr_e('Invoice actions', 'custom-woo-dashboard'); ?>" style="display:flex; gap:10px; align-items:center;">
-			<button type="button" onclick="window.print();" class="cwd-v2-button cwd-v2-button-primary" style="cursor:pointer; display:inline-flex; align-items:center; gap:6px; background:#0284c7; color:#fff; border:1px solid #0284c7; padding:8px 16px; border-radius:6px; font-weight:600; font-size:13.5px;">
-				<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
-				<?php esc_html_e('Download / Print PDF', 'custom-woo-dashboard'); ?>
-			</button>
-			<?php if (! empty($document_url)) : ?>
-				<a href="<?php echo esc_url($document_url); ?>" class="cwd-v2-button" style="background:#f1f5f9; color:#334155; border:1px solid #cbd5e1; padding:8px 16px; border-radius:6px; font-weight:600; font-size:13.5px; text-decoration:none; display:inline-flex; align-items:center; gap:6px;" target="_blank" rel="noopener" download>
-					<span class="dashicons dashicons-pdf" style="vertical-align: middle;"></span><?php esc_html_e('Direct PDF File', 'custom-woo-dashboard'); ?>
-				</a>
-			<?php endif; ?>
+			<a href="<?php echo esc_url($download_url); ?>" class="cwd-v2-button cwd-v2-button-primary" style="display:inline-flex; align-items:center; gap:8px; background:#0284c7; color:#fff; border:1px solid #0284c7; padding:9px 18px; border-radius:6px; font-weight:700; font-size:14px; text-decoration:none; box-shadow:0 1px 3px rgba(2,132,199,0.3);" download>
+				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+				<?php esc_html_e('Download Odoo Invoice (PDF)', 'custom-woo-dashboard'); ?>
+			</a>
 		</nav>
 	</div>
 
