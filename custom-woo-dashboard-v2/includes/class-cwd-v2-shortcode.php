@@ -35,11 +35,47 @@ class CWD_V2_Shortcode
 	public static function render($atts)
 	{
 		if (! is_user_logged_in()) {
-			// Show WooCommerce login form
+			$action           = isset($_GET['action']) && 'register' === $_GET['action'] ? 'register' : 'login';
+			$account_url      = wc_get_page_permalink('myaccount');
+			$login_tab_url    = remove_query_arg('action', $account_url);
+			$register_tab_url = add_query_arg('action', 'register', $account_url);
+
 			ob_start();
-			echo '<div class="cwd-v2-login-wrapper">';
-			woocommerce_login_form();
-			echo '</div>';
+			?>
+			<div class="cwd-v2-auth-container">
+				<div class="cwd-auth-tabs-nav">
+					<a href="<?php echo esc_url($login_tab_url); ?>" class="cwd-auth-tab <?php echo 'login' === $action ? 'active' : ''; ?>">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path><polyline points="10 17 15 12 10 7"></polyline><line x1="15" y1="12" x2="3" y2="12"></line></svg>
+						<?php esc_html_e('Sign In', 'custom-woo-dashboard'); ?>
+					</a>
+					<a href="<?php echo esc_url($register_tab_url); ?>" class="cwd-auth-tab <?php echo 'register' === $action ? 'active' : ''; ?>">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="8.5" cy="7" r="4"></circle><line x1="20" y1="8" x2="20" y2="14"></line><line x1="23" y1="11" x2="17" y2="11"></line></svg>
+						<?php esc_html_e('Create Account / Trade', 'custom-woo-dashboard'); ?>
+					</a>
+				</div>
+
+				<?php if ('register' === $action) : ?>
+					<div class="cwd-auth-tab-content">
+						<?php
+						if (class_exists('CWD_V2_Registration')) {
+							CWD_V2_Registration::render_form();
+						}
+						?>
+					</div>
+				<?php else : ?>
+					<div class="cwd-auth-tab-content cwd-v2-login-wrapper">
+						<?php wc_print_notices(); ?>
+						<?php woocommerce_login_form(); ?>
+						<div class="cwd-auth-switch-prompt" style="margin-top: 20px; padding-top: 16px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 14px; color: #64748b;">
+							<?php esc_html_e('New to EWS Supplies?', 'custom-woo-dashboard'); ?>
+							<a href="<?php echo esc_url($register_tab_url); ?>" style="color: #0284c7; font-weight: 600; text-decoration: none; margin-left: 4px;">
+								<?php esc_html_e('Create an Account or Apply for Trade &rarr;', 'custom-woo-dashboard'); ?>
+							</a>
+						</div>
+					</div>
+				<?php endif; ?>
+			</div>
+			<?php
 			return ob_get_clean();
 		}
 

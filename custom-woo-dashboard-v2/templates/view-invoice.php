@@ -42,6 +42,16 @@ $amount_due  = $is_written_off ? 0 : max(0, (float) $invoice->amount_total - (fl
 $roles       = (array) $current_user->roles;
 $can_pay     = ! $is_written_off && (CWD_V2_Invoices::STATUS_UNPAID === $invoice->status) && in_array('credit_account', $roles, true);
 $document_url = apply_filters('cwd_v2_invoice_document_url', $invoice->document_url ?? '', $invoice);
+if (empty($document_url) && $order) {
+	$document_url = $order->get_meta('_odoo_invoice_url');
+}
+if (empty($document_url) && ! empty($invoice->odoo_invoice_id)) {
+	$odoo_base = defined('CWD_ODOO_BASE_URL') ? CWD_ODOO_BASE_URL : get_option('cwd_odoo_base_url', '');
+	$odoo_base = apply_filters('cwd_v2_odoo_base_url', $odoo_base);
+	if (! empty($odoo_base)) {
+		$document_url = rtrim($odoo_base, '/') . '/my/invoices/' . rawurlencode($invoice->odoo_invoice_id) . '?report_type=pdf&download=true';
+	}
+}
 ?>
 <div class="cwd-v2-invoice-view" id="cwd-v2-invoice-print-area">
 	<div class="cwd-v2-section-heading cwd-v2-no-print">

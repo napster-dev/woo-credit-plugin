@@ -53,9 +53,11 @@ if (! function_exists('cwd_v2_init_plugin')) {
 			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-blink-express.php';
 			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-shipment-tracking.php';
 			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-saved-baskets.php';
+			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-registration.php';
 
 			CWD_V2_Activator::register_roles();
 			CWD_V2_Shortcode::init();
+			CWD_V2_Registration::init();
 			CWD_V2_Endpoints::init();
 			CWD_V2_Credit_Logic::init();
 			CWD_V2_Invoices::init();
@@ -115,6 +117,9 @@ if (! function_exists('cwd_v2_init_plugin')) {
 
 			// Render Delivery Estimate on Customer Order Details Page
 			add_action('woocommerce_order_details_before_order_table', 'cwd_v2_render_order_details_delivery_estimate', 5, 1);
+
+			// Render Odoo Invoice Card on Customer Order Details Page
+			add_action('woocommerce_order_details_after_order_table', 'cwd_v2_render_order_details_odoo_invoice', 10, 1);
 		} catch (\Throwable $e) {
 			error_log('CWD Plugin Initialization Error: ' . $e->getMessage());
 		}
@@ -185,6 +190,70 @@ if (! function_exists('cwd_v2_render_order_details_delivery_estimate')) {
 		echo '<span style="font-size:11.5px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:#0284c7;">' . esc_html($badge_title) . '</span>';
 		echo '</div>';
 		echo '<div>' . $estimate_html . '</div>';
+		echo '</div>';
+	}
+}
+
+if (! function_exists('cwd_v2_render_order_details_odoo_invoice')) {
+	function cwd_v2_render_order_details_odoo_invoice($order)
+	{
+		if (! $order) {
+			return;
+		}
+
+		$odoo_inv_url = $order->get_meta('_odoo_invoice_url');
+		$odoo_inv_num = $order->get_meta('_odoo_invoice_number') ?: $order->get_meta('odoo_invoice_number');
+		$odoo_id      = $order->get_meta('_odoo_invoice_id');
+		$inv_id       = 0;
+
+		if (class_exists('CWD_V2_Invoices')) {
+			$inv_row = CWD_V2_Invoices::get_invoices_for_order($order->get_id());
+			if ($inv_row) {
+				$inv_id = (int) $inv_row->id;
+				if (empty($odoo_inv_url) && ! empty($inv_row->document_url)) {
+					$odoo_inv_url = $inv_row->document_url;
+				}
+				if (empty($odoo_inv_num) && ! empty($inv_row->invoice_number)) {
+					$odoo_inv_num = $inv_row->invoice_number;
+				}
+			}
+		}
+
+		if (empty($odoo_inv_url) && ! empty($odoo_id)) {
+			$odoo_base = defined('CWD_ODOO_BASE_URL') ? CWD_ODOO_BASE_URL : get_option('cwd_odoo_base_url', '');
+			$odoo_base = apply_filters('cwd_v2_odoo_base_url', $odoo_base);
+			if (! empty($odoo_base)) {
+				$odoo_inv_url = rtrim($odoo_base, '/') . '/my/invoices/' . rawurlencode($odoo_id) . '?report_type=pdf&download=true';
+			}
+		}
+
+		if (empty($odoo_inv_num) && empty($odoo_inv_url)) {
+			return;
+		}
+
+		echo '<div class="cwd-view-order-invoice-card" style="background:#ffffff; border:1px solid #e2e8f0; border-left:4px solid #10b981; border-radius:8px; padding:16px 20px; margin-top:20px; margin-bottom:24px; box-shadow:0 1px 3px rgba(0,0,0,0.03); display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">';
+		echo '<div style="display:flex; align-items:center; gap:10px;">';
+		echo '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>';
+		echo '<div>';
+		echo '<span style="display:block; font-size:11.5px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; color:#059669;">' . esc_html__('ODOO TAX INVOICE', 'custom-woo-dashboard') . '</span>';
+		if (! empty($odoo_inv_num)) {
+			echo '<span style="font-size:15px; font-weight:700; color:#0f172a;">' . esc_html($odoo_inv_num) . '</span>';
+		}
+		echo '</div>';
+		echo '</div>';
+		echo '<div style="display:flex; gap:8px; flex-wrap:wrap;">';
+		if (! empty($odoo_inv_url)) {
+			echo '<a href="' . esc_url($odoo_inv_url) . '" target="_blank" rel="noopener" class="button" style="background:#0284c7; color:#fff; border-color:#0284c7; display:inline-flex; align-items:center; gap:6px; font-weight:600; font-size:13px; padding:6px 14px; text-decoration:none; border-radius:5px;">';
+			echo '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>';
+			echo esc_html__('Download Odoo PDF', 'custom-woo-dashboard');
+			echo '</a>';
+		}
+		if ($inv_id > 0) {
+			echo '<a href="' . esc_url(wc_get_endpoint_url('view-invoice', $inv_id)) . '" class="button" style="background:#f1f5f9; color:#334155; border:1px solid #cbd5e1; font-weight:600; font-size:13px; padding:6px 14px; text-decoration:none; border-radius:5px;">';
+			echo esc_html__('View Invoice Details', 'custom-woo-dashboard');
+			echo '</a>';
+		}
+		echo '</div>';
 		echo '</div>';
 	}
 }

@@ -431,10 +431,23 @@ $shop_url = apply_filters('woocommerce_return_to_shop_redirect', wc_get_page_per
 												<?php echo esc_html(strtoupper('completed' === $status ? __('INVOICED', 'custom-woo-dashboard') : $status_name)); ?>
 											</div>
 										</div>
-										<div class="cwd-card-action-box">
+										<div class="cwd-card-action-box" style="display:flex; flex-wrap:wrap; gap:6px; align-items:center;">
 											<a href="<?php echo esc_url($view_url); ?>" class="cwd-btn-card-action">
 												<?php echo esc_html(sprintf(__('VIEW ORDER #%s', 'custom-woo-dashboard'), $order_num)); ?>
 											</a>
+											<?php
+											$odoo_inv_url = $order->get_meta('_odoo_invoice_url');
+											$odoo_inv_num = $order->get_meta('_odoo_invoice_number') ?: $order->get_meta('odoo_invoice_number');
+											if (empty($odoo_inv_url) && ! empty($odoo_inv_num) && class_exists('CWD_V2_Invoices') && ($inv_row = CWD_V2_Invoices::get_invoices_for_order($order->get_id()))) {
+												$odoo_inv_url = $inv_row->document_url ?? '';
+											}
+											if (! empty($odoo_inv_url)) :
+											?>
+												<a href="<?php echo esc_url($odoo_inv_url); ?>" target="_blank" rel="noopener" class="cwd-btn-card-action" style="background:#0284c7; color:#fff; border-color:#0284c7;">
+													<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px; margin-right:4px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+													<?php echo esc_html(! empty($odoo_inv_num) ? sprintf(__('ODOO INVOICE (%s)', 'custom-woo-dashboard'), $odoo_inv_num) : __('ODOO INVOICE', 'custom-woo-dashboard')); ?>
+												</a>
+											<?php endif; ?>
 										</div>
 									</div>
 

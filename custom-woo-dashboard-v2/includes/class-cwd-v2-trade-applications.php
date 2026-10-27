@@ -184,6 +184,86 @@ class CWD_V2_Trade_Applications
 	}
 
 	/**
+	 * Record a trade credit application submitted during user registration.
+	 *
+	 * @param int   $user_id WordPress user ID
+	 * @param array $data    Registration trade fields
+	 * @return int|false
+	 */
+	public static function register_trade_application_from_signup($user_id, $data)
+	{
+		self::ensure_table_exists();
+
+		$user = get_userdata($user_id);
+		if (! $user) {
+			return false;
+		}
+
+		global $wpdb;
+		$table = self::get_table_name();
+		$now   = current_time('mysql');
+
+		$applicant_name  = trim(($data['first_name'] ?? '') . ' ' . ($data['last_name'] ?? ''));
+		if (empty($applicant_name)) {
+			$applicant_name = $user->display_name;
+		}
+
+		$company_name    = sanitize_text_field($data['company_name'] ?? '');
+		$phone           = sanitize_text_field($data['phone'] ?? '');
+		$requested_limit = isset($data['requested_limit']) ? (float) $data['requested_limit'] : 1000.0;
+		if ($requested_limit <= 0) {
+			$requested_limit = 1000.0;
+		}
+
+		$form_data = array(
+			'source'                      => 'user_registration_page',
+			'applicant_name'              => $applicant_name,
+			'applicant_email'             => $user->user_email,
+			'company_name'                => $company_name,
+			'company_registration_number' => sanitize_text_field($data['company_reg_number'] ?? ''),
+			'vat_number'                  => sanitize_text_field($data['vat_number'] ?? ''),
+			'trade_type'                  => sanitize_text_field($data['trade_type'] ?? ''),
+			'phone'                       => $phone,
+			'requested_limit'             => $requested_limit,
+			'submitted_at'                => $now,
+		);
+
+		$insert_data = array(
+			'forminator_form_id'  => 0,
+			'forminator_entry_id' => 0,
+			'applicant_email'     => sanitize_email($user->user_email),
+			'applicant_name'      => $applicant_name,
+			'company_name'        => $company_name,
+			'phone'               => $phone,
+			'requested_limit'     => $requested_limit,
+			'form_data'           => wp_json_encode($form_data),
+			'status'              => self::STATUS_PENDING,
+			'user_id'             => $user_id,
+			'created_at'          => $now,
+			'updated_at'          => $now,
+		);
+
+		$insert_format = array('%d', '%d', '%s', '%s', '%s', '%s', '%f', '%s', '%s', '%d', '%s', '%s');
+		$wpdb->insert($table, $insert_data, $insert_format);
+		$inserted_id = $wpdb->insert_id;
+
+		if ($inserted_id && class_exists('CWD_V2_Credits_Bridge')) {
+			CWD_V2_Credits_Bridge::forward_application_to_credits_plugin(
+				$inserted_id,
+				$user_id,
+				$user->user_email,
+				$applicant_name,
+				$company_name,
+				$phone,
+				$requested_limit,
+				$form_data
+			);
+		}
+
+		return $inserted_id;
+	}
+
+	/**
 	 * Capture a Forminator form submission as a trade application.
 	 *
 	 * Maps standard field name patterns to application columns.

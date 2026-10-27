@@ -340,6 +340,8 @@ class CWD_V2_Invoices
 						}
 					}
 				}
+				// Enrich with Odoo metadata from linked WooCommerce order
+				self::enrich_invoice_with_odoo_data($inv);
 			}
 		}
 
@@ -589,6 +591,175 @@ class CWD_V2_Invoices
 	}
 
 	/**
+	 * Enriches an invoice object with Odoo ERP data from linked WooCommerce order metadata
+	 * if it originated as a website invoice or is missing direct Odoo references.
+	 *
+	 * @param object $inv
+	 * @return object
+	 */
+	public static function enrich_invoice_with_odoo_data($inv)
+	{
+		if (! is_object($inv)) {
+			return $inv;
+		}
+
+		$order_id = ! empty($inv->order_id) ? (int) $inv->order_id : 0;
+		if ($order_id > 0) {
+			$order = wc_get_order($order_id);
+			if ($order) {
+				$odoo_inv_num = $order->get_meta('_odoo_invoice_number') ?: $order->get_meta('odoo_invoice_number');
+				$odoo_id      = $order->get_meta('_odoo_invoice_id');
+				$odoo_url     = $order->get_meta('_odoo_invoice_url');
+				$odoo_status  = $order->get_meta('_odoo_invoice_status');
+
+				$needs_db_sync = false;
+
+				if (! empty($odoo_inv_num) && $inv->invoice_number !== $odoo_inv_num) {
+					$inv->invoice_number = sanitize_text_field($odoo_inv_num);
+					$inv->source         = self::SOURCE_ODOO;
+					$needs_db_sync       = true;
+				}
+
+				if (! empty($odoo_id) && empty($inv->odoo_invoice_id)) {
+					$inv->odoo_invoice_id = sanitize_text_field($odoo_id);
+					$inv->source          = self::SOURCE_ODOO;
+					$needs_db_sync        = true;
+				}
+
+				if (! empty($odoo_url) && empty($inv->document_url)) {
+					$inv->document_url = esc_url_raw($odoo_url);
+					$needs_db_sync     = true;
+				}
+
+				if (! empty($odoo_status) && in_array(strtolower($odoo_status), array(self::STATUS_PAID, self::STATUS_UNPAID, self::STATUS_VOID, self::STATUS_WRITTEN_OFF), true)) {
+					if ($inv->status !== strtolower($odoo_status)) {
+						$inv->status   = strtolower($odoo_status);
+						$needs_db_sync = true;
+					}
+				}
+
+				if ($needs_db_sync && ! empty($inv->id)) {
+					global $wpdb;
+					$wpdb->update(
+						self::table_name(),
+						array(
+							'invoice_number'  => $inv->invoice_number,
+							'source'          => $inv->source,
+							'odoo_invoice_id' => $inv->odoo_invoice_id,
+							'document_url'    => $inv->document_url,
+							'status'          => $inv->status,
+							'updated_at'      => current_time('mysql'),
+						),
+						array('id' => (int) $inv->id)
+					);
+				}
+			}
+		}
+
+		// If document_url is still empty but odoo_invoice_id exists, build portal download link
+		if (empty($inv->document_url) && ! empty($inv->odoo_invoice_id)) {
+			$odoo_base = defined('CWD_ODOO_BASE_URL') ? CWD_ODOO_BASE_URL : get_option('cwd_odoo_base_url', '');
+			$odoo_base = apply_filters('cwd_v2_odoo_base_url', $odoo_base);
+			if (! empty($odoo_base)) {
+				$inv->document_url = rtrim($odoo_base, '/') . '/my/invoices/' . rawurlencode($inv->odoo_invoice_id) . '?report_type=pdf&download=true';
+			}
+		}
+
+		return $inv;
+	}
+
+	/**
+	 * Get total due / overdue credit amount for a user.
+	 *
+	 * @param int $user_id
+	 * @return float
+	 */
+	public static function get_user_due_credit_amount($user_id)
+	{
+		$user_id = (int) $user_id;
+		if (! $user_id) {
+			return 0.0;
+		}
+
+		global $wpdb;
+		$table = self::table_name();
+		if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $table)) !== $table) {
+			return 0.0;
+		}
+
+		$now = current_time('mysql');
+
+		// Query unpaid invoices past due date
+		$overdue_sum = $wpdb->get_var($wpdb->prepare(
+			"SELECT SUM(amount_total - amount_paid) FROM {$table}
+			 WHERE user_id = %d AND status = %s AND due_date <= %s",
+			$user_id,
+			self::STATUS_UNPAID,
+			$now
+		));
+
+		if ($overdue_sum && (float) $overdue_sum > 0.01) {
+			return round((float) $overdue_sum, 2);
+		}
+
+		// Fallback: if user has any unpaid invoices at all, check if due date passed
+		$unpaid_sum = $wpdb->get_var($wpdb->prepare(
+			"SELECT SUM(amount_total - amount_paid) FROM {$table}
+			 WHERE user_id = %d AND status = %s",
+			$user_id,
+			self::STATUS_UNPAID
+		));
+
+		if ($unpaid_sum && (float) $unpaid_sum > 0.01) {
+			return round((float) $unpaid_sum, 2);
+		}
+
+		$credit_balance = class_exists('CWD_V2_Credit_Logic') ? CWD_V2_Credit_Logic::get_user_credit_balance($user_id) : (float) get_user_meta($user_id, '_credit_balance', true);
+		return round(max(0.0, (float) $credit_balance), 2);
+	}
+
+	/**
+	 * Apply payment across user's unpaid invoices using FIFO (First In, First Out).
+	 *
+	 * @param int   $user_id
+	 * @param float $amount
+	 * @return int Number of invoices fully or partially settled.
+	 */
+	public static function apply_fifo_payment_to_unpaid_invoices($user_id, $amount)
+	{
+		$user_id   = (int) $user_id;
+		$remaining = round((float) $amount, 2);
+		if ($user_id <= 0 || $remaining <= 0) {
+			return 0;
+		}
+
+		$unpaid_invoices = self::get_outstanding_invoices_for_user($user_id, 100);
+		if (empty($unpaid_invoices)) {
+			return 0;
+		}
+
+		$settled_count = 0;
+		foreach ($unpaid_invoices as $inv) {
+			if ($remaining <= 0) {
+				break;
+			}
+			$outstanding = round(max(0.0, (float) $inv->amount_total - (float) $inv->amount_paid), 2);
+			if ($outstanding <= 0) {
+				continue;
+			}
+
+			$pay_amount = min($remaining, $outstanding);
+			if (self::apply_invoice_payment($inv->id, $user_id, $pay_amount)) {
+				$remaining = round($remaining - $pay_amount, 2);
+				$settled_count++;
+			}
+		}
+
+		self::update_user_earliest_due_date($user_id);
+		return $settled_count;
+	}
+
+	/**
 	 * @param int $invoice_id
 	 * @param int $user_id Optional. If provided, only returns the invoice if it belongs to this user.
 	 * @return object|null
@@ -614,6 +785,10 @@ class CWD_V2_Invoices
 					$wpdb->update($table, array('due_date' => $calc_due), array('id' => (int) $inv->id));
 				}
 			}
+		}
+
+		if ($inv) {
+			self::enrich_invoice_with_odoo_data($inv);
 		}
 
 		return $inv;

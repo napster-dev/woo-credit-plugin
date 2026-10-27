@@ -92,6 +92,24 @@ class CWD_V2_Credit_Logic
 		// Completely remove Direct Bank Transfer (BACS) across checkout
 		unset( $gateways['bacs'] );
 
+		// Strictly remove all duplicate third-party credit gateways across checkout
+		// so that only the official "Pay on Credit Account" gateway (cwd_v2_credit_account) remains available.
+		$duplicate_credit_gateways = array(
+			'credits',
+			'wc_cs',
+			'wc_cs_credits',
+			'fpc_credits',
+			'wc_credit_gateway',
+			'credits_gateway',
+			'woocommerce_credits',
+			'trade_credit',
+		);
+		foreach ( $duplicate_credit_gateways as $dup_id ) {
+			if ( isset( $gateways[ $dup_id ] ) ) {
+				unset( $gateways[ $dup_id ] );
+			}
+		}
+
 		$product_id = (int) self::get_credit_payment_product_id();
 		$is_account_payment = false;
 		if ( isset( WC()->cart ) && WC()->cart ) {
@@ -120,9 +138,6 @@ class CWD_V2_Credit_Logic
 		if ( $is_account_payment || ( isset( WC()->session ) && WC()->session->get( 'cwd_payoff_credit_balance', false ) ) ) {
 			// Customers cannot pay their credit account using credit account itself
 			unset( $gateways['cwd_v2_credit_account'] );
-			unset( $gateways['credits'] );
-			unset( $gateways['trade_credit'] );
-			unset( $gateways['fpc_credits'] );
 		}
 
 		return $gateways;
@@ -387,14 +402,15 @@ class CWD_V2_Credit_Logic
 						$payoff_amount,
 						'order',
 						$order->get_id(),
-						sprintf(__('Checkout payoff of outstanding balance via order #%d', 'custom-woo-dashboard'), $order->get_id())
+						sprintf(__('Checkout payoff of due credit balance via order #%d', 'custom-woo-dashboard'), $order->get_id())
 					);
 				}
 				if (class_exists('CWD_V2_Invoices')) {
+					CWD_V2_Invoices::apply_fifo_payment_to_unpaid_invoices($user_id, $payoff_amount);
 					CWD_V2_Invoices::update_user_earliest_due_date($user_id);
 				}
 				$order->update_meta_data('_cwd_payoff_balance_processed', 'yes');
-				$order->add_order_note(sprintf(__('Settled outstanding credit balance of %s via checkout payoff on this order.', 'custom-woo-dashboard'), wc_price($payoff_amount)));
+				$order->add_order_note(sprintf(__('Settled due credit balance of %s via checkout payoff on this order.', 'custom-woo-dashboard'), wc_price($payoff_amount)));
 				$order->save();
 			}
 		}
@@ -426,7 +442,10 @@ class CWD_V2_Credit_Logic
 		}
 
 		$credit_balance = self::get_user_credit_balance($user_id);
-		if ($credit_balance <= 0.01) {
+		$due_credit     = class_exists('CWD_V2_Invoices') ? CWD_V2_Invoices::get_user_due_credit_amount($user_id) : 0.0;
+		$payoff_amount  = ($due_credit > 0.01) ? $due_credit : $credit_balance;
+
+		if ($payoff_amount <= 0.01) {
 			return;
 		}
 
@@ -435,12 +454,12 @@ class CWD_V2_Credit_Logic
 		?>
 		<div class="cwd-credit-payoff-checkout-box" style="margin: 16px 0; padding: 14px 16px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px;">
 			<label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer; margin: 0; font-size: 14px; color: #0f172a;">
-				<input type="checkbox" name="cwd_payoff_credit_balance" id="cwd_payoff_credit_balance" value="1" <?php checked($is_checked, true); ?> style="margin-top: 3px;" onchange="jQuery('body').trigger('update_checkout');" />
+				<input type="checkbox" name="cwd_payoff_credit_balance" id="cwd_payoff_credit_balance" value="1" <?php checked($is_checked, true); ?> style="margin-top: 3px;" onchange="jQuery('input[name=\'cwd_payoff_credit_balance\']').prop('checked', this.checked); jQuery('body').trigger('update_checkout');" />
 				<span>
-					<strong><?php printf(esc_html__('Also pay off my outstanding credit balance (%s) with this order', 'custom-woo-dashboard'), wp_strip_all_tags(wc_price($credit_balance))); ?></strong>
+					<strong><?php printf(esc_html__('Pay due credit balance (%s) with this order', 'custom-woo-dashboard'), wp_strip_all_tags(wc_price($payoff_amount))); ?></strong>
 					<?php if (! empty($due_date)) : ?>
 						<span style="display: block; font-size: 12px; color: #64748b; margin-top: 2px;">
-							<?php printf(esc_html__('Payment due date: %s. Leave unchecked if you prefer to settle this on your due date.', 'custom-woo-dashboard'), esc_html($due_date)); ?>
+							<?php printf(esc_html__('Payment due date: %s. Tick this box to clear your due balance now via card or direct payment.', 'custom-woo-dashboard'), esc_html($due_date)); ?>
 						</span>
 					<?php else : ?>
 						<span style="display: block; font-size: 12px; color: #64748b; margin-top: 2px;">
@@ -493,10 +512,13 @@ class CWD_V2_Credit_Logic
 			}
 		}
 
-		$user_id = get_current_user_id();
+		$user_id        = get_current_user_id();
 		$credit_balance = self::get_user_credit_balance($user_id);
-		if ($credit_balance > 0.01) {
-			$cart->add_fee(__('Outstanding Credit Balance Payoff', 'custom-woo-dashboard'), $credit_balance, false);
+		$due_credit     = class_exists('CWD_V2_Invoices') ? CWD_V2_Invoices::get_user_due_credit_amount($user_id) : 0.0;
+		$payoff_amount  = ($due_credit > 0.01) ? $due_credit : $credit_balance;
+
+		if ($payoff_amount > 0.01) {
+			$cart->add_fee(__('Due Credit Balance Payoff', 'custom-woo-dashboard'), $payoff_amount, false);
 		}
 	}
 
@@ -509,8 +531,11 @@ class CWD_V2_Credit_Logic
 			$user_id = $order->get_user_id();
 			if ($user_id) {
 				$credit_balance = self::get_user_credit_balance($user_id);
-				if ($credit_balance > 0.01) {
-					$order->update_meta_data('_cwd_payoff_credit_balance_amount', $credit_balance);
+				$due_credit     = class_exists('CWD_V2_Invoices') ? CWD_V2_Invoices::get_user_due_credit_amount($user_id) : 0.0;
+				$payoff_amount  = ($due_credit > 0.01) ? $due_credit : $credit_balance;
+
+				if ($payoff_amount > 0.01) {
+					$order->update_meta_data('_cwd_payoff_credit_balance_amount', $payoff_amount);
 				}
 			}
 			WC()->session->set('cwd_payoff_credit_balance', false);

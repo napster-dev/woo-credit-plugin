@@ -206,6 +206,25 @@ class WC_Gateway_Credit_Account_V2 extends WC_Payment_Gateway
 					</span>
 				</div>
 			<?php endif; ?>
+
+			<?php
+			$due_credit = class_exists('CWD_V2_Invoices') ? CWD_V2_Invoices::get_user_due_credit_amount($user_id) : 0.0;
+			$payoff_amount = ($due_credit > 0.01) ? $due_credit : $credit_balance;
+			$is_payoff_checked = (bool) (WC()->session ? WC()->session->get('cwd_payoff_credit_balance', false) : false);
+			if ($payoff_amount > 0.01) :
+			?>
+				<div class="cwd-gateway-due-credit-box" style="margin-top: 12px; padding: 12px 14px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px;">
+					<label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer; margin: 0; font-size: 13.5px; color: #0f172a;">
+						<input type="checkbox" name="cwd_payoff_credit_balance" id="cwd_gateway_pay_due_credit" value="1" <?php checked($is_payoff_checked, true); ?> style="margin-top: 3px;" onchange="jQuery('input[name=\'cwd_payoff_credit_balance\']').prop('checked', this.checked); jQuery('body').trigger('update_checkout');" />
+						<span>
+							<strong><?php printf(esc_html__('Pay due credit balance (%s) with this order', 'custom-woo-dashboard'), wp_strip_all_tags(wc_price($payoff_amount))); ?></strong>
+							<span style="display: block; font-size: 12px; color: #64748b; margin-top: 2px;">
+								<?php esc_html_e('Tick this box to settle your due credit balance. When selected, payment will be completed via direct payment (Card, Blink, Apple Pay, Google Pay) to clear your account balance.', 'custom-woo-dashboard'); ?>
+							</span>
+						</span>
+					</label>
+				</div>
+			<?php endif; ?>
 		</div>
 		<?php
 	}
