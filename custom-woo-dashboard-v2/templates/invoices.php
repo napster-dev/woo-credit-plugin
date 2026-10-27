@@ -89,7 +89,7 @@ $all_url  = esc_url(add_query_arg('cwd_status', 'all', wc_get_endpoint_url('invo
 							</td>
 							<td data-title="<?php esc_attr_e('Actions', 'woocommerce'); ?>" style="text-align: right; white-space: nowrap;">
 								<?php $download_url = CWD_V2_Invoices::get_invoice_download_url($invoice->id, $invoice->order_id); ?>
-								<a href="<?php echo esc_url($download_url); ?>" class="cwd-v2-btn-view" style="background:#0284c7; color:#fff; border-color:#0284c7; margin-right:6px;" download><?php esc_html_e('Download PDF', 'custom-woo-dashboard'); ?></a>
+								<a href="<?php echo esc_url($download_url); ?>" class="cwd-v2-btn-view" style="background:#0284c7; color:#fff; border-color:#0284c7; margin-right:6px;" download><?php esc_html_e('Download Invoice', 'custom-woo-dashboard'); ?></a>
 								<a href="<?php echo $view_url; ?>" class="cwd-v2-btn-view"><?php esc_html_e('View', 'woocommerce'); ?></a>
 							</td>
 						</tr>

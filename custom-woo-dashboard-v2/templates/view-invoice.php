@@ -92,7 +92,7 @@ if (! empty($document_url) && (stripos($document_url, 'xero') !== false || strip
 		<nav class="cwd-v2-section-links" aria-label="<?php esc_attr_e('Invoice actions', 'custom-woo-dashboard'); ?>" style="display:flex; gap:10px; align-items:center;">
 			<a href="<?php echo esc_url($download_url); ?>" class="cwd-v2-button cwd-v2-button-primary" style="display:inline-flex; align-items:center; gap:8px; background:#0284c7; color:#fff; border:1px solid #0284c7; padding:9px 18px; border-radius:6px; font-weight:700; font-size:14px; text-decoration:none; box-shadow:0 1px 3px rgba(2,132,199,0.3);" download>
 				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-				<?php esc_html_e('Download Odoo Invoice (PDF)', 'custom-woo-dashboard'); ?>
+				<?php esc_html_e('Download Invoice', 'custom-woo-dashboard'); ?>
 			</a>
 		</nav>
 	</div>

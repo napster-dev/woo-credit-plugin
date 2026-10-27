@@ -1128,6 +1128,6 @@ class CWD_V2_Invoices
 			exit;
 		}
 
-		wp_die(esc_html__('Unable to retrieve invoice PDF from Odoo at this time. Please contact support.', 'custom-woo-dashboard'));
+		wp_die(esc_html__('Unable to retrieve invoice PDF at this time. Please contact support.', 'custom-woo-dashboard'));
 	}
 }
