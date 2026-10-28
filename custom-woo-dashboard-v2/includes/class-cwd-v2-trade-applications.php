@@ -2563,6 +2563,9 @@ class CWD_V2_Trade_Applications
 					if (empty($sig_src) && ! empty($linked_user)) {
 						$sig_src = get_user_meta($linked_user->ID, '_trade_signature_url', true);
 					}
+					if (! empty($sig_src) && class_exists('CWD_V2_Credit_Logic')) {
+						$sig_src = CWD_V2_Credit_Logic::get_secure_signature_url($sig_src, ! empty($linked_user) ? $linked_user->ID : 0);
+					}
 					?>
 					<div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 24px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
 						<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">

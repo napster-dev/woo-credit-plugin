@@ -794,6 +794,23 @@ wc_print_notices();
 											<span><?php echo esc_html( $sub_data['trade_ref_3_address'] ?? '--' ); ?></span>
 										</div>
 									<?php endif; ?>
+									<?php
+									$cust_sig_src = ! empty( $sub_data['signature_url'] ) ? $sub_data['signature_url'] : ( ! empty( $sub_data['signature_data'] ) ? $sub_data['signature_data'] : '' );
+									if ( empty( $cust_sig_src ) ) {
+										$cust_sig_src = get_user_meta( $user_id, '_trade_signature_url', true );
+									}
+									if ( ! empty( $cust_sig_src ) && class_exists( 'CWD_V2_Credit_Logic' ) ) {
+										$cust_sig_src = CWD_V2_Credit_Logic::get_secure_signature_url( $cust_sig_src, $user_id );
+									}
+									if ( ! empty( $cust_sig_src ) ) :
+									?>
+										<div style="grid-column: 1 / -1; border-top: 1px dashed #e2e8f0; padding-top: 10px; margin-top: 4px;">
+											<span style="color: #64748b; font-weight: 500; display: block; margin-bottom: 6px;"><?php esc_html_e( 'Authorised Signature on File:', 'custom-woo-dashboard' ); ?></span>
+											<div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 12px; display: inline-block; max-width: 280px;">
+												<img src="<?php echo esc_url( $cust_sig_src ); ?>" alt="<?php esc_attr_e( 'Digital Signature', 'custom-woo-dashboard' ); ?>" style="max-height: 60px; max-width: 100%; display: block;" />
+											</div>
+										</div>
+									<?php endif; ?>
 								</div>
 							</div>
 						<?php endif; ?>

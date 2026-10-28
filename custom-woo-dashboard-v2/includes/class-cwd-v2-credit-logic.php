@@ -22,6 +22,12 @@ class CWD_V2_Credit_Logic
 		// Handle new trade account application submission
 		add_action('template_redirect', array(__CLASS__, 'handle_trade_application_submission'));
 
+		// Handle authenticated secure signature streaming
+		add_action('template_redirect', array(__CLASS__, 'handle_serve_signature'));
+
+		// Ensure trade signatures directory is locked against direct public HTTP access
+		self::ensure_trade_signatures_dir_security();
+
 		// Set price of credit payment product in cart
 		add_action('woocommerce_before_calculate_totals', array(__CLASS__, 'set_credit_payment_price'), 10, 1);
 		add_filter( 'woocommerce_available_payment_gateways', array( __CLASS__, 'filter_account_payment_gateways' ), 9999 );
@@ -921,16 +927,11 @@ class CWD_V2_Credit_Logic
 					$b64 = substr($signature_data, strlen('data:image/png;base64,'));
 					$img_bytes = base64_decode($b64);
 					if ($img_bytes !== false) {
-						$upload_dir = wp_upload_dir();
-						$sig_dir = $upload_dir['basedir'] . '/trade-signatures';
-						if (! file_exists($sig_dir)) {
-							wp_mkdir_p($sig_dir);
-							@file_put_contents($sig_dir . '/index.html', '');
-						}
-						$filename = 'sig_' . $user_id . '_' . time() . '_' . wp_generate_password(6, false) . '.png';
+						$sig_dir  = self::ensure_trade_signatures_dir_security();
+						$filename = 'sig_' . $user_id . '_' . time() . '_' . wp_generate_password(8, false) . '.png';
 						$filepath = $sig_dir . '/' . $filename;
 						if (@file_put_contents($filepath, $img_bytes)) {
-							$signature_url = $upload_dir['baseurl'] . '/trade-signatures/' . $filename;
+							$signature_url = self::get_secure_signature_url($filename, $user_id);
 						}
 					}
 				}
@@ -1784,5 +1785,193 @@ class CWD_V2_Credit_Logic
 
 		$refund->update_meta_data('_cwd_v2_credit_refund_processed', 'yes');
 		$refund->save();
+	}
+
+	/**
+	 * Ensure the trade-signatures directory exists and is strictly protected
+	 * against direct public HTTP access across Apache, LiteSpeed, and other web servers.
+	 *
+	 * @return string Protected directory path.
+	 */
+	public static function ensure_trade_signatures_dir_security()
+	{
+		$upload_dir = wp_upload_dir();
+		$sig_dir    = $upload_dir['basedir'] . '/trade-signatures';
+
+		if (! file_exists($sig_dir)) {
+			wp_mkdir_p($sig_dir);
+		}
+
+		// 1. .htaccess protection (Apache / LiteSpeed)
+		$htaccess_file    = $sig_dir . '/.htaccess';
+		$htaccess_content = "# Deny all direct public access to sensitive trade signatures\n"
+			. "<IfModule !mod_authz_core.c>\n"
+			. "    Order Deny,Allow\n"
+			. "    Deny from all\n"
+			. "</IfModule>\n"
+			. "<IfModule mod_authz_core.c>\n"
+			. "    Require all denied\n"
+			. "</IfModule>\n";
+
+		if (! file_exists($htaccess_file) || file_get_contents($htaccess_file) !== $htaccess_content) {
+			@file_put_contents($htaccess_file, $htaccess_content);
+		}
+
+		// 2. index.php protection against directory listing or execution
+		$index_file = $sig_dir . '/index.php';
+		if (! file_exists($index_file)) {
+			@file_put_contents($index_file, "<?php\n// Silence is golden.\nhttp_response_code(403);\nexit('Direct access forbidden.');\n");
+		}
+
+		// 3. index.html protection
+		$html_file = $sig_dir . '/index.html';
+		if (! file_exists($html_file)) {
+			@file_put_contents($html_file, '');
+		}
+
+		return $sig_dir;
+	}
+
+	/**
+	 * Generate an authenticated, nonce-protected streaming URL for a trade signature.
+	 * Converts direct static URLs or filenames into secure streaming endpoints.
+	 *
+	 * @param string $sig_src  File name, static URL, or Data URL.
+	 * @param int    $user_id  Optional user ID.
+	 * @return string Secure URL or original Base64 string.
+	 */
+	public static function get_secure_signature_url($sig_src, $user_id = 0)
+	{
+		if (empty($sig_src) || ! is_string($sig_src)) {
+			return '';
+		}
+
+		// Keep raw Base64 data intact
+		if (strpos($sig_src, 'data:image/') === 0) {
+			return $sig_src;
+		}
+
+		// If it's already a secure endpoint URL, refresh nonce if needed or return
+		if (strpos($sig_src, 'cwd_action=view_signature') !== false) {
+			$parts = parse_url($sig_src);
+			if (! empty($parts['query'])) {
+				parse_str($parts['query'], $query_args);
+				if (! empty($query_args['sig_file'])) {
+					$filename = sanitize_file_name($query_args['sig_file']);
+					$nonce    = wp_create_nonce('cwd_sig_view_' . $filename);
+					return add_query_arg(array(
+						'cwd_action' => 'view_signature',
+						'sig_file'   => $filename,
+						'_cwd_nonce' => $nonce,
+					), home_url('/'));
+				}
+			}
+			return $sig_src;
+		}
+
+		// Extract filename from URL or path
+		$filename = basename(parse_url($sig_src, PHP_URL_PATH));
+		if (empty($filename) || ! preg_match('/^sig_[a-zA-Z0-9_\-]+\.png$/i', $filename)) {
+			return '';
+		}
+
+		$nonce = wp_create_nonce('cwd_sig_view_' . $filename);
+
+		return add_query_arg(array(
+			'cwd_action' => 'view_signature',
+			'sig_file'   => $filename,
+			'_cwd_nonce' => $nonce,
+		), home_url('/'));
+	}
+
+	/**
+	 * Serve protected signature image to authenticated, authorized users only.
+	 * Strictly denies all public, unauthenticated, or unauthorized access.
+	 */
+	public static function handle_serve_signature()
+	{
+		if (! isset($_GET['cwd_action']) || 'view_signature' !== $_GET['cwd_action']) {
+			return;
+		}
+
+		// 1. Authentication check: Guest / unauthenticated access is immediately blocked
+		if (! is_user_logged_in()) {
+			wp_die(
+				esc_html__('Access Denied: You must be logged in to view signature files.', 'custom-woo-dashboard'),
+				esc_html__('Unauthorized', 'custom-woo-dashboard'),
+				array('response' => 401)
+			);
+		}
+
+		$raw_file = isset($_GET['sig_file']) ? sanitize_file_name(wp_unslash($_GET['sig_file'])) : '';
+		$nonce    = isset($_GET['_cwd_nonce']) ? sanitize_text_field(wp_unslash($_GET['_cwd_nonce'])) : '';
+
+		// 2. Filename structure validation: must match sig_{user_id}_{timestamp}_{random}.png
+		if (empty($raw_file) || ! preg_match('/^sig_(\d+)_[a-zA-Z0-9_\-]+\.png$/i', $raw_file, $matches)) {
+			wp_die(
+				esc_html__('Invalid signature file request.', 'custom-woo-dashboard'),
+				esc_html__('Bad Request', 'custom-woo-dashboard'),
+				array('response' => 400)
+			);
+		}
+
+		$owner_user_id   = (int) $matches[1];
+		$current_user_id = (int) get_current_user_id();
+
+		// 3. Authorization check (RBAC):
+		// Permitted: Administrator, Shop Manager, or the Customer who signed the agreement.
+		$is_admin = current_user_can('manage_woocommerce') || current_user_can('manage_options') || current_user_can('edit_users');
+		$is_owner = ($current_user_id > 0 && $current_user_id === $owner_user_id);
+
+		if (! $is_admin && ! $is_owner) {
+			wp_die(
+				esc_html__('Access Denied: You do not have permission to view this signature.', 'custom-woo-dashboard'),
+				esc_html__('Forbidden', 'custom-woo-dashboard'),
+				array('response' => 403)
+			);
+		}
+
+		// 4. Nonce security check (Required for non-admin users; validated for admins)
+		if (! $is_admin && ! wp_verify_nonce($nonce, 'cwd_sig_view_' . $raw_file)) {
+			wp_die(
+				esc_html__('Access Denied: Signature security token has expired or is invalid.', 'custom-woo-dashboard'),
+				esc_html__('Forbidden', 'custom-woo-dashboard'),
+				array('response' => 403)
+			);
+		}
+
+		// 5. Locate file & prevent path traversal
+		$upload_dir   = wp_upload_dir();
+		$sig_dir      = $upload_dir['basedir'] . '/trade-signatures';
+		$filepath     = $sig_dir . '/' . $raw_file;
+
+		$real_sig_dir = realpath($sig_dir);
+		$real_file    = file_exists($filepath) ? realpath($filepath) : false;
+
+		if (! $real_file || ! $real_sig_dir || strpos($real_file, $real_sig_dir) !== 0 || ! is_readable($real_file)) {
+			wp_die(
+				esc_html__('Signature file not found or unreadable.', 'custom-woo-dashboard'),
+				esc_html__('Not Found', 'custom-woo-dashboard'),
+				array('response' => 404)
+			);
+		}
+
+		// 6. Clean all previous output buffers before streaming binary PNG
+		while (ob_get_level() > 0) {
+			ob_end_clean();
+		}
+
+		// 7. Stream PNG with strict security and anti-sniffing headers
+		header('Content-Type: image/png');
+		header('Content-Length: ' . filesize($real_file));
+		header('Content-Disposition: inline; filename="' . esc_attr($raw_file) . '"');
+		header('Cache-Control: private, no-cache, no-store, must-revalidate');
+		header('Pragma: no-cache');
+		header('Expires: 0');
+		header('X-Content-Type-Options: nosniff');
+		header('X-Frame-Options: SAMEORIGIN');
+
+		readfile($real_file);
+		exit;
 	}
 }

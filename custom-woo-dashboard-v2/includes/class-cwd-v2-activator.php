@@ -15,6 +15,7 @@ class CWD_V2_Activator
 	{
 		self::register_roles();
 		self::create_tables();
+		self::secure_directories();
 
 		// Ensure WooCommerce is active. We check for a function that exists if Woo is loaded,
 		// but since activation happens before plugins_loaded in some contexts, we just try our best.
@@ -163,5 +164,31 @@ class CWD_V2_Activator
 		if (class_exists('CWD_V2_Trade_Applications')) {
 			CWD_V2_Trade_Applications::create_table();
 		}
+	}
+
+	/**
+	 * Protect sensitive upload directories with .htaccess and index.php
+	 */
+	public static function secure_directories()
+	{
+		$upload_dir = wp_upload_dir();
+		$sig_dir    = $upload_dir['basedir'] . '/trade-signatures';
+		if (! file_exists($sig_dir)) {
+			wp_mkdir_p($sig_dir);
+		}
+
+		$htaccess_file = $sig_dir . '/.htaccess';
+		$htaccess_content = "# Deny all direct public access to sensitive trade signatures\n"
+			. "<IfModule !mod_authz_core.c>\n"
+			. "    Order Deny,Allow\n"
+			. "    Deny from all\n"
+			. "</IfModule>\n"
+			. "<IfModule mod_authz_core.c>\n"
+			. "    Require all denied\n"
+			. "</IfModule>\n";
+		@file_put_contents($htaccess_file, $htaccess_content);
+
+		@file_put_contents($sig_dir . '/index.php', "<?php\nhttp_response_code(403);\nexit('Direct access forbidden.');\n");
+		@file_put_contents($sig_dir . '/index.html', '');
 	}
 }
