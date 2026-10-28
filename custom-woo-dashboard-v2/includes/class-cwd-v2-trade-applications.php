@@ -1108,13 +1108,31 @@ class CWD_V2_Trade_Applications
 		$monthly_spend    = $pick('/spend/i', 'n/a');
 		$business_sector  = $pick('/(sector|industry|business_?type)/i', 'n/a');
 		$trading_duration = $pick('/(trading|how_?long|duration|years)/i', 'n/a');
-		$trade_ref_name   = $pick('/ref.*name/i', 'n/a');
-		$trade_ref_addr   = $pick('/ref.*addr/i', 'n/a');
-		$trade_ref_tel    = $pick('/ref.*(tel|phone)/i', 'n/a');
+		$trade_ref_name   = $pick('/(trade_?)?ref(erence)?_?1?_?name/i', 'n/a');
+		$trade_ref_addr   = $pick('/(trade_?)?ref(erence)?_?1?_?addr/i', 'n/a');
+		$trade_ref_tel    = $pick('/(trade_?)?ref(erence)?_?1?_?(tel|phone)/i', 'n/a');
+		$trade_ref_2_name = $pick('/(trade_?)?ref(erence)?_?2_?name/i', '');
+		$trade_ref_2_addr = $pick('/(trade_?)?ref(erence)?_?2_?addr/i', '');
+		$trade_ref_2_tel  = $pick('/(trade_?)?ref(erence)?_?2_?(tel|phone)/i', '');
+		$trade_ref_3_name = $pick('/(trade_?)?ref(erence)?_?3_?name/i', '');
+		$trade_ref_3_addr = $pick('/(trade_?)?ref(erence)?_?3_?addr/i', '');
+		$trade_ref_3_tel  = $pick('/(trade_?)?ref(erence)?_?3_?(tel|phone)/i', '');
 		$company_name     = ! empty($app->company_name) ? $app->company_name : $pick('/company/i', 'n/a');
 		$company_reg      = $pick('/(company_?reg|reg.*number)/i', 'n/a');
 		$vat_reg          = $pick('/vat/i', 'n/a');
 		$parent_company   = $pick('/parent/i', 'n/a');
+		$street_address   = $pick('/(street|address_1|registered_address)/i', 'n/a');
+		$city             = $pick('/(city|town)/i', 'n/a');
+		$county           = $pick('/(county|state)/i', 'n/a');
+		$postcode         = $pick('/(postcode|zip)/i', 'n/a');
+		$phone            = ! empty($app->phone) ? $app->phone : $pick('/phone/i', 'n/a');
+		$applicant_email  = ! empty($app->applicant_email) ? $app->applicant_email : $pick('/email/i', 'n/a');
+		$signatory_name   = $pick('/signatory_?name/i', '');
+		$signatory_title  = $pick('/(signatory_?title|job_?title|position)/i', '');
+		$signature_url    = $pick('/signature_?url/i', '');
+		$signature_data   = $pick('/signature_?data/i', '');
+		$signed_at        = $pick('/signed_?at/i', '');
+		$signer_ip        = $pick('/signer_?ip/i', '');
 
 		return array(
 			'credit_limit'     => $requested_limit,
@@ -1124,10 +1142,28 @@ class CWD_V2_Trade_Applications
 			'trade_ref_name'   => $trade_ref_name,
 			'trade_ref_addr'   => $trade_ref_addr,
 			'trade_ref_tel'    => $trade_ref_tel,
+			'trade_ref_2_name' => $trade_ref_2_name,
+			'trade_ref_2_addr' => $trade_ref_2_addr,
+			'trade_ref_2_tel'  => $trade_ref_2_tel,
+			'trade_ref_3_name' => $trade_ref_3_name,
+			'trade_ref_3_addr' => $trade_ref_3_addr,
+			'trade_ref_3_tel'  => $trade_ref_3_tel,
 			'company_name'     => $company_name,
 			'company_reg'      => $company_reg,
 			'vat_reg'          => $vat_reg,
 			'parent_company'   => $parent_company,
+			'street_address'   => $street_address,
+			'city'             => $city,
+			'county'           => $county,
+			'postcode'         => $postcode,
+			'phone'            => $phone,
+			'applicant_email'  => $applicant_email,
+			'signatory_name'   => $signatory_name,
+			'signatory_title'  => $signatory_title,
+			'signature_url'    => $signature_url,
+			'signature_data'   => $signature_data,
+			'signed_at'        => $signed_at,
+			'signer_ip'        => $signer_ip,
 		);
 	}
 
@@ -1197,6 +1233,8 @@ class CWD_V2_Trade_Applications
 		// Pre-fetch applications data in ONE single fast batch query
 		$pending_by_uid = array();
 		$pending_by_email = array();
+		$latest_app_by_uid = array();
+		$latest_app_by_email = array();
 		$latest_app_company_by_uid = array();
 		$latest_approved_limit_by_uid = array();
 		$latest_approved_limit_by_email = array();
@@ -1204,6 +1242,12 @@ class CWD_V2_Trade_Applications
 			$app_rows = $wpdb->get_results("SELECT id, user_id, applicant_email, company_name, status, requested_limit, approved_limit, created_at, forminator_form_id FROM {$apps_table} ORDER BY id DESC LIMIT 500");
 			if (! empty($app_rows)) {
 				foreach ($app_rows as $ar) {
+					if ($ar->user_id > 0 && ! isset($latest_app_by_uid[$ar->user_id])) {
+						$latest_app_by_uid[$ar->user_id] = $ar;
+					}
+					if (! empty($ar->applicant_email) && ! isset($latest_app_by_email[strtolower($ar->applicant_email)])) {
+						$latest_app_by_email[strtolower($ar->applicant_email)] = $ar;
+					}
 					if ($ar->user_id > 0 && ! isset($latest_app_company_by_uid[$ar->user_id]) && ! empty($ar->company_name)) {
 						$latest_app_company_by_uid[$ar->user_id] = $ar->company_name;
 					}
@@ -1326,6 +1370,8 @@ class CWD_V2_Trade_Applications
 				$status = 'inactive';
 			}
 
+			$user_app = $latest_app_by_uid[$uid] ?? ($latest_app_by_email[strtolower($user->user_email)] ?? null);
+
 			$all_accounts['user_' . $uid] = array(
 				'key'              => 'user_' . $uid,
 				'type'             => 'user',
@@ -1345,6 +1391,7 @@ class CWD_V2_Trade_Applications
 				'is_overdue'       => $is_overdue,
 				'pending_request'  => $pending_req,
 				'status'           => $status,
+				'raw_app'          => $user_app,
 			);
 		}
 
@@ -1920,11 +1967,21 @@ class CWD_V2_Trade_Applications
 												</div>
 											</details>
 
-											<a href="<?php echo esc_url(get_edit_user_link($acc['user_id'])); ?>" class="button button-small" style="font-size: 11px; padding: 1px 7px; height: 26px; line-height: 24px; vertical-align: middle;" target="_blank">
-												<?php esc_html_e('Profile', 'custom-woo-dashboard'); ?>
+											<?php if (! empty($acc['pending_request'])) : ?>
+												<a href="<?php echo esc_url(admin_url('admin.php?page=cwd-v2-trade-applications&view=' . $acc['pending_request']->id)); ?>" class="button button-primary button-small" style="font-size: 11px; padding: 1px 8px; height: 26px; line-height: 24px; vertical-align: middle; background: #ea580c; border-color: #ea580c; color: #ffffff; font-weight: 700;">
+													<?php esc_html_e('Review', 'custom-woo-dashboard'); ?>
+												</a>
+											<?php elseif (! empty($acc['raw_app'])) : ?>
+												<a href="<?php echo esc_url(admin_url('admin.php?page=cwd-v2-trade-applications&view=' . $acc['raw_app']->id)); ?>" class="button button-small" style="font-size: 11px; padding: 1px 8px; height: 26px; line-height: 24px; vertical-align: middle; color: #0284c7; border-color: #0284c7; font-weight: 600;" title="<?php esc_attr_e('View full credit questionnaire & account profile', 'custom-woo-dashboard'); ?>">
+													<?php esc_html_e('Credit Profile', 'custom-woo-dashboard'); ?>
+												</a>
+											<?php endif; ?>
+
+											<a href="<?php echo esc_url(get_edit_user_link($acc['user_id'])); ?>" class="button button-small" style="font-size: 11px; padding: 1px 7px; height: 26px; line-height: 24px; vertical-align: middle; color: #64748b;" target="_blank" title="<?php esc_attr_e('WordPress User Profile', 'custom-woo-dashboard'); ?>">
+												<?php esc_html_e('WP User', 'custom-woo-dashboard'); ?>
 											</a>
 										<?php elseif (! empty($acc['raw_app'])) : ?>
-											<a href="<?php echo esc_url(admin_url('admin.php?page=cwd-v2-trade-applications&view=' . $acc['raw_app']->id)); ?>" class="button button-primary button-small" style="font-size: 11px;">
+											<a href="<?php echo esc_url(admin_url('admin.php?page=cwd-v2-trade-applications&view=' . $acc['raw_app']->id)); ?>" class="button button-primary button-small" style="font-size: 11px; padding: 1px 8px; height: 26px; line-height: 24px; vertical-align: middle; font-weight: 700;">
 												<?php esc_html_e('Review', 'custom-woo-dashboard'); ?>
 											</a>
 										<?php endif; ?>
@@ -2320,21 +2377,25 @@ class CWD_V2_Trade_Applications
 		$notice        = isset($_GET['notice']) ? sanitize_key($_GET['notice']) : '';
 		?>
 		<div class="wrap" style="max-width: 1400px; margin-top: 18px;">
-			<h1 style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px;">
+			<div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
 				<div style="display: flex; align-items: center; gap: 10px;">
-					<a href="<?php echo esc_url(admin_url('admin.php?page=cwd-v2-trade-applications&tab=accounts')); ?>" style="text-decoration: none; color: #475569; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;">
+					<a href="<?php echo esc_url(admin_url('admin.php?page=cwd-v2-trade-applications&tab=accounts')); ?>" class="button" style="display: inline-flex; align-items: center; gap: 4px; font-weight: 600;">
 						<span class="dashicons dashicons-arrow-left-alt2"></span> <?php esc_html_e('Accounts Directory', 'custom-woo-dashboard'); ?>
 					</a>
-					<span style="color: #cbd5e1;">|</span>
-					<a href="<?php echo esc_url(admin_url('admin.php?page=cwd-v2-trade-applications&tab=queue')); ?>" style="text-decoration: none; color: #475569; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;">
-						<?php esc_html_e('Applications Queue', 'custom-woo-dashboard'); ?>
+					<a href="<?php echo esc_url(admin_url('admin.php?page=cwd-v2-trade-applications&tab=queue')); ?>" class="button" style="display: inline-flex; align-items: center; gap: 4px; font-weight: 600;">
+						<span class="dashicons dashicons-list-view"></span> <?php esc_html_e('Applications Queue', 'custom-woo-dashboard'); ?>
 					</a>
 				</div>
 				<?php if ($linked_user) : ?>
-					<a href="<?php echo esc_url(get_edit_user_link($linked_user->ID)); ?>" class="page-title-action" target="_blank">
+					<a href="<?php echo esc_url(get_edit_user_link($linked_user->ID)); ?>" class="page-title-action" target="_blank" style="margin: 0;">
 						<?php esc_html_e('Open Customer WordPress Profile', 'custom-woo-dashboard'); ?> &rarr;
 					</a>
 				<?php endif; ?>
+			</div>
+
+			<h1 style="margin: 0 0 16px; font-size: 22px; font-weight: 700; color: #0f172a; display: flex; align-items: center; gap: 8px;">
+				<span class="dashicons dashicons-id-alt" style="color: #0284c7; font-size: 28px; width: 28px; height: 28px;"></span>
+				<?php printf(esc_html__('Credit Profile & Application Review #%d', 'custom-woo-dashboard'), (int) $app->id); ?>
 			</h1>
 
 			<?php if ($notice === 'approved') : ?>
@@ -2432,6 +2493,34 @@ class CWD_V2_Trade_Applications
 									<td style="font-weight: 600; color: #334155;"><?php esc_html_e('Trade Reference 1, Tel', 'custom-woo-dashboard'); ?></td>
 									<td style="color: #0f172a;"><?php echo esc_html($basic_details['trade_ref_tel']); ?></td>
 								</tr>
+								<?php if (! empty($basic_details['trade_ref_2_name']) && $basic_details['trade_ref_2_name'] !== 'n/a') : ?>
+								<tr>
+									<td style="font-weight: 600; color: #334155;"><?php esc_html_e('Trade Reference 2, Name', 'custom-woo-dashboard'); ?></td>
+									<td style="color: #0f172a;"><?php echo esc_html($basic_details['trade_ref_2_name']); ?></td>
+								</tr>
+								<tr>
+									<td style="font-weight: 600; color: #334155;"><?php esc_html_e('Trade Reference 2, Address', 'custom-woo-dashboard'); ?></td>
+									<td style="color: #0f172a;"><?php echo esc_html($basic_details['trade_ref_2_addr']); ?></td>
+								</tr>
+								<tr>
+									<td style="font-weight: 600; color: #334155;"><?php esc_html_e('Trade Reference 2, Tel', 'custom-woo-dashboard'); ?></td>
+									<td style="color: #0f172a;"><?php echo esc_html($basic_details['trade_ref_2_tel']); ?></td>
+								</tr>
+								<?php endif; ?>
+								<?php if (! empty($basic_details['trade_ref_3_name']) && $basic_details['trade_ref_3_name'] !== 'n/a') : ?>
+								<tr>
+									<td style="font-weight: 600; color: #334155;"><?php esc_html_e('Trade Reference 3, Name', 'custom-woo-dashboard'); ?></td>
+									<td style="color: #0f172a;"><?php echo esc_html($basic_details['trade_ref_3_name']); ?></td>
+								</tr>
+								<tr>
+									<td style="font-weight: 600; color: #334155;"><?php esc_html_e('Trade Reference 3, Address', 'custom-woo-dashboard'); ?></td>
+									<td style="color: #0f172a;"><?php echo esc_html($basic_details['trade_ref_3_addr']); ?></td>
+								</tr>
+								<tr>
+									<td style="font-weight: 600; color: #334155;"><?php esc_html_e('Trade Reference 3, Tel', 'custom-woo-dashboard'); ?></td>
+									<td style="color: #0f172a;"><?php echo esc_html($basic_details['trade_ref_3_tel']); ?></td>
+								</tr>
+								<?php endif; ?>
 								<tr>
 									<td style="font-weight: 600; color: #334155;"><?php esc_html_e('Company name', 'custom-woo-dashboard'); ?></td>
 									<td style="font-weight: 700; color: #0f172a;"><?php echo esc_html($basic_details['company_name']); ?></td>
@@ -2448,8 +2537,86 @@ class CWD_V2_Trade_Applications
 									<td style="font-weight: 600; color: #334155;"><?php esc_html_e('Parent Company Name', 'custom-woo-dashboard'); ?></td>
 									<td style="color: #0f172a;"><?php echo esc_html($basic_details['parent_company']); ?></td>
 								</tr>
+								<tr>
+									<td style="font-weight: 600; color: #334155;"><?php esc_html_e('Registered Street Address', 'custom-woo-dashboard'); ?></td>
+									<td style="color: #0f172a;"><?php echo esc_html($basic_details['street_address']); ?></td>
+								</tr>
+								<tr>
+									<td style="font-weight: 600; color: #334155;"><?php esc_html_e('Town / City, County, Postcode', 'custom-woo-dashboard'); ?></td>
+									<td style="color: #0f172a;"><?php echo esc_html(trim($basic_details['city'] . ', ' . $basic_details['county'] . ' ' . $basic_details['postcode'], ', ')); ?></td>
+								</tr>
+								<tr>
+									<td style="font-weight: 600; color: #334155;"><?php esc_html_e('Applicant Contact Phone', 'custom-woo-dashboard'); ?></td>
+									<td style="color: #0f172a;"><?php echo esc_html($basic_details['phone']); ?></td>
+								</tr>
+								<tr>
+									<td style="font-weight: 600; color: #334155;"><?php esc_html_e('Applicant Contact Email', 'custom-woo-dashboard'); ?></td>
+									<td style="color: #0f172a;"><a href="mailto:<?php echo esc_attr($basic_details['applicant_email']); ?>"><?php echo esc_html($basic_details['applicant_email']); ?></a></td>
+								</tr>
 							</tbody>
 						</table>
+					</div>
+
+					<!-- Authorised Signature & Agreement Declaration Card -->
+					<?php
+					$sig_src = ! empty($basic_details['signature_url']) ? $basic_details['signature_url'] : (! empty($basic_details['signature_data']) ? $basic_details['signature_data'] : '');
+					if (empty($sig_src) && ! empty($linked_user)) {
+						$sig_src = get_user_meta($linked_user->ID, '_trade_signature_url', true);
+					}
+					?>
+					<div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 24px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+						<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+							<h3 style="margin: 0; font-size: 16px; font-weight: 700; color: #0f172a; display: flex; align-items: center; gap: 8px;">
+								<span class="dashicons dashicons-edit-page" style="color: #0284c7;"></span> <?php esc_html_e('Authorised Declaration & Signature', 'custom-woo-dashboard'); ?>
+							</h3>
+							<span style="display: inline-flex; align-items: center; gap: 4px; background: #dcfce7; color: #166534; font-size: 11.5px; font-weight: 700; padding: 3px 10px; border-radius: 9999px; border: 1px solid #bbf7d0;">
+								<span class="dashicons dashicons-yes" style="font-size: 14px; width: 14px; height: 14px;"></span> <?php esc_html_e('Terms & Undertaking Accepted', 'custom-woo-dashboard'); ?>
+							</span>
+						</div>
+
+						<table class="widefat striped" style="border: 1px solid #e2e8f0; border-radius: 4px; margin-bottom: 16px;">
+							<tbody>
+								<?php if (! empty($basic_details['signatory_name'])) : ?>
+								<tr>
+									<td style="width: 45%; font-weight: 600; color: #334155;"><?php esc_html_e('Authorised Signatory', 'custom-woo-dashboard'); ?></td>
+									<td style="font-weight: 700; color: #0f172a;"><?php echo esc_html($basic_details['signatory_name']); ?></td>
+								</tr>
+								<?php endif; ?>
+								<?php if (! empty($basic_details['signatory_title'])) : ?>
+								<tr>
+									<td style="font-weight: 600; color: #334155;"><?php esc_html_e('Position / Job Title', 'custom-woo-dashboard'); ?></td>
+									<td style="color: #0f172a;"><?php echo esc_html($basic_details['signatory_title']); ?></td>
+								</tr>
+								<?php endif; ?>
+								<?php if (! empty($basic_details['signed_at'])) : ?>
+								<tr>
+									<td style="font-weight: 600; color: #334155;"><?php esc_html_e('Signed On', 'custom-woo-dashboard'); ?></td>
+									<td style="color: #0f172a;"><?php echo esc_html(date_i18n(get_option('date_format') . ' ' . get_option('time_format'), strtotime($basic_details['signed_at']))); ?></td>
+								</tr>
+								<?php endif; ?>
+								<?php if (! empty($basic_details['signer_ip'])) : ?>
+								<tr>
+									<td style="font-weight: 600; color: #334155;"><?php esc_html_e('Signer IP Address', 'custom-woo-dashboard'); ?></td>
+									<td style="color: #64748b; font-family: monospace; font-size: 11.5px;"><?php echo esc_html($basic_details['signer_ip']); ?></td>
+								</tr>
+								<?php endif; ?>
+							</tbody>
+						</table>
+
+						<?php if (! empty($sig_src)) : ?>
+							<div>
+								<span style="display: block; font-size: 12px; font-weight: 600; color: #64748b; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.04em;">
+									<?php esc_html_e('Digital Signature Image:', 'custom-woo-dashboard'); ?>
+								</span>
+								<div style="background: #ffffff; border: 2px dashed #cbd5e1; border-radius: 6px; padding: 12px 18px; display: inline-block; max-width: 460px;">
+									<img src="<?php echo esc_url($sig_src); ?>" alt="<?php esc_attr_e('Authorised Digital Signature', 'custom-woo-dashboard'); ?>" style="max-height: 100px; max-width: 100%; display: block; object-fit: contain;" />
+								</div>
+							</div>
+						<?php else : ?>
+							<p style="margin: 0; font-size: 12px; color: #94a3b8; font-style: italic;">
+								<?php esc_html_e('No digital signature image on file for this application.', 'custom-woo-dashboard'); ?>
+							</p>
+						<?php endif; ?>
 					</div>
 
 					<!-- Complete Raw Form Data -->

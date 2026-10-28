@@ -604,6 +604,47 @@ class CWD_V2_Credit_Logic
 	}
 
 	/**
+	 * Get standard UK counties grouped by nation.
+	 *
+	 * @return array
+	 */
+	public static function get_uk_counties()
+	{
+		return array(
+			'England' => array(
+				'Bedfordshire', 'Berkshire', 'Bristol', 'Buckinghamshire', 'Cambridgeshire',
+				'Cheshire', 'City of London', 'Cornwall', 'Cumbria', 'Derbyshire',
+				'Devon', 'Dorset', 'Durham', 'East Riding of Yorkshire', 'East Sussex',
+				'Essex', 'Gloucestershire', 'Greater London', 'Greater Manchester', 'Hampshire',
+				'Herefordshire', 'Hertfordshire', 'Isle of Wight', 'Kent', 'Lancashire',
+				'Leicestershire', 'Lincolnshire', 'Merseyside', 'Norfolk', 'North Somerset',
+				'North Yorkshire', 'Northamptonshire', 'Northumberland', 'Nottinghamshire', 'Oxfordshire',
+				'Rutland', 'Shropshire', 'Somerset', 'South Yorkshire', 'Staffordshire',
+				'Suffolk', 'Surrey', 'Tyne and Wear', 'Warwickshire', 'West Midlands',
+				'West Sussex', 'West Yorkshire', 'Wiltshire', 'Worcestershire',
+			),
+			'Scotland' => array(
+				'Aberdeenshire', 'Angus', 'Argyll and Bute', 'Ayrshire', 'Banffshire',
+				'Berwickshire', 'Caithness', 'Clackmannanshire', 'Dumfries and Galloway', 'Dunbartonshire',
+				'East Lothian', 'Falkirk', 'Fife', 'Highland', 'Inverclyde',
+				'Midlothian', 'Moray', 'North Ayrshire', 'North Lanarkshire', 'Orkney',
+				'Perth and Kinross', 'Renfrewshire', 'Scottish Borders', 'Shetland', 'South Ayrshire',
+				'South Lanarkshire', 'Stirling', 'West Dunbartonshire', 'West Lothian', 'Western Isles',
+			),
+			'Wales' => array(
+				'Anglesey', 'Blaenau Gwent', 'Bridgend', 'Caerphilly', 'Cardiff',
+				'Carmarthenshire', 'Ceredigion', 'Conwy', 'Denbighshire', 'Flintshire',
+				'Glamorgan', 'Gwynedd', 'Merthyr Tydfil', 'Monmouthshire', 'Neath Port Talbot',
+				'Newport', 'Pembrokeshire', 'Powys', 'Rhondda Cynon Taf', 'Swansea',
+				'Torfaen', 'Vale of Glamorgan', 'Wrexham',
+			),
+			'Northern Ireland' => array(
+				'County Antrim', 'County Armagh', 'County Down', 'County Fermanagh', 'County Londonderry', 'County Tyrone',
+			),
+		);
+	}
+
+	/**
 	 * Handle new trade account application submission from customer credit dashboard.
 	 */
 	public static function handle_trade_application_submission()
@@ -615,21 +656,243 @@ class CWD_V2_Credit_Logic
 				return;
 			}
 
-			$current_user     = wp_get_current_user();
-			$user_id          = (int) $current_user->ID;
-			$company_name     = sanitize_text_field(wp_unslash($_POST['cwd_v2_company_name'] ?? ''));
-			$phone            = sanitize_text_field(wp_unslash($_POST['cwd_v2_phone'] ?? ''));
-			$requested_amount = sanitize_text_field(wp_unslash($_POST['cwd_v2_requested_limit'] ?? ''));
-			$trading_details  = sanitize_textarea_field(wp_unslash($_POST['cwd_v2_trading_details'] ?? ''));
+			$current_user = wp_get_current_user();
+			$user_id      = (int) $current_user->ID;
 
+			// Extract all form fields
+			$company_name            = sanitize_text_field(wp_unslash($_POST['cwd_v2_company_name'] ?? ''));
+			$company_reg_number      = sanitize_text_field(wp_unslash($_POST['cwd_v2_company_reg_number'] ?? ''));
+			$vat_number              = sanitize_text_field(wp_unslash($_POST['cwd_v2_vat_number'] ?? '')); // optional
+			$parent_company          = sanitize_text_field(wp_unslash($_POST['cwd_v2_parent_company'] ?? '')); // optional
+			$business_sector         = sanitize_text_field(wp_unslash($_POST['cwd_v2_business_sector'] ?? ''));
+			$trading_duration        = sanitize_text_field(wp_unslash($_POST['cwd_v2_trading_duration'] ?? ''));
+			$requested_amount        = sanitize_text_field(wp_unslash($_POST['cwd_v2_requested_limit'] ?? ''));
+			$monthly_spend_raw       = sanitize_text_field(wp_unslash($_POST['cwd_v2_estimated_monthly_spend'] ?? ''));
+			$street_address          = sanitize_text_field(wp_unslash($_POST['cwd_v2_street_address'] ?? ''));
+			$city                    = sanitize_text_field(wp_unslash($_POST['cwd_v2_city'] ?? ''));
+			$county                  = sanitize_text_field(wp_unslash($_POST['cwd_v2_county'] ?? ''));
+			$postcode                = sanitize_text_field(wp_unslash($_POST['cwd_v2_postcode'] ?? ''));
+			$phone                   = sanitize_text_field(wp_unslash($_POST['cwd_v2_phone'] ?? ''));
+			$email                   = sanitize_email(wp_unslash($_POST['cwd_v2_email'] ?? $current_user->user_email));
+			$trade_ref_name          = sanitize_text_field(wp_unslash($_POST['cwd_v2_trade_ref_name'] ?? ''));
+			$trade_ref_address       = sanitize_textarea_field(wp_unslash($_POST['cwd_v2_trade_ref_address'] ?? ''));
+			$trade_ref_tel           = sanitize_text_field(wp_unslash($_POST['cwd_v2_trade_ref_tel'] ?? ''));
+			$trade_ref_2_name        = sanitize_text_field(wp_unslash($_POST['cwd_v2_trade_ref_2_name'] ?? ''));
+			$trade_ref_2_address     = sanitize_textarea_field(wp_unslash($_POST['cwd_v2_trade_ref_2_address'] ?? ''));
+			$trade_ref_2_tel         = sanitize_text_field(wp_unslash($_POST['cwd_v2_trade_ref_2_tel'] ?? ''));
+			$trade_ref_3_name        = sanitize_text_field(wp_unslash($_POST['cwd_v2_trade_ref_3_name'] ?? ''));
+			$trade_ref_3_address     = sanitize_textarea_field(wp_unslash($_POST['cwd_v2_trade_ref_3_address'] ?? ''));
+			$trade_ref_3_tel         = sanitize_text_field(wp_unslash($_POST['cwd_v2_trade_ref_3_tel'] ?? ''));
+			$signatory_name          = sanitize_text_field(wp_unslash($_POST['cwd_v2_signatory_name'] ?? ''));
+			$signatory_title         = sanitize_text_field(wp_unslash($_POST['cwd_v2_signatory_title'] ?? ''));
+			$terms_accepted          = ! empty($_POST['cwd_v2_terms_accepted']);
+			$signature_data          = trim((string) wp_unslash($_POST['cwd_v2_signature_data'] ?? ''));
+
+			// Validation: Mandatory and format checks
+			$errors = array();
+
+			// 1. Company Name
 			if (empty($company_name)) {
-				wc_add_notice(__('Please enter your company or business name.', 'custom-woo-dashboard'), 'error');
-				return;
+				$errors[] = __('Company name is required.', 'custom-woo-dashboard');
 			}
 
+			// 2. UK Companies House Company Registration Number (CRN)
+			$clean_crn = strtoupper(trim(preg_replace('/[\s\-]/', '', $company_reg_number)));
+			if (empty($clean_crn)) {
+				$errors[] = __('Company registration number is required.', 'custom-woo-dashboard');
+			} else {
+				// If 6 or 7 digits entered, Companies House standard is to zero-pad on left to 8 digits
+				if (ctype_digit($clean_crn) && strlen($clean_crn) >= 6 && strlen($clean_crn) < 8) {
+					$clean_crn = str_pad($clean_crn, 8, '0', STR_PAD_LEFT);
+				}
+				// Standard: 8 digits, or 2 letters followed by 6 digits/characters (e.g. SC123456, NI123456, OC123456)
+				if (! preg_match('/^(?:[0-9]{8}|[A-Z]{2}[0-9]{6}|[A-Z][0-9]{7})$/', $clean_crn)) {
+					$errors[] = __('Company Registration Number must be a valid 8-character Companies House number (e.g. 12345678, 01234567, or SC123456).', 'custom-woo-dashboard');
+				} else {
+					$company_reg_number = $clean_crn;
+				}
+			}
+
+			// 3. UK VAT Number (HMRC standard format, optional)
+			if (! empty($vat_number)) {
+				$clean_vat = strtoupper(trim(preg_replace('/[\s\-]/', '', $vat_number)));
+				// Standard: 9 digits, 12 digits (branch traders), or GD/HA prefix + 3 digits, with optional GB prefix
+				if (! preg_match('/^(?:GB)?(?:[0-9]{9}|[0-9]{12}|(?:GD|HA)[0-9]{3})$/', $clean_vat)) {
+					$errors[] = __('Please enter a valid UK VAT number (e.g. GB123456789 or 9 digits), or leave blank if not VAT registered.', 'custom-woo-dashboard');
+				} else {
+					// Normalize to include standard GB prefix
+					if (strpos($clean_vat, 'GB') !== 0 && ! in_array(substr($clean_vat, 0, 2), array('GD', 'HA'), true)) {
+						$clean_vat = 'GB' . $clean_vat;
+					}
+					$vat_number = $clean_vat;
+				}
+			}
+
+			// 4. Contact Phone (Must always begin with UK country code +44)
+			$phone = trim($phone);
+			if (empty($phone)) {
+				$errors[] = __('Contact phone number is required.', 'custom-woo-dashboard');
+			} elseif (strpos($phone, '+44') !== 0) {
+				$errors[] = __('Contact phone number must begin with the UK country code (+44), e.g. +44 7123 456789 or +44 20 7123 4567.', 'custom-woo-dashboard');
+			} else {
+				// Strip +44, spaces, hyphens, and optional (0)
+				$sub_phone = preg_replace('/[^0-9]/', '', substr($phone, 3));
+				if (strpos($sub_phone, '0') === 0) {
+					$sub_phone = substr($sub_phone, 1);
+				}
+				// Valid UK landline/mobile subscriber numbers are 9 or 10 digits
+				if (strlen($sub_phone) < 9 || strlen($sub_phone) > 10) {
+					$errors[] = __('Please enter a valid UK telephone number following +44 (9 or 10 digits, e.g. +44 7123 456789 or +44 20 7123 4567).', 'custom-woo-dashboard');
+				} else {
+					// Normalize format: +44 XXXXXXXXXX
+					$phone = '+44 ' . $sub_phone;
+				}
+			}
+
+			// 5. Business Sector & Duration
+			if (empty($business_sector)) {
+				$errors[] = __('Business sector / industry is required.', 'custom-woo-dashboard');
+			}
+			if (empty($trading_duration)) {
+				$errors[] = __('Company trading duration is required.', 'custom-woo-dashboard');
+			}
+
+			// 6. Registered Address
+			if (empty($street_address)) {
+				$errors[] = __('Street address is required.', 'custom-woo-dashboard');
+			}
+			if (empty($city)) {
+				$errors[] = __('Town / City is required.', 'custom-woo-dashboard');
+			}
+
+			// 7. County (Must be from official UK counties list)
+			$all_counties_flat = array();
+			foreach (self::get_uk_counties() as $c_list) {
+				$all_counties_flat = array_merge($all_counties_flat, $c_list);
+			}
+			$all_counties_lower = array_map('strtolower', $all_counties_flat);
+			if (empty($county)) {
+				$errors[] = __('County is required. Please select a valid UK county.', 'custom-woo-dashboard');
+			} elseif (! in_array(strtolower($county), $all_counties_lower, true) && ! in_array(strtolower('County ' . $county), $all_counties_lower, true)) {
+				$errors[] = __('Please select a valid UK county from the list.', 'custom-woo-dashboard');
+			}
+
+			// 8. UK Postcode (Royal Mail / BS 7666 standard format)
+			$clean_postcode = strtoupper(trim(preg_replace('/\s+/', ' ', $postcode)));
+			if (empty($clean_postcode)) {
+				$errors[] = __('UK Postcode is required.', 'custom-woo-dashboard');
+			} else {
+				$postcode_regex = '/^([Gg][Ii][Rr]\s?0[Aa]{2})|((([A-Za-z][0-9]{1,2})|(([A-Za-z][A-Ha-hJ-Yj-y][0-9]{1,2})|(([A-Za-z][0-9][A-Za-z])|([A-Za-z][A-Ha-hJ-Yj-y][0-9][A-Za-z]?))))\s?[0-9][A-Za-z]{2})$/';
+				if (! preg_match($postcode_regex, $clean_postcode)) {
+					$errors[] = __('Please enter a valid UK postcode (e.g. SW1A 1AA, EC1A 1BB, M1 1AE).', 'custom-woo-dashboard');
+				} else {
+					// Normalize with standard space between outward and inward code
+					$no_space = str_replace(' ', '', $clean_postcode);
+					$inward   = substr($no_space, -3);
+					$outward  = substr($no_space, 0, -3);
+					$postcode = $outward . ' ' . $inward;
+				}
+			}
+
+			// 9. Contact Email
+			if (empty($email) || ! is_email($email)) {
+				$errors[] = __('A valid contact email address is required.', 'custom-woo-dashboard');
+			}
+
+			// 10. Trade References
+			if (empty($trade_ref_name)) {
+				$errors[] = __('Trade Reference 1 Name is required.', 'custom-woo-dashboard');
+			}
+			if (empty($trade_ref_address)) {
+				$errors[] = __('Trade Reference 1 Address is required.', 'custom-woo-dashboard');
+			}
+			$trade_ref_tel = trim($trade_ref_tel);
+			if (empty($trade_ref_tel)) {
+				$errors[] = __('Trade Reference 1 Telephone is required.', 'custom-woo-dashboard');
+			} elseif (strpos($trade_ref_tel, '+44') !== 0) {
+				$errors[] = __('Trade Reference 1 Telephone must begin with the UK country code (+44), e.g. +44 7123 456789 or +44 20 7123 4567.', 'custom-woo-dashboard');
+			} else {
+				$sub_ref1 = preg_replace('/[^0-9]/', '', substr($trade_ref_tel, 3));
+				if (strpos($sub_ref1, '0') === 0) {
+					$sub_ref1 = substr($sub_ref1, 1);
+				}
+				if (strlen($sub_ref1) < 9 || strlen($sub_ref1) > 10) {
+					$errors[] = __('Please enter a valid UK telephone number following +44 for Trade Reference 1 (9 or 10 digits, e.g. +44 7123 456789).', 'custom-woo-dashboard');
+				} else {
+					$trade_ref_tel = '+44 ' . $sub_ref1;
+				}
+			}
+
+			// Trade Reference 2 (if entered)
+			$trade_ref_2_tel = trim($trade_ref_2_tel);
+			if (! empty($trade_ref_2_name) || ! empty($trade_ref_2_address) || ! empty($trade_ref_2_tel)) {
+				if (empty($trade_ref_2_tel)) {
+					$errors[] = __('Trade Reference 2 Telephone is required if Reference 2 details are provided.', 'custom-woo-dashboard');
+				} elseif (strpos($trade_ref_2_tel, '+44') !== 0) {
+					$errors[] = __('Trade Reference 2 Telephone must begin with the UK country code (+44), e.g. +44 7123 456789.', 'custom-woo-dashboard');
+				} else {
+					$sub_ref2 = preg_replace('/[^0-9]/', '', substr($trade_ref_2_tel, 3));
+					if (strpos($sub_ref2, '0') === 0) {
+						$sub_ref2 = substr($sub_ref2, 1);
+					}
+					if (strlen($sub_ref2) < 9 || strlen($sub_ref2) > 10) {
+						$errors[] = __('Please enter a valid UK telephone number following +44 for Trade Reference 2 (9 or 10 digits).', 'custom-woo-dashboard');
+					} else {
+						$trade_ref_2_tel = '+44 ' . $sub_ref2;
+					}
+				}
+			}
+
+			// Trade Reference 3 (if entered)
+			$trade_ref_3_tel = trim($trade_ref_3_tel);
+			if (! empty($trade_ref_3_name) || ! empty($trade_ref_3_address) || ! empty($trade_ref_3_tel)) {
+				if (empty($trade_ref_3_tel)) {
+					$errors[] = __('Trade Reference 3 Telephone is required if Reference 3 details are provided.', 'custom-woo-dashboard');
+				} elseif (strpos($trade_ref_3_tel, '+44') !== 0) {
+					$errors[] = __('Trade Reference 3 Telephone must begin with the UK country code (+44), e.g. +44 7123 456789.', 'custom-woo-dashboard');
+				} else {
+					$sub_ref3 = preg_replace('/[^0-9]/', '', substr($trade_ref_3_tel, 3));
+					if (strpos($sub_ref3, '0') === 0) {
+						$sub_ref3 = substr($sub_ref3, 1);
+					}
+					if (strlen($sub_ref3) < 9 || strlen($sub_ref3) > 10) {
+						$errors[] = __('Please enter a valid UK telephone number following +44 for Trade Reference 3 (9 or 10 digits).', 'custom-woo-dashboard');
+					} else {
+						$trade_ref_3_tel = '+44 ' . $sub_ref3;
+					}
+				}
+			}
+
+			// 11. Credit Limit & Spend
 			$requested_limit_val = (float) preg_replace('/[^0-9.]/', '', (string) $requested_amount);
 			if ($requested_limit_val <= 0) {
-				$requested_limit_val = 500.0;
+				$errors[] = __('Requested credit limit must be greater than zero.', 'custom-woo-dashboard');
+			}
+
+			$monthly_spend_val = (float) preg_replace('/[^0-9.]/', '', (string) $monthly_spend_raw);
+			if ($monthly_spend_val <= 0) {
+				$errors[] = __('Estimated monthly spend must be greater than zero.', 'custom-woo-dashboard');
+			}
+
+			// 12. Trade Credit Agreement & Authorised Signature
+			if (empty($terms_accepted)) {
+				$errors[] = __('You must read and agree to the Trade Credit Terms & Declaration.', 'custom-woo-dashboard');
+			}
+			if (empty($signatory_name)) {
+				$errors[] = __('Authorised signatory full name is required.', 'custom-woo-dashboard');
+			}
+			if (empty($signatory_title)) {
+				$errors[] = __('Authorised signatory job title / position is required.', 'custom-woo-dashboard');
+			}
+			if (empty($signature_data) || strpos($signature_data, 'data:image/png;base64,') !== 0) {
+				$errors[] = __('Please draw your signature in the signature pad box before submitting.', 'custom-woo-dashboard');
+			}
+
+			if (! empty($errors)) {
+				foreach ($errors as $err) {
+					wc_add_notice($err, 'error');
+				}
+				return;
 			}
 
 			if (class_exists('CWD_V2_Trade_Applications')) {
@@ -641,7 +904,7 @@ class CWD_V2_Credit_Logic
 				$existing_pending = $wpdb->get_var($wpdb->prepare(
 					"SELECT id FROM {$apps_table} WHERE (user_id = %d OR applicant_email = %s) AND status = %s LIMIT 1",
 					$user_id,
-					$current_user->user_email,
+					$email,
 					'pending'
 				));
 
@@ -652,18 +915,65 @@ class CWD_V2_Credit_Logic
 					exit;
 				}
 
+				// Process signature image: decode Base64 and write PNG file to wp-content/uploads/trade-signatures/
+				$signature_url = '';
+				if (strpos($signature_data, 'data:image/png;base64,') === 0) {
+					$b64 = substr($signature_data, strlen('data:image/png;base64,'));
+					$img_bytes = base64_decode($b64);
+					if ($img_bytes !== false) {
+						$upload_dir = wp_upload_dir();
+						$sig_dir = $upload_dir['basedir'] . '/trade-signatures';
+						if (! file_exists($sig_dir)) {
+							wp_mkdir_p($sig_dir);
+							@file_put_contents($sig_dir . '/index.html', '');
+						}
+						$filename = 'sig_' . $user_id . '_' . time() . '_' . wp_generate_password(6, false) . '.png';
+						$filepath = $sig_dir . '/' . $filename;
+						if (@file_put_contents($filepath, $img_bytes)) {
+							$signature_url = $upload_dir['baseurl'] . '/trade-signatures/' . $filename;
+						}
+					}
+				}
+
 				$now       = current_time('mysql');
 				$form_data = array(
-					'company_name'    => $company_name,
-					'phone'           => $phone,
-					'trading_details' => $trading_details,
-					'source'          => 'customer_credit_dashboard',
+					'company_name'            => $company_name,
+					'company_reg_number'      => $company_reg_number,
+					'vat_number'              => $vat_number,
+					'parent_company'          => $parent_company,
+					'business_sector'         => $business_sector,
+					'trading_duration'        => $trading_duration,
+					'requested_limit'         => $requested_limit_val,
+					'estimated_monthly_spend' => $monthly_spend_val,
+					'street_address'          => $street_address,
+					'city'                    => $city,
+					'county'                  => $county,
+					'postcode'                => $postcode,
+					'phone'                   => $phone,
+					'applicant_email'         => $email,
+					'trade_ref_name'          => $trade_ref_name,
+					'trade_ref_address'       => $trade_ref_address,
+					'trade_ref_tel'           => $trade_ref_tel,
+					'trade_ref_2_name'        => $trade_ref_2_name,
+					'trade_ref_2_address'     => $trade_ref_2_address,
+					'trade_ref_2_tel'         => $trade_ref_2_tel,
+					'trade_ref_3_name'        => $trade_ref_3_name,
+					'trade_ref_3_address'     => $trade_ref_3_address,
+					'trade_ref_3_tel'         => $trade_ref_3_tel,
+					'signatory_name'          => $signatory_name,
+					'signatory_title'         => $signatory_title,
+					'signature_url'           => $signature_url,
+					'signature_data'          => ! empty($signature_url) ? '' : $signature_data,
+					'signed_at'               => $now,
+					'signer_ip'               => sanitize_text_field($_SERVER['REMOTE_ADDR'] ?? ''),
+					'terms_accepted'          => true,
+					'source'                  => 'customer_credit_dashboard',
 				);
 
 				$insert_data = array(
 					'forminator_form_id'  => 0,
 					'forminator_entry_id' => 0,
-					'applicant_email'     => sanitize_email($current_user->user_email),
+					'applicant_email'     => sanitize_email($email),
 					'applicant_name'      => sanitize_text_field($current_user->display_name),
 					'company_name'        => $company_name,
 					'phone'               => $phone,
@@ -678,12 +988,51 @@ class CWD_V2_Credit_Logic
 				$wpdb->insert($apps_table, $insert_data, array('%d', '%d', '%s', '%s', '%s', '%s', '%f', '%s', '%s', '%d', '%s', '%s'));
 				$app_id = $wpdb->insert_id;
 
-				// Forward to Credits plugin
+				// Permanently store submitted information into user meta
+				update_user_meta($user_id, 'billing_company', $company_name);
+				update_user_meta($user_id, 'billing_phone', $phone);
+				update_user_meta($user_id, 'billing_address_1', $street_address);
+				update_user_meta($user_id, 'billing_city', $city);
+				update_user_meta($user_id, 'billing_state', $county);
+				update_user_meta($user_id, 'billing_postcode', $postcode);
+				update_user_meta($user_id, '_company_reg_number', $company_reg_number);
+				update_user_meta($user_id, '_vat_number', $vat_number);
+				update_user_meta($user_id, '_parent_company', $parent_company);
+				update_user_meta($user_id, '_business_sector', $business_sector);
+				update_user_meta($user_id, '_trading_duration', $trading_duration);
+				update_user_meta($user_id, '_estimated_monthly_spend', $monthly_spend_val);
+				update_user_meta($user_id, '_trade_ref_name', $trade_ref_name);
+				update_user_meta($user_id, '_trade_ref_address', $trade_ref_address);
+				update_user_meta($user_id, '_trade_ref_tel', $trade_ref_tel);
+				if (! empty($trade_ref_2_name)) {
+					update_user_meta($user_id, '_trade_ref_2_name', $trade_ref_2_name);
+					update_user_meta($user_id, '_trade_ref_2_address', $trade_ref_2_address);
+					update_user_meta($user_id, '_trade_ref_2_tel', $trade_ref_2_tel);
+				}
+				if (! empty($trade_ref_3_name)) {
+					update_user_meta($user_id, '_trade_ref_3_name', $trade_ref_3_name);
+					update_user_meta($user_id, '_trade_ref_3_address', $trade_ref_3_address);
+					update_user_meta($user_id, '_trade_ref_3_tel', $trade_ref_3_tel);
+				}
+				update_user_meta($user_id, '_trade_signatory_name', $signatory_name);
+				update_user_meta($user_id, '_trade_signatory_title', $signatory_title);
+				update_user_meta($user_id, '_trade_signature_url', $signature_url ?: $signature_data);
+				update_user_meta($user_id, '_trade_signed_at', $now);
+
+				// Only set credit limit/status to pending if this is a brand new applicant without active credit
+				$is_active_existing = (float) get_user_meta($user_id, '_credit_limit', true) > 0 || in_array('credit_account', (array) $current_user->roles, true);
+				if (! $is_active_existing) {
+					update_user_meta($user_id, '_requested_credit_limit', $requested_limit_val);
+					update_user_meta($user_id, '_credit_status', 'pending');
+					update_user_meta($user_id, 'credit_status', 'pending');
+				}
+
+				// Forward to Credits plugin strictly with pending status (NO auto-approval)
 				if ($app_id && class_exists('CWD_V2_Credits_Bridge')) {
 					CWD_V2_Credits_Bridge::forward_application_to_credits_plugin(
 						$app_id,
 						$user_id,
-						$current_user->user_email,
+						$email,
 						$current_user->display_name,
 						$company_name,
 						$phone,
@@ -695,17 +1044,47 @@ class CWD_V2_Credit_Logic
 				// Email notification to admin
 				$admin_email = get_option('admin_email');
 				$subject     = sprintf(__('New Trade Credit Application from %s (%s)', 'custom-woo-dashboard'), $company_name, $current_user->display_name);
-				$body        = sprintf(__("A new trade account application has been submitted:\n\nApplicant: %s\nEmail: %s\nCompany: %s\nPhone: %s\nRequested Credit Facility: %s\nDetails: %s\n\nReview this in WooCommerce > Trade Applications or Credits > Credits.\n", 'custom-woo-dashboard'),
+				$body        = sprintf(
+					__("A new comprehensive trade account application has been submitted:\n\n" .
+					"Applicant: %s\n" .
+					"Email: %s\n" .
+					"Phone: %s\n" .
+					"Company Name: %s\n" .
+					"Company Reg No: %s\n" .
+					"VAT No: %s\n" .
+					"Parent Company: %s\n" .
+					"Sector: %s\n" .
+					"Trading Duration: %s\n" .
+					"Registered Address: %s, %s, %s, %s\n" .
+					"Requested Credit Limit: %s\n" .
+					"Estimated Monthly Spend: %s\n\n" .
+					"Trade Reference 1:\n" .
+					"  Name: %s\n" .
+					"  Address: %s\n" .
+					"  Tel: %s\n\n" .
+					"Review and approve/reject in WooCommerce > Trade & Credit Management > Applications Queue.\n", 'custom-woo-dashboard'),
 					$current_user->display_name,
-					$current_user->user_email,
-					$company_name,
+					$email,
 					$phone,
+					$company_name,
+					$company_reg_number,
+					$vat_number ?: 'N/A',
+					$parent_company ?: 'N/A',
+					$business_sector,
+					$trading_duration,
+					$street_address,
+					$city,
+					$county,
+					$postcode,
 					wc_price($requested_limit_val),
-					$trading_details
+					wc_price($monthly_spend_val),
+					$trade_ref_name,
+					$trade_ref_address,
+					$trade_ref_tel
 				);
 				wp_mail($admin_email, $subject, $body);
 
-				wc_add_notice(__('Your trade credit application has been submitted and is currently under review.', 'custom-woo-dashboard'), 'success');
+				wc_add_notice(__('Your trade credit application has been submitted and is currently pending review by our trade finance team.', 'custom-woo-dashboard'), 'success');
 
 				$redirect_url = wp_get_referer() ?: wc_get_endpoint_url('credit', '', wc_get_page_permalink('myaccount'));
 				wp_safe_redirect($redirect_url);
@@ -727,14 +1106,22 @@ class CWD_V2_Credit_Logic
 			return 0.0;
 		}
 
-		// Safeguard: Check if this user has a pending trade application and NO approved application.
-		// If so, their approved limit is strictly 0.00 until an admin manually approves them!
+		// 1. Authoritative check: If user already has an active credit limit or credit_account role, preserve it!
+		$existing_limit = (float) get_user_meta($user_id, '_credit_limit', true);
+		$user_obj       = get_userdata($user_id);
+		$is_credit_user = ($user_obj && in_array('credit_account', (array) $user_obj->roles, true));
+
+		if ($existing_limit > 0 || $is_credit_user) {
+			return max(0.0, $existing_limit);
+		}
+
+		// Safeguard for new applicants only: If user has a pending trade application and NO approved limit,
+		// their approved limit is strictly 0.00 until an admin manually approves them.
 		if (class_exists('CWD_V2_Trade_Applications')) {
 			global $wpdb;
 			$apps_table = CWD_V2_Trade_Applications::get_table_name();
 			if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $apps_table)) === $apps_table) {
-				$u = get_userdata($user_id);
-				$email = $u ? $u->user_email : '';
+				$email = $user_obj ? $user_obj->user_email : '';
 				$has_approved = (int) $wpdb->get_var($wpdb->prepare(
 					"SELECT COUNT(*) FROM {$apps_table}
 					 WHERE (user_id = %d OR (applicant_email = %s AND applicant_email != '')) AND status = 'approved' AND approved_limit > 0",
@@ -753,13 +1140,15 @@ class CWD_V2_Credit_Logic
 			}
 		}
 
-		// 1. Authoritative check: If _credit_limit is set in usermeta, it is the absolute source of truth.
-		// Never override an explicitly set admin limit with older legacy values.
+		// 2. Authoritative check: If positive _credit_limit is set in usermeta, return it immediately.
 		if (metadata_exists('user', $user_id, '_credit_limit')) {
-			return max(0.0, (float) get_user_meta($user_id, '_credit_limit', true));
+			$raw_limit = (float) get_user_meta($user_id, '_credit_limit', true);
+			if ($raw_limit > 0) {
+				return $raw_limit;
+			}
 		}
 
-		// 2. Initial discovery: Only when _credit_limit has never been initialized for this user
+		// 3. Initial discovery: If _credit_limit is not set or zero, discover from other plugins/CPTs/applications
 		$discovered_limit = 0.0;
 
 		// Check all known credit plugin meta keys to discover existing limits
@@ -866,66 +1255,33 @@ class CWD_V2_Credit_Logic
 			return 0.0;
 		}
 
-		// 1. If user has an unapproved pending application, they have no credit and owe 0.0
+		// 1. If user is a brand new applicant with an unapproved pending application and NO active account, they owe 0.0
 		if (class_exists('CWD_V2_Trade_Applications')) {
 			global $wpdb;
 			$apps_table = CWD_V2_Trade_Applications::get_table_name();
 			if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $apps_table)) === $apps_table) {
-				$u = get_userdata($user_id);
-				$has_pending = (int) $wpdb->get_var($wpdb->prepare(
-					"SELECT COUNT(*) FROM {$apps_table} WHERE (user_id = %d OR applicant_email = %s) AND status = 'pending'",
-					$user_id,
-					$u ? $u->user_email : ''
-				));
-				$has_approved = (int) $wpdb->get_var($wpdb->prepare(
-					"SELECT COUNT(*) FROM {$apps_table} WHERE (user_id = %d OR applicant_email = %s) AND status = 'approved' AND reviewed_by > 0",
-					$user_id,
-					$u ? $u->user_email : ''
-				));
-				if ($has_pending > 0 && $has_approved === 0) {
-					update_user_meta($user_id, '_credit_balance', 0.0);
-					return 0.0;
+				$u             = get_userdata($user_id);
+				$is_active_acc = (float) get_user_meta($user_id, '_credit_limit', true) > 0 || ($u && in_array('credit_account', (array) $u->roles, true));
+				if (! $is_active_acc) {
+					$has_pending = (int) $wpdb->get_var($wpdb->prepare(
+						"SELECT COUNT(*) FROM {$apps_table} WHERE (user_id = %d OR applicant_email = %s) AND status = 'pending'",
+						$user_id,
+						$u ? $u->user_email : ''
+					));
+					$has_approved = (int) $wpdb->get_var($wpdb->prepare(
+						"SELECT COUNT(*) FROM {$apps_table} WHERE (user_id = %d OR applicant_email = %s) AND status = 'approved' AND reviewed_by > 0",
+						$user_id,
+						$u ? $u->user_email : ''
+					));
+					if ($has_pending > 0 && $has_approved === 0) {
+						return 0.0;
+					}
 				}
 			}
 		}
 
 		if (metadata_exists('user', $user_id, '_credit_balance')) {
-			$raw_balance = max(0.0, (float) get_user_meta($user_id, '_credit_balance', true));
-			if ($raw_balance > 0) {
-				// Verify if balance is genuine or a phantom balance equal to the limit
-				$has_invoices = 0;
-				if (class_exists('CWD_V2_Invoices')) {
-					global $wpdb;
-					$inv_table = CWD_V2_Invoices::table_name();
-					if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $inv_table)) === $inv_table) {
-						$has_invoices = (int) $wpdb->get_var($wpdb->prepare(
-							"SELECT COUNT(*) FROM {$inv_table} WHERE user_id = %d AND status NOT IN ('paid', 'void', 'written_off', 'marked_off')",
-							$user_id
-						));
-					}
-				}
-
-				$has_credit_orders = 0;
-				$user_orders = wc_get_orders(array(
-					'customer_id' => $user_id,
-					'limit'       => 10,
-					'status'      => array('processing', 'completed', 'on-hold', 'pending'),
-				));
-				foreach ($user_orders as $ord) {
-					$pm = strtolower((string) $ord->get_payment_method());
-					if (strpos($pm, 'credit') !== false || 'yes' === $ord->get_meta('_paid_with_credit') || (float) $ord->get_meta('_credit_charged_amount') > 0) {
-						$has_credit_orders++;
-					}
-				}
-
-				// If user has zero unpaid invoices and zero credit orders in WooCommerce:
-				// They have never used credit! Reset the corrupted ghost balance to 0.0
-				if ($has_invoices === 0 && $has_credit_orders === 0) {
-					self::sync_user_credit_balance($user_id, 0.0);
-					return 0.0;
-				}
-			}
-			return $raw_balance;
+			return max(0.0, (float) get_user_meta($user_id, '_credit_balance', true));
 		}
 
 		$balance = 0.0;

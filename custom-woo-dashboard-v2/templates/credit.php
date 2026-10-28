@@ -409,10 +409,104 @@ wc_print_notices();
     line-height: 1 !important;
     transition: all 0.15s ease !important;
 }
-.cwd-v2-btn-view:hover {
-    background: #f1f5f9 !important;
-    border-color: #94a3b8 !important;
-    color: #0f172a !important;
+.cwd-v2-credit-dashboard input::placeholder,
+.cwd-v2-credit-dashboard textarea::placeholder {
+    color: #94a3b8 !important;
+    opacity: 1 !important;
+}
+.cwd-v2-credit-dashboard input::-webkit-input-placeholder,
+.cwd-v2-credit-dashboard textarea::-webkit-input-placeholder {
+    color: #94a3b8 !important;
+}
+.cwd-v2-credit-dashboard input::-moz-placeholder,
+.cwd-v2-credit-dashboard textarea::-moz-placeholder {
+    color: #94a3b8 !important;
+    opacity: 1 !important;
+}
+.cwd-v2-credit-dashboard input:-ms-input-placeholder,
+.cwd-v2-credit-dashboard textarea:-ms-input-placeholder {
+    color: #94a3b8 !important;
+}
+
+/* Balanced 2-Column Form Layout with Perfect Horizontal Baseline Alignment */
+.cwd-v2-form-grid {
+    display: grid !important;
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 16px 24px !important;
+    align-items: end !important;
+}
+@media (max-width: 768px) {
+    .cwd-v2-form-grid {
+        grid-template-columns: 1fr !important;
+        gap: 14px !important;
+    }
+}
+.cwd-v2-field {
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: flex-end !important;
+    width: 100% !important;
+    margin: 0 !important;
+}
+.cwd-v2-field.cwd-span-full {
+    grid-column: 1 / -1 !important;
+}
+.cwd-v2-field label {
+    display: flex !important;
+    align-items: baseline !important;
+    justify-content: space-between !important;
+    flex-wrap: wrap !important;
+    gap: 4px !important;
+    font-size: 12.5px !important;
+    font-weight: 600 !important;
+    color: #334155 !important;
+    margin: 0 0 6px 0 !important;
+    line-height: 1.3 !important;
+}
+.cwd-v2-field label .cwd-hint {
+    font-size: 11px !important;
+    color: #64748b !important;
+    font-weight: 400 !important;
+    margin-left: 4px !important;
+}
+.cwd-v2-field input[type="text"],
+.cwd-v2-field input[type="email"],
+.cwd-v2-field input[type="tel"],
+.cwd-v2-field input[type="number"],
+.cwd-v2-field select {
+    width: 100% !important;
+    height: 42px !important;
+    min-height: 42px !important;
+    max-height: 42px !important;
+    line-height: 40px !important;
+    border: 1px solid #cbd5e1 !important;
+    border-radius: 6px !important;
+    padding: 0 12px !important;
+    font-size: 13.5px !important;
+    box-sizing: border-box !important;
+    background: #ffffff !important;
+    margin: 0 !important;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease !important;
+}
+.cwd-v2-field input:focus,
+.cwd-v2-field select:focus,
+.cwd-v2-field textarea:focus {
+    border-color: #0284c7 !important;
+    outline: none !important;
+    box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.15) !important;
+}
+.cwd-v2-field textarea {
+    width: 100% !important;
+    min-height: 64px !important;
+    border: 1px solid #cbd5e1 !important;
+    border-radius: 6px !important;
+    padding: 8px 12px !important;
+    font-size: 13px !important;
+    box-sizing: border-box !important;
+    background: #ffffff !important;
+    margin: 0 !important;
+    resize: vertical !important;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease !important;
 }
 </style>
 
@@ -541,48 +635,81 @@ wc_print_notices();
 
 	</div>
 
-	<!-- Action Cards: Pay Off Balance & Request Increase -->
-	<div class="cwd-v2-action-cards-grid">
-		
-		<!-- Card 1: Pay Balance -->
-		<div class="cwd-v2-action-card">
-			<div>
+	<!-- Action Cards: Pay Off Balance & Request Increase / Application -->
+	<?php if ( $credit_limit > 0 ) : ?>
+		<div class="cwd-v2-action-cards-grid">
+			
+			<!-- Card 1: Pay Balance -->
+			<div class="cwd-v2-action-card">
+				<div>
+					<div class="cwd-v2-action-header">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0f172a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+							<rect x="2" y="5" width="20" height="14" rx="2"></rect>
+							<line x1="2" y1="10" x2="22" y2="10"></line>
+						</svg>
+						<h3><?php esc_html_e( 'Settle Credit Balance', 'custom-woo-dashboard' ); ?></h3>
+					</div>
+					<p class="cwd-v2-action-desc">
+						<?php esc_html_e( 'Pay down your outstanding balance via debit or credit card to restore your available credit.', 'custom-woo-dashboard' ); ?>
+					</p>
+				</div>
+
+				<div>
+					<?php if ( $credit_balance > 0 ) : ?>
+						<form method="post" action="">
+							<?php wp_nonce_field( 'cwd_v2_pay_credit_action', 'cwd_v2_pay_credit_nonce' ); ?>
+							<div style="margin-bottom: 16px;">
+								<label for="cwd_v2_pay_amount" style="display: block; font-size: 12.5px; font-weight: 600; color: #334155; margin-bottom: 6px;">
+									<?php esc_html_e( 'Amount to Pay', 'custom-woo-dashboard' ); ?> (<?php echo esc_html( html_entity_decode( get_woocommerce_currency_symbol(), ENT_QUOTES, 'UTF-8' ) ); ?>)
+								</label>
+								<input type="number" step="0.01" min="0.01" max="<?php echo esc_attr( $credit_balance ); ?>" name="cwd_v2_pay_amount" id="cwd_v2_pay_amount" value="<?php echo esc_attr( $credit_balance ); ?>" required style="width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 10px 12px; font-size: 14px; box-sizing: border-box; background: #ffffff;" />
+							</div>
+							<button type="submit" name="cwd_v2_pay_credit_balance" class="cwd-v2-btn-primary">
+								<?php esc_html_e( 'Proceed to Settlement', 'custom-woo-dashboard' ); ?>
+							</button>
+						</form>
+					<?php else : ?>
+						<div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 14px 16px; font-size: 13px; color: #64748b; line-height: 1.45;">
+							<?php esc_html_e( 'Your account has zero outstanding balance. No payment is currently due.', 'custom-woo-dashboard' ); ?>
+						</div>
+					<?php endif; ?>
+				</div>
+			</div>
+
+			<!-- Card 2: Request Credit Limit Increase -->
+			<div class="cwd-v2-action-card">
+	<?php else : ?>
+		<?php if ( $credit_balance > 0 ) : ?>
+			<!-- Settle Outstanding Balance Card (Full Width) -->
+			<div class="cwd-v2-action-card" style="margin-bottom: 24px; border-left: 4px solid #dc2626;">
 				<div class="cwd-v2-action-header">
-					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0f172a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+					<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
 						<rect x="2" y="5" width="20" height="14" rx="2"></rect>
 						<line x1="2" y1="10" x2="22" y2="10"></line>
 					</svg>
-					<h3><?php esc_html_e( 'Settle Credit Balance', 'custom-woo-dashboard' ); ?></h3>
+					<h3 style="color: #dc2626;"><?php esc_html_e( 'Settle Outstanding Balance', 'custom-woo-dashboard' ); ?></h3>
 				</div>
-				<p class="cwd-v2-action-desc">
-					<?php esc_html_e( 'Pay down your outstanding balance via debit or credit card to restore your available credit.', 'custom-woo-dashboard' ); ?>
+				<p class="cwd-v2-action-desc" style="margin-bottom: 16px;">
+					<?php esc_html_e( 'You have an outstanding balance due on your trade account. Settle your balance via debit or credit card below.', 'custom-woo-dashboard' ); ?>
 				</p>
-			</div>
-
-			<div>
-				<?php if ( $credit_balance > 0 ) : ?>
-					<form method="post" action="">
-						<?php wp_nonce_field( 'cwd_v2_pay_credit_action', 'cwd_v2_pay_credit_nonce' ); ?>
-						<div style="margin-bottom: 16px;">
-							<label for="cwd_v2_pay_amount" style="display: block; font-size: 12.5px; font-weight: 600; color: #334155; margin-bottom: 6px;">
-								<?php esc_html_e( 'Amount to Pay', 'custom-woo-dashboard' ); ?> (<?php echo esc_html( html_entity_decode( get_woocommerce_currency_symbol(), ENT_QUOTES, 'UTF-8' ) ); ?>)
-							</label>
-							<input type="number" step="0.01" min="0.01" max="<?php echo esc_attr( $credit_balance ); ?>" name="cwd_v2_pay_amount" id="cwd_v2_pay_amount" value="<?php echo esc_attr( $credit_balance ); ?>" required style="width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 10px 12px; font-size: 14px; box-sizing: border-box; background: #ffffff;" />
-						</div>
-						<button type="submit" name="cwd_v2_pay_credit_balance" class="cwd-v2-btn-primary">
-							<?php esc_html_e( 'Proceed to Settlement', 'custom-woo-dashboard' ); ?>
-						</button>
-					</form>
-				<?php else : ?>
-					<div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 14px 16px; font-size: 13px; color: #64748b; line-height: 1.45;">
-						<?php esc_html_e( 'Your account has zero outstanding balance. No payment is currently due.', 'custom-woo-dashboard' ); ?>
+				<form method="post" action="">
+					<?php wp_nonce_field( 'cwd_v2_pay_credit_action', 'cwd_v2_pay_credit_nonce' ); ?>
+					<div style="margin-bottom: 16px; max-width: 360px;">
+						<label for="cwd_v2_pay_amount_solo" style="display: block; font-size: 12.5px; font-weight: 600; color: #334155; margin-bottom: 6px;">
+							<?php esc_html_e( 'Amount to Pay', 'custom-woo-dashboard' ); ?> (<?php echo esc_html( html_entity_decode( get_woocommerce_currency_symbol(), ENT_QUOTES, 'UTF-8' ) ); ?>)
+						</label>
+						<input type="number" step="0.01" min="0.01" max="<?php echo esc_attr( $credit_balance ); ?>" name="cwd_v2_pay_amount" id="cwd_v2_pay_amount_solo" value="<?php echo esc_attr( $credit_balance ); ?>" required style="width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 10px 12px; font-size: 14px; box-sizing: border-box; background: #ffffff;" />
 					</div>
-				<?php endif; ?>
+					<button type="submit" name="cwd_v2_pay_credit_balance" class="cwd-v2-btn-primary">
+						<?php esc_html_e( 'Proceed to Settlement', 'custom-woo-dashboard' ); ?>
+					</button>
+				</form>
 			</div>
-		</div>
+		<?php endif; ?>
 
-		<!-- Card 2: Apply for Trade Credit / Request Limit Increase -->
-		<div class="cwd-v2-action-card">
+		<!-- Application Card (Full Width) -->
+		<div class="cwd-v2-action-card" style="margin-bottom: 28px;">
+	<?php endif; ?>
 			<div>
 				<?php if ( $credit_limit > 0 ) : ?>
 					<div class="cwd-v2-action-header">
@@ -597,14 +724,14 @@ wc_print_notices();
 					</p>
 				<?php else : ?>
 					<div class="cwd-v2-action-header">
-						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0f172a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0284c7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
 							<rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>
 							<path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
 						</svg>
-						<h3><?php esc_html_e( 'Apply for Trade Credit Facility', 'custom-woo-dashboard' ); ?></h3>
+						<h3 style="font-size: 18px; font-weight: 700; color: #0f172a;"><?php esc_html_e( 'Apply for Official Trade Credit Facility', 'custom-woo-dashboard' ); ?></h3>
 					</div>
-					<p class="cwd-v2-action-desc">
-						<?php esc_html_e( 'Get pre-approved for an official trade credit facility on Net 30 terms with instant checkout access.', 'custom-woo-dashboard' ); ?>
+					<p class="cwd-v2-action-desc" style="font-size: 13.5px; color: #475569; margin-bottom: 20px;">
+						<?php esc_html_e( 'Apply for an EWS business trade credit facility with Net 30 trade terms. Complete the required company and trade details below. Your application will be reviewed by our trade finance department.', 'custom-woo-dashboard' ); ?>
 					</p>
 				<?php endif; ?>
 			</div>
@@ -612,16 +739,64 @@ wc_print_notices();
 			<div>
 				<?php if ( $pending_credit_request ) : ?>
 					<!-- Pending Request Box -->
-					<div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 16px;">
-						<div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
-							<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-							<strong style="color: #92400e; font-size: 13.5px;">
+					<div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 18px 20px;">
+						<div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+							<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+							<strong style="color: #92400e; font-size: 15px;">
 								<?php echo ( (int) $pending_credit_request->forminator_form_id === 0 && $credit_limit > 0 ) ? esc_html__( 'Credit Limit Request Under Review', 'custom-woo-dashboard' ) : esc_html__( 'Trade Application Under Review', 'custom-woo-dashboard' ); ?>
 							</strong>
 						</div>
-						<p style="font-size: 13px; color: #78350f; margin: 0; line-height: 1.45;">
-							<?php printf( esc_html__( 'You submitted a trade request for %s on %s. Our trade finance team is actively reviewing your facility.', 'custom-woo-dashboard' ), '<strong>' . wp_kses_post( wc_price( $pending_credit_request->requested_limit ) ) . '</strong>', esc_html( date_i18n( get_option( 'date_format' ), strtotime( $pending_credit_request->created_at ) ) ) ); ?>
+						<p style="font-size: 13.5px; color: #78350f; margin: 0 0 14px 0; line-height: 1.5;">
+							<?php printf( esc_html__( 'You submitted a trade credit application requesting a %s facility on %s. Our trade finance team is actively reviewing your application.', 'custom-woo-dashboard' ), '<strong>' . wp_kses_post( wc_price( $pending_credit_request->requested_limit ) ) . '</strong>', esc_html( date_i18n( get_option( 'date_format' ), strtotime( $pending_credit_request->created_at ) ) ) ); ?>
 						</p>
+
+						<!-- Permanent Record: Complete Submitted Application Details -->
+						<?php
+						$sub_data = json_decode( (string) $pending_credit_request->form_data, true ) ?: array();
+						if ( ! empty( $sub_data ) ) :
+						?>
+							<div style="background: #ffffff; border: 1px solid #fcd34d; border-radius: 6px; padding: 16px; margin-top: 10px;">
+								<h4 style="margin: 0 0 12px 0; font-size: 13.5px; font-weight: 700; color: #0f172a; display: flex; align-items: center; gap: 6px;">
+									<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#0284c7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+									<?php esc_html_e( 'Your Submitted Application Details (Permanent Record)', 'custom-woo-dashboard' ); ?>
+								</h4>
+								<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px 18px; font-size: 12.5px; color: #334155;">
+									<div><span style="color: #64748b; font-weight: 500;"><?php esc_html_e( 'Company Name:', 'custom-woo-dashboard' ); ?></span> <strong style="color: #0f172a;"><?php echo esc_html( $sub_data['company_name'] ?? ( $pending_credit_request->company_name ?: '--' ) ); ?></strong></div>
+									<div><span style="color: #64748b; font-weight: 500;"><?php esc_html_e( 'Company Reg No:', 'custom-woo-dashboard' ); ?></span> <strong style="color: #0f172a;"><?php echo esc_html( $sub_data['company_reg_number'] ?? '--' ); ?></strong></div>
+									<div><span style="color: #64748b; font-weight: 500;"><?php esc_html_e( 'VAT Reg No:', 'custom-woo-dashboard' ); ?></span> <strong style="color: #0f172a;"><?php echo esc_html( ! empty( $sub_data['vat_number'] ) ? $sub_data['vat_number'] : 'N/A' ); ?></strong></div>
+									<div><span style="color: #64748b; font-weight: 500;"><?php esc_html_e( 'Parent Company:', 'custom-woo-dashboard' ); ?></span> <strong style="color: #0f172a;"><?php echo esc_html( ! empty( $sub_data['parent_company'] ) ? $sub_data['parent_company'] : 'N/A' ); ?></strong></div>
+									<div><span style="color: #64748b; font-weight: 500;"><?php esc_html_e( 'Business Sector:', 'custom-woo-dashboard' ); ?></span> <strong style="color: #0f172a;"><?php echo esc_html( $sub_data['business_sector'] ?? '--' ); ?></strong></div>
+									<div><span style="color: #64748b; font-weight: 500;"><?php esc_html_e( 'Trading Duration:', 'custom-woo-dashboard' ); ?></span> <strong style="color: #0f172a;"><?php echo esc_html( $sub_data['trading_duration'] ?? '--' ); ?></strong></div>
+									<div><span style="color: #64748b; font-weight: 500;"><?php esc_html_e( 'Requested Facility:', 'custom-woo-dashboard' ); ?></span> <strong style="color: #0f172a;"><?php echo wp_kses_post( wc_price( $pending_credit_request->requested_limit ) ); ?></strong></div>
+									<div><span style="color: #64748b; font-weight: 500;"><?php esc_html_e( 'Est. Monthly Spend:', 'custom-woo-dashboard' ); ?></span> <strong style="color: #0f172a;"><?php echo is_numeric( $sub_data['estimated_monthly_spend'] ?? null ) ? wp_kses_post( wc_price( $sub_data['estimated_monthly_spend'] ) ) : esc_html( $sub_data['estimated_monthly_spend'] ?? '--' ); ?></strong></div>
+									<div style="grid-column: 1 / -1;"><span style="color: #64748b; font-weight: 500;"><?php esc_html_e( 'Registered Address:', 'custom-woo-dashboard' ); ?></span> <strong style="color: #0f172a;"><?php echo esc_html( trim( ( $sub_data['street_address'] ?? '' ) . ', ' . ( $sub_data['city'] ?? '' ) . ', ' . ( $sub_data['county'] ?? '' ) . ' ' . ( $sub_data['postcode'] ?? '' ), ', ' ) ); ?></strong></div>
+									<div><span style="color: #64748b; font-weight: 500;"><?php esc_html_e( 'Contact Phone:', 'custom-woo-dashboard' ); ?></span> <strong style="color: #0f172a;"><?php echo esc_html( $sub_data['phone'] ?? ( $pending_credit_request->phone ?: '--' ) ); ?></strong></div>
+									<div><span style="color: #64748b; font-weight: 500;"><?php esc_html_e( 'Contact Email:', 'custom-woo-dashboard' ); ?></span> <strong style="color: #0f172a;"><?php echo esc_html( $sub_data['applicant_email'] ?? ( $pending_credit_request->applicant_email ?: '--' ) ); ?></strong></div>
+									<div style="grid-column: 1 / -1; border-top: 1px dashed #e2e8f0; padding-top: 10px; margin-top: 4px;">
+										<span style="color: #64748b; font-weight: 500;"><?php esc_html_e( 'Trade Reference 1:', 'custom-woo-dashboard' ); ?></span>
+										<strong style="color: #0f172a;"><?php echo esc_html( $sub_data['trade_ref_name'] ?? '--' ); ?></strong> &bull;
+										<span><?php echo esc_html( $sub_data['trade_ref_tel'] ?? '--' ); ?></span> &bull;
+										<span><?php echo esc_html( $sub_data['trade_ref_address'] ?? '--' ); ?></span>
+									</div>
+									<?php if ( ! empty( $sub_data['trade_ref_2_name'] ) || ! empty( $sub_data['trade_ref_2_tel'] ) ) : ?>
+										<div style="grid-column: 1 / -1; border-top: 1px dashed #e2e8f0; padding-top: 8px;">
+											<span style="color: #64748b; font-weight: 500;"><?php esc_html_e( 'Trade Reference 2 (optional):', 'custom-woo-dashboard' ); ?></span>
+											<strong style="color: #0f172a;"><?php echo esc_html( $sub_data['trade_ref_2_name'] ?? '--' ); ?></strong> &bull;
+											<span><?php echo esc_html( $sub_data['trade_ref_2_tel'] ?? '--' ); ?></span> &bull;
+											<span><?php echo esc_html( $sub_data['trade_ref_2_address'] ?? '--' ); ?></span>
+										</div>
+									<?php endif; ?>
+									<?php if ( ! empty( $sub_data['trade_ref_3_name'] ) || ! empty( $sub_data['trade_ref_3_tel'] ) ) : ?>
+										<div style="grid-column: 1 / -1; border-top: 1px dashed #e2e8f0; padding-top: 8px;">
+											<span style="color: #64748b; font-weight: 500;"><?php esc_html_e( 'Trade Reference 3 (optional):', 'custom-woo-dashboard' ); ?></span>
+											<strong style="color: #0f172a;"><?php echo esc_html( $sub_data['trade_ref_3_name'] ?? '--' ); ?></strong> &bull;
+											<span><?php echo esc_html( $sub_data['trade_ref_3_tel'] ?? '--' ); ?></span> &bull;
+											<span><?php echo esc_html( $sub_data['trade_ref_3_address'] ?? '--' ); ?></span>
+										</div>
+									<?php endif; ?>
+								</div>
+							</div>
+						<?php endif; ?>
 					</div>
 				<?php else : ?>
 					<?php if ( $latest_rejected_request ) : ?>
@@ -662,46 +837,611 @@ wc_print_notices();
 							</button>
 						</form>
 					<?php else : ?>
-						<!-- Trade Credit Application Form -->
-						<form method="post" action="" onsubmit="var btn = this.querySelector('button[type=submit]'); if (btn) { btn.style.pointerEvents='none'; btn.style.opacity='0.7'; btn.textContent='Submitting Application...'; }">
+						<!-- Complete Native Trade Credit Application Form -->
+						<?php
+						$pre_company   = get_user_meta( $user_id, 'billing_company', true );
+						$pre_reg_num   = get_user_meta( $user_id, '_company_reg_number', true );
+						$pre_vat_num   = get_user_meta( $user_id, '_vat_number', true );
+						$pre_parent_co = get_user_meta( $user_id, '_parent_company', true );
+						$pre_sector    = get_user_meta( $user_id, '_business_sector', true );
+						$pre_duration  = get_user_meta( $user_id, '_trading_duration', true );
+						$pre_spend     = get_user_meta( $user_id, '_estimated_monthly_spend', true );
+						$pre_limit     = get_user_meta( $user_id, '_requested_credit_limit', true );
+						$pre_phone     = get_user_meta( $user_id, 'billing_phone', true );
+						$pre_email     = $current_user->user_email;
+						$pre_street    = get_user_meta( $user_id, 'billing_address_1', true );
+						$pre_city      = get_user_meta( $user_id, 'billing_city', true );
+						$pre_county    = get_user_meta( $user_id, 'billing_state', true );
+						$pre_postcode  = get_user_meta( $user_id, 'billing_postcode', true );
+						$pre_ref_name    = get_user_meta( $user_id, '_trade_ref_name', true );
+						$pre_ref_addr    = get_user_meta( $user_id, '_trade_ref_address', true );
+						$pre_ref_tel     = get_user_meta( $user_id, '_trade_ref_tel', true );
+						$pre_ref_2_name  = get_user_meta( $user_id, '_trade_ref_2_name', true );
+						$pre_ref_2_addr  = get_user_meta( $user_id, '_trade_ref_2_address', true );
+						$pre_ref_2_tel   = get_user_meta( $user_id, '_trade_ref_2_tel', true );
+						$pre_ref_3_name  = get_user_meta( $user_id, '_trade_ref_3_name', true );
+						$pre_ref_3_addr  = get_user_meta( $user_id, '_trade_ref_3_address', true );
+						$pre_ref_3_tel   = get_user_meta( $user_id, '_trade_ref_3_tel', true );
+						$pre_sig_name    = get_user_meta( $user_id, '_trade_signatory_name', true ) ?: ($current_user->display_name ?: trim($current_user->first_name . ' ' . $current_user->last_name));
+						$pre_sig_title   = get_user_meta( $user_id, '_trade_signatory_title', true );
+						?>
+						<form method="post" action="" id="cwd_v2_trade_application_form">
 							<?php wp_nonce_field( 'cwd_v2_apply_trade_action', 'cwd_v2_apply_trade_nonce' ); ?>
 							<input type="hidden" name="cwd_v2_submit_trade_app" value="1" />
-							<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 12px;">
-								<div>
-									<label for="cwd_v2_company_name" style="display: block; font-size: 12.5px; font-weight: 600; color: #334155; margin-bottom: 4px;">
-										<?php esc_html_e( 'Company / Business Name', 'custom-woo-dashboard' ); ?> *
-									</label>
-									<input type="text" name="cwd_v2_company_name" id="cwd_v2_company_name" value="<?php echo esc_attr( get_user_meta( $user_id, 'billing_company', true ) ); ?>" required style="width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 9px 12px; font-size: 13.5px; box-sizing: border-box; background: #ffffff;" />
+
+							<!-- Group 1: Company & Business Details -->
+							<div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 18px 20px; margin-bottom: 20px;">
+								<h4 style="margin: 0 0 16px 0; font-size: 14px; font-weight: 700; color: #0f172a; display: flex; align-items: center; gap: 8px;">
+									<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0284c7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"></path><path d="M5 21V7l8-4v18"></path><path d="M19 21V11l-6-4"></path><path d="M9 9h1"></path><path d="M9 13h1"></path><path d="M9 17h1"></path></svg>
+									<?php esc_html_e( '1. Company & Business Information', 'custom-woo-dashboard' ); ?>
+								</h4>
+								<div class="cwd-v2-form-grid">
+									<div class="cwd-v2-field">
+										<label for="cwd_v2_company_name">
+											<span><?php esc_html_e( 'Company Name', 'custom-woo-dashboard' ); ?> <span style="color: #ef4444;">*</span></span>
+										</label>
+										<input type="text" name="cwd_v2_company_name" id="cwd_v2_company_name" value="<?php echo esc_attr( $pre_company ); ?>" required placeholder="<?php esc_attr_e( 'Registered Company Name', 'custom-woo-dashboard' ); ?>" />
+									</div>
+
+									<div class="cwd-v2-field">
+										<label for="cwd_v2_company_reg_number">
+											<span><?php esc_html_e( 'Company Reg Number', 'custom-woo-dashboard' ); ?> <span style="color: #ef4444;">*</span></span>
+											<span class="cwd-hint"><?php esc_html_e( '(Companies House 8 chars)', 'custom-woo-dashboard' ); ?></span>
+										</label>
+										<input type="text" name="cwd_v2_company_reg_number" id="cwd_v2_company_reg_number" value="<?php echo esc_attr( $pre_reg_num ); ?>" required maxlength="8" placeholder="<?php esc_attr_e( 'e.g. 12345678 or SC123456', 'custom-woo-dashboard' ); ?>" style="text-transform: uppercase;" />
+									</div>
+
+									<div class="cwd-v2-field">
+										<label for="cwd_v2_vat_number">
+											<span><?php esc_html_e( 'VAT Reg Number', 'custom-woo-dashboard' ); ?></span>
+											<span class="cwd-hint"><?php esc_html_e( '(optional - HMRC standard)', 'custom-woo-dashboard' ); ?></span>
+										</label>
+										<input type="text" name="cwd_v2_vat_number" id="cwd_v2_vat_number" value="<?php echo esc_attr( $pre_vat_num ); ?>" placeholder="<?php esc_attr_e( 'e.g. GB123456789', 'custom-woo-dashboard' ); ?>" style="text-transform: uppercase;" />
+									</div>
+
+									<div class="cwd-v2-field">
+										<label for="cwd_v2_parent_company">
+											<span><?php esc_html_e( 'Parent Company Name', 'custom-woo-dashboard' ); ?></span>
+											<span class="cwd-hint"><?php esc_html_e( '(optional)', 'custom-woo-dashboard' ); ?></span>
+										</label>
+										<input type="text" name="cwd_v2_parent_company" id="cwd_v2_parent_company" value="<?php echo esc_attr( $pre_parent_co ); ?>" placeholder="<?php esc_attr_e( 'Holding or Parent Company (if applicable)', 'custom-woo-dashboard' ); ?>" />
+									</div>
+
+									<div class="cwd-v2-field">
+										<label for="cwd_v2_business_sector">
+											<span><?php esc_html_e( 'Type of Business Sector / Industry?', 'custom-woo-dashboard' ); ?> <span style="color: #ef4444;">*</span></span>
+										</label>
+										<select name="cwd_v2_business_sector" id="cwd_v2_business_sector" required>
+											<option value=""><?php esc_html_e( 'Select sector...', 'custom-woo-dashboard' ); ?></option>
+											<?php
+											$sectors = array( 'Retail', 'Wholesale', 'Manufacturing', 'Construction', 'Hospitality', 'Professional services', 'Other' );
+											foreach ( $sectors as $sec ) :
+											?>
+												<option value="<?php echo esc_attr( $sec ); ?>" <?php selected( $pre_sector, $sec ); ?>><?php echo esc_html( $sec ); ?></option>
+											<?php endforeach; ?>
+										</select>
+									</div>
+
+									<div class="cwd-v2-field">
+										<label for="cwd_v2_trading_duration">
+											<span><?php esc_html_e( 'How long has the company been trading?', 'custom-woo-dashboard' ); ?> <span style="color: #ef4444;">*</span></span>
+										</label>
+										<select name="cwd_v2_trading_duration" id="cwd_v2_trading_duration" required>
+											<option value=""><?php esc_html_e( 'Select duration...', 'custom-woo-dashboard' ); ?></option>
+											<?php
+											$durations = array( 'Under 6 months', '6 - 12 months', '1 - 2 years', '2 - 5 years', 'Over 5 years' );
+											foreach ( $durations as $dur ) :
+											?>
+												<option value="<?php echo esc_attr( $dur ); ?>" <?php selected( $pre_duration, $dur ); ?>><?php echo esc_html( $dur ); ?></option>
+											<?php endforeach; ?>
+										</select>
+									</div>
 								</div>
-								<div>
-									<label for="cwd_v2_phone" style="display: block; font-size: 12.5px; font-weight: 600; color: #334155; margin-bottom: 4px;">
-										<?php esc_html_e( 'Contact Phone', 'custom-woo-dashboard' ); ?> *
-									</label>
-									<input type="tel" name="cwd_v2_phone" id="cwd_v2_phone" value="<?php echo esc_attr( get_user_meta( $user_id, 'billing_phone', true ) ); ?>" required style="width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 9px 12px; font-size: 13.5px; box-sizing: border-box; background: #ffffff;" />
+							</div>
+
+							<!-- Group 2: Registered Trading Address & Contact -->
+							<div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 18px 20px; margin-bottom: 20px;">
+								<h4 style="margin: 0 0 16px 0; font-size: 14px; font-weight: 700; color: #0f172a; display: flex; align-items: center; gap: 8px;">
+									<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0284c7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+									<?php esc_html_e( '2. Registered Address & Contact Information', 'custom-woo-dashboard' ); ?>
+								</h4>
+								<div class="cwd-v2-form-grid">
+									<div class="cwd-v2-field cwd-span-full">
+										<label for="cwd_v2_street_address">
+											<span><?php esc_html_e( 'Street address', 'custom-woo-dashboard' ); ?> <span style="color: #ef4444;">*</span></span>
+										</label>
+										<input type="text" name="cwd_v2_street_address" id="cwd_v2_street_address" value="<?php echo esc_attr( $pre_street ); ?>" required placeholder="<?php esc_attr_e( 'House/Building number and street name', 'custom-woo-dashboard' ); ?>" />
+									</div>
+
+									<div class="cwd-v2-field">
+										<label for="cwd_v2_city">
+											<span><?php esc_html_e( 'Town / City', 'custom-woo-dashboard' ); ?> <span style="color: #ef4444;">*</span></span>
+										</label>
+										<input type="text" name="cwd_v2_city" id="cwd_v2_city" value="<?php echo esc_attr( $pre_city ); ?>" required placeholder="<?php esc_attr_e( 'e.g. London', 'custom-woo-dashboard' ); ?>" />
+									</div>
+
+									<div class="cwd-v2-field">
+										<label for="cwd_v2_county">
+											<span><?php esc_html_e( 'County', 'custom-woo-dashboard' ); ?> <span style="color: #ef4444;">*</span></span>
+										</label>
+										<select name="cwd_v2_county" id="cwd_v2_county" required>
+											<option value=""><?php esc_html_e( 'Select UK County...', 'custom-woo-dashboard' ); ?></option>
+											<?php
+											$uk_counties = class_exists( 'CWD_V2_Credit_Logic' ) ? CWD_V2_Credit_Logic::get_uk_counties() : array();
+											foreach ( $uk_counties as $nation => $c_group ) :
+											?>
+												<optgroup label="<?php echo esc_attr( $nation ); ?>">
+													<?php foreach ( $c_group as $c_name ) : ?>
+														<option value="<?php echo esc_attr( $c_name ); ?>" <?php selected( strtolower( (string) $pre_county ), strtolower( $c_name ) ); ?>>
+															<?php echo esc_html( $c_name ); ?>
+														</option>
+													<?php endforeach; ?>
+												</optgroup>
+											<?php endforeach; ?>
+										</select>
+									</div>
+
+									<div class="cwd-v2-field">
+										<label for="cwd_v2_postcode">
+											<span><?php esc_html_e( 'Postcode', 'custom-woo-dashboard' ); ?> <span style="color: #ef4444;">*</span></span>
+											<span class="cwd-hint"><?php esc_html_e( '(UK Postcode)', 'custom-woo-dashboard' ); ?></span>
+										</label>
+										<input type="text" name="cwd_v2_postcode" id="cwd_v2_postcode" value="<?php echo esc_attr( $pre_postcode ); ?>" required maxlength="10" placeholder="<?php esc_attr_e( 'e.g. SW1A 1AA', 'custom-woo-dashboard' ); ?>" style="text-transform: uppercase;" />
+									</div>
+
+									<div class="cwd-v2-field">
+										<label for="cwd_v2_phone">
+											<span><?php esc_html_e( 'Phone', 'custom-woo-dashboard' ); ?> <span style="color: #ef4444;">*</span></span>
+											<span class="cwd-hint"><?php esc_html_e( '(Must begin with +44)', 'custom-woo-dashboard' ); ?></span>
+										</label>
+										<?php
+										$initial_phone = $pre_phone ? ( strpos( $pre_phone, '+44' ) === 0 ? $pre_phone : '+44 ' . ltrim( $pre_phone, '0' ) ) : '+44 ';
+										?>
+										<input type="tel" name="cwd_v2_phone" id="cwd_v2_phone" value="<?php echo esc_attr( $initial_phone ); ?>" required maxlength="15" pattern="^\+44[\s0-9]{10,12}$" placeholder="<?php esc_attr_e( '+44 7123 456789', 'custom-woo-dashboard' ); ?>" />
+									</div>
+
+									<div class="cwd-v2-field cwd-span-full">
+										<label for="cwd_v2_email">
+											<span><?php esc_html_e( 'Email address', 'custom-woo-dashboard' ); ?> <span style="color: #ef4444;">*</span></span>
+										</label>
+										<input type="email" name="cwd_v2_email" id="cwd_v2_email" value="<?php echo esc_attr( $pre_email ); ?>" required placeholder="<?php esc_attr_e( 'accounts@company.com', 'custom-woo-dashboard' ); ?>" />
+									</div>
 								</div>
 							</div>
-							<div style="margin-bottom: 12px;">
-								<label for="cwd_v2_requested_limit" style="display: block; font-size: 12.5px; font-weight: 600; color: #334155; margin-bottom: 4px;">
-									<?php esc_html_e( 'Requested Credit Facility', 'custom-woo-dashboard' ); ?> (<?php echo esc_html( html_entity_decode( get_woocommerce_currency_symbol(), ENT_QUOTES, 'UTF-8' ) ); ?>) *
-								</label>
-								<input type="number" step="any" min="1" name="cwd_v2_requested_limit" id="cwd_v2_requested_limit" placeholder="<?php esc_attr_e( 'Enter requested facility limit', 'custom-woo-dashboard' ); ?>" required style="width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 9px 12px; font-size: 13.5px; box-sizing: border-box; background: #ffffff;" />
+
+							<!-- Group 3: Credit Facility & Spending Requirements -->
+							<div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 18px 20px; margin-bottom: 20px;">
+								<h4 style="margin: 0 0 16px 0; font-size: 14px; font-weight: 700; color: #0f172a; display: flex; align-items: center; gap: 8px;">
+									<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0284c7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+									<?php esc_html_e( '3. Credit Facility & Spending Requirements', 'custom-woo-dashboard' ); ?>
+								</h4>
+								<div class="cwd-v2-form-grid">
+									<div class="cwd-v2-field">
+										<label for="cwd_v2_requested_limit">
+											<span><?php esc_html_e( 'Requested Credit Limit', 'custom-woo-dashboard' ); ?> (<?php echo esc_html( html_entity_decode( get_woocommerce_currency_symbol(), ENT_QUOTES, 'UTF-8' ) ); ?>) <span style="color: #ef4444;">*</span></span>
+										</label>
+										<input type="number" step="any" min="1" name="cwd_v2_requested_limit" id="cwd_v2_requested_limit" value="<?php echo esc_attr( $pre_limit ); ?>" required placeholder="<?php esc_attr_e( 'e.g. 5000', 'custom-woo-dashboard' ); ?>" style="font-weight: 700;" />
+									</div>
+
+									<div class="cwd-v2-field">
+										<label for="cwd_v2_estimated_monthly_spend">
+											<span><?php esc_html_e( 'Estimated monthly spend', 'custom-woo-dashboard' ); ?> (<?php echo esc_html( html_entity_decode( get_woocommerce_currency_symbol(), ENT_QUOTES, 'UTF-8' ) ); ?>) <span style="color: #ef4444;">*</span></span>
+										</label>
+										<input type="number" step="any" min="1" name="cwd_v2_estimated_monthly_spend" id="cwd_v2_estimated_monthly_spend" value="<?php echo esc_attr( $pre_spend ); ?>" required placeholder="<?php esc_attr_e( 'e.g. 2500', 'custom-woo-dashboard' ); ?>" style="font-weight: 700;" />
+									</div>
+								</div>
 							</div>
-							<div style="margin-bottom: 16px;">
-								<label for="cwd_v2_trading_details" style="display: block; font-size: 12.5px; font-weight: 600; color: #334155; margin-bottom: 4px;">
-									<?php esc_html_e( 'Business Description / Trading Type', 'custom-woo-dashboard' ); ?>
-								</label>
-								<textarea name="cwd_v2_trading_details" id="cwd_v2_trading_details" rows="2" style="width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px; font-size: 13px; box-sizing: border-box; background: #ffffff;" placeholder="<?php esc_attr_e( 'e.g. Electrical contracting, construction supply, regular monthly trade volume...', 'custom-woo-dashboard' ); ?>"></textarea>
+
+							<!-- Group 4: Trade Reference 1 (Mandatory) -->
+							<div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 18px 20px; margin-bottom: 20px;">
+								<h4 style="margin: 0 0 16px 0; font-size: 14px; font-weight: 700; color: #0f172a; display: flex; align-items: center; gap: 8px;">
+									<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0284c7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+									<?php esc_html_e( '4. Trade Reference 1', 'custom-woo-dashboard' ); ?> <span style="color: #ef4444; font-size: 12px; font-weight: 500;">*</span>
+								</h4>
+								<div class="cwd-v2-form-grid">
+									<div class="cwd-v2-field">
+										<label for="cwd_v2_trade_ref_name">
+											<span><?php esc_html_e( 'Trade Reference 1, Name', 'custom-woo-dashboard' ); ?> <span style="color: #ef4444;">*</span></span>
+										</label>
+										<input type="text" name="cwd_v2_trade_ref_name" id="cwd_v2_trade_ref_name" value="<?php echo esc_attr( $pre_ref_name ); ?>" required placeholder="<?php esc_attr_e( 'Supplier company name or contact', 'custom-woo-dashboard' ); ?>" />
+									</div>
+
+									<div class="cwd-v2-field">
+										<label for="cwd_v2_trade_ref_tel">
+											<span><?php esc_html_e( 'Trade Reference 1, Tel', 'custom-woo-dashboard' ); ?> <span style="color: #ef4444;">*</span></span>
+											<span class="cwd-hint"><?php esc_html_e( '(Must begin with +44)', 'custom-woo-dashboard' ); ?></span>
+										</label>
+										<input type="tel" name="cwd_v2_trade_ref_tel" id="cwd_v2_trade_ref_tel" value="<?php echo esc_attr( $pre_ref_tel ); ?>" required maxlength="15" placeholder="<?php esc_attr_e( 'e.g. +44 7123 456789', 'custom-woo-dashboard' ); ?>" />
+									</div>
+
+									<div class="cwd-v2-field cwd-span-full">
+										<label for="cwd_v2_trade_ref_address">
+											<span><?php esc_html_e( 'Trade Reference 1, Address', 'custom-woo-dashboard' ); ?> <span style="color: #ef4444;">*</span></span>
+										</label>
+										<textarea name="cwd_v2_trade_ref_address" id="cwd_v2_trade_ref_address" rows="2" required placeholder="<?php esc_attr_e( 'Full address of trade reference supplier', 'custom-woo-dashboard' ); ?>"><?php echo esc_textarea( $pre_ref_addr ); ?></textarea>
+									</div>
+								</div>
 							</div>
-							<button type="submit" name="cwd_v2_submit_trade_app" class="cwd-v2-btn-primary">
-								<?php esc_html_e( 'Submit Trade Application', 'custom-woo-dashboard' ); ?>
+
+							<!-- Group 5: Trade Reference 2 (Optional) -->
+							<div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 18px 20px; margin-bottom: 20px;">
+								<h4 style="margin: 0 0 16px 0; font-size: 14px; font-weight: 700; color: #0f172a; display: flex; align-items: center; gap: 8px;">
+									<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle></svg>
+									<?php esc_html_e( '5. Trade Reference 2', 'custom-woo-dashboard' ); ?> <span style="color: #94a3b8; font-weight: 400; font-size: 12px;"><?php esc_html_e( '(optional)', 'custom-woo-dashboard' ); ?></span>
+								</h4>
+								<div class="cwd-v2-form-grid">
+									<div class="cwd-v2-field">
+										<label for="cwd_v2_trade_ref_2_name">
+											<span><?php esc_html_e( 'Trade Reference 2, Name', 'custom-woo-dashboard' ); ?></span>
+											<span class="cwd-hint"><?php esc_html_e( '(optional)', 'custom-woo-dashboard' ); ?></span>
+										</label>
+										<input type="text" name="cwd_v2_trade_ref_2_name" id="cwd_v2_trade_ref_2_name" value="<?php echo esc_attr( $pre_ref_2_name ); ?>" placeholder="<?php esc_attr_e( 'Supplier company name or contact', 'custom-woo-dashboard' ); ?>" />
+									</div>
+
+									<div class="cwd-v2-field">
+										<label for="cwd_v2_trade_ref_2_tel">
+											<span><?php esc_html_e( 'Trade Reference 2, Tel', 'custom-woo-dashboard' ); ?></span>
+											<span class="cwd-hint"><?php esc_html_e( '(optional)', 'custom-woo-dashboard' ); ?></span>
+										</label>
+										<input type="tel" name="cwd_v2_trade_ref_2_tel" id="cwd_v2_trade_ref_2_tel" value="<?php echo esc_attr( $pre_ref_2_tel ); ?>" maxlength="15" placeholder="<?php esc_attr_e( 'e.g. +44 7123 456789', 'custom-woo-dashboard' ); ?>" />
+									</div>
+
+									<div class="cwd-v2-field cwd-span-full">
+										<label for="cwd_v2_trade_ref_2_address">
+											<span><?php esc_html_e( 'Trade Reference 2, Address', 'custom-woo-dashboard' ); ?></span>
+											<span class="cwd-hint"><?php esc_html_e( '(optional)', 'custom-woo-dashboard' ); ?></span>
+										</label>
+										<textarea name="cwd_v2_trade_ref_2_address" id="cwd_v2_trade_ref_2_address" rows="2" placeholder="<?php esc_attr_e( 'Full address of trade reference supplier', 'custom-woo-dashboard' ); ?>"><?php echo esc_textarea( $pre_ref_2_addr ); ?></textarea>
+									</div>
+								</div>
+							</div>
+
+							<!-- Group 6: Trade Reference 3 (Optional) -->
+							<div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 18px 20px; margin-bottom: 24px;">
+								<h4 style="margin: 0 0 16px 0; font-size: 14px; font-weight: 700; color: #0f172a; display: flex; align-items: center; gap: 8px;">
+									<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle></svg>
+									<?php esc_html_e( '6. Trade Reference 3', 'custom-woo-dashboard' ); ?> <span style="color: #94a3b8; font-weight: 400; font-size: 12px;"><?php esc_html_e( '(optional)', 'custom-woo-dashboard' ); ?></span>
+								</h4>
+								<div class="cwd-v2-form-grid">
+									<div class="cwd-v2-field">
+										<label for="cwd_v2_trade_ref_3_name">
+											<span><?php esc_html_e( 'Trade Reference 3, Name', 'custom-woo-dashboard' ); ?></span>
+											<span class="cwd-hint"><?php esc_html_e( '(optional)', 'custom-woo-dashboard' ); ?></span>
+										</label>
+										<input type="text" name="cwd_v2_trade_ref_3_name" id="cwd_v2_trade_ref_3_name" value="<?php echo esc_attr( $pre_ref_3_name ); ?>" placeholder="<?php esc_attr_e( 'Supplier company name or contact', 'custom-woo-dashboard' ); ?>" />
+									</div>
+
+									<div class="cwd-v2-field">
+										<label for="cwd_v2_trade_ref_3_tel">
+											<span><?php esc_html_e( 'Trade Reference 3, Tel', 'custom-woo-dashboard' ); ?></span>
+											<span class="cwd-hint"><?php esc_html_e( '(optional)', 'custom-woo-dashboard' ); ?></span>
+										</label>
+										<input type="tel" name="cwd_v2_trade_ref_3_tel" id="cwd_v2_trade_ref_3_tel" value="<?php echo esc_attr( $pre_ref_3_tel ); ?>" maxlength="15" placeholder="<?php esc_attr_e( 'e.g. +44 7123 456789', 'custom-woo-dashboard' ); ?>" />
+									</div>
+
+									<div class="cwd-v2-field cwd-span-full">
+										<label for="cwd_v2_trade_ref_3_address">
+											<span><?php esc_html_e( 'Trade Reference 3, Address', 'custom-woo-dashboard' ); ?></span>
+											<span class="cwd-hint"><?php esc_html_e( '(optional)', 'custom-woo-dashboard' ); ?></span>
+										</label>
+										<textarea name="cwd_v2_trade_ref_3_address" id="cwd_v2_trade_ref_3_address" rows="2" placeholder="<?php esc_attr_e( 'Full address of trade reference supplier', 'custom-woo-dashboard' ); ?>"><?php echo esc_textarea( $pre_ref_3_addr ); ?></textarea>
+									</div>
+								</div>
+							</div>
+
+							<!-- Group 7: Trade Credit Agreement & Authorised Signature -->
+							<div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 22px 22px; margin-bottom: 24px;">
+								<h4 style="margin: 0 0 8px 0; font-size: 15px; font-weight: 700; color: #0f172a; display: flex; align-items: center; gap: 8px;">
+									<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0284c7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+									<?php esc_html_e( '7. Agreement & Authorised Declaration', 'custom-woo-dashboard' ); ?> <span style="color: #ef4444; font-size: 13px; font-weight: 600;">*</span>
+								</h4>
+								<p style="margin: 0 0 16px 0; font-size: 12.5px; color: #64748b; line-height: 1.5;">
+									<?php esc_html_e( 'Please review the declaration below, provide signatory details, and sign within the box. By submitting, you confirm that you are an authorised officer of the applicant company.', 'custom-woo-dashboard' ); ?>
+								</p>
+
+								<!-- Agreement Terms Box -->
+								<div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 14px 16px; margin-bottom: 18px; max-height: 135px; overflow-y: auto; font-size: 12px; color: #475569; line-height: 1.6;">
+									<strong style="color: #0f172a; display: block; margin-bottom: 6px; font-size: 12.5px;"><?php esc_html_e( 'Trade Credit Facility Undertaking & Authority to Verify', 'custom-woo-dashboard' ); ?></strong>
+									<ul style="margin: 0; padding-left: 18px;">
+										<li><?php esc_html_e( 'I/We warrant that all information provided in this application is true, accurate, and complete in all respects.', 'custom-woo-dashboard' ); ?></li>
+										<li><?php esc_html_e( 'I/We authorise the company to conduct commercial credit checks with recognised UK credit reference agencies (e.g. Experian, Equifax, Creditsafe) and verify references provided.', 'custom-woo-dashboard' ); ?></li>
+										<li><?php esc_html_e( 'I/We agree to strictly adhere to the agreed credit terms and settle all invoices on or before the due date as stated on each trade invoice.', 'custom-woo-dashboard' ); ?></li>
+										<li><?php esc_html_e( 'I/We understand that title to all goods remains with the seller until paid for in full, and any default in payment may result in suspension or withdrawal of the credit facility.', 'custom-woo-dashboard' ); ?></li>
+									</ul>
+								</div>
+
+								<!-- Mandatory Agreement Checkbox -->
+								<div style="margin-bottom: 18px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px 14px;">
+									<label style="display: flex; align-items: flex-start; gap: 8px; font-size: 12.5px; font-weight: 600; color: #1e293b; cursor: pointer;">
+										<input type="checkbox" name="cwd_v2_terms_accepted" id="cwd_v2_terms_accepted" value="1" required style="margin-top: 2px;" />
+										<span><?php esc_html_e( 'I confirm that I have read and agree to the Trade Credit Terms & Conditions and warrant that I am a Director, Partner, or authorised officer.', 'custom-woo-dashboard' ); ?> <span style="color: #ef4444;">*</span></span>
+									</label>
+								</div>
+
+								<!-- Signatory Details Grid -->
+								<div class="cwd-v2-form-grid" style="margin-bottom: 20px;">
+									<div class="cwd-v2-field">
+										<label for="cwd_v2_signatory_name">
+											<span><?php esc_html_e( 'Authorised Signatory Full Name', 'custom-woo-dashboard' ); ?> <span style="color: #ef4444;">*</span></span>
+										</label>
+										<input type="text" name="cwd_v2_signatory_name" id="cwd_v2_signatory_name" value="<?php echo esc_attr( $pre_sig_name ); ?>" required placeholder="<?php esc_attr_e( 'e.g. John Smith', 'custom-woo-dashboard' ); ?>" />
+									</div>
+
+									<div class="cwd-v2-field">
+										<label for="cwd_v2_signatory_title">
+											<span><?php esc_html_e( 'Job Title / Position', 'custom-woo-dashboard' ); ?> <span style="color: #ef4444;">*</span></span>
+										</label>
+										<input type="text" name="cwd_v2_signatory_title" id="cwd_v2_signatory_title" value="<?php echo esc_attr( $pre_sig_title ); ?>" required placeholder="<?php esc_attr_e( 'e.g. Managing Director, Company Secretary', 'custom-woo-dashboard' ); ?>" />
+									</div>
+
+									<div class="cwd-v2-field cwd-span-full">
+										<label>
+											<span><?php esc_html_e( 'Date of Signing', 'custom-woo-dashboard' ); ?></span>
+										</label>
+										<input type="text" value="<?php echo esc_attr( date_i18n( get_option( 'date_format' ) ) ); ?>" readonly style="background: #f1f5f9 !important; color: #64748b !important; cursor: not-allowed;" />
+									</div>
+								</div>
+
+								<!-- Interactive Signature Pad -->
+								<div>
+									<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+										<label style="display: block; font-size: 12.5px; font-weight: 600; color: #334155;">
+											<?php esc_html_e( 'Draw Your Signature', 'custom-woo-dashboard' ); ?> <span style="color: #ef4444;">*</span>
+											<span style="font-size: 11px; font-weight: 400; color: #64748b; margin-left: 6px;"><?php esc_html_e( '(Use mouse, finger, or stylus)', 'custom-woo-dashboard' ); ?></span>
+										</label>
+										<button type="button" id="cwd_v2_clear_signature_btn" class="button button-small" style="font-size: 11.5px; padding: 2px 10px; height: 26px; line-height: 24px; border-radius: 4px; color: #dc2626; border-color: #fca5a5; background: #ffffff; cursor: pointer;">
+											<span class="dashicons dashicons-trash" style="font-size: 14px; width: 14px; height: 14px; vertical-align: middle;"></span> <?php esc_html_e( 'Clear Signature', 'custom-woo-dashboard' ); ?>
+										</button>
+									</div>
+
+									<div style="position: relative; background: #ffffff; border: 2px dashed #cbd5e1; border-radius: 8px; width: 100%; box-sizing: border-box; overflow: hidden; touch-action: none;">
+										<canvas id="cwd_v2_signature_canvas" style="display: block; width: 100%; height: 160px; cursor: crosshair; touch-action: none; background: #ffffff;"></canvas>
+										<div style="position: absolute; bottom: 28px; left: 24px; right: 24px; border-bottom: 1px dashed #cbd5e1; pointer-events: none;"></div>
+										<div style="position: absolute; bottom: 8px; left: 24px; font-size: 11px; color: #94a3b8; pointer-events: none; user-select: none;">
+											✕ <?php esc_html_e( 'Sign on the line above', 'custom-woo-dashboard' ); ?>
+										</div>
+									</div>
+									<input type="hidden" name="cwd_v2_signature_data" id="cwd_v2_signature_data" value="" />
+									<p id="cwd_v2_sig_error" style="display: none; color: #dc2626; font-size: 12px; font-weight: 600; margin: 6px 0 0;"><?php esc_html_e( 'Please draw your signature in the box above before submitting.', 'custom-woo-dashboard' ); ?></p>
+								</div>
+							</div>
+
+							<button type="submit" name="cwd_v2_submit_trade_app" class="cwd-v2-btn-primary" style="padding: 12px 28px; font-size: 14.5px; font-weight: 700; width: 100%; max-width: 320px;">
+								<?php esc_html_e( 'Submit Trade Application', 'custom-woo-dashboard' ); ?> &rarr;
 							</button>
 						</form>
+
+						<script>
+						document.addEventListener('DOMContentLoaded', function() {
+							function setupUKPhoneField(inputEl, isRequired) {
+								if (!inputEl) return;
+								inputEl.setAttribute('maxlength', '15');
+
+								// On focus: if required and empty, auto-seed '+44 '
+								inputEl.addEventListener('focus', function() {
+									if (!this.value || this.value.trim() === '') {
+										if (isRequired) {
+											this.value = '+44 ';
+										}
+									}
+								});
+
+								// On blur: if only '+44' or whitespace remains, clear it
+								inputEl.addEventListener('blur', function() {
+									var trimmed = this.value.trim();
+									if (trimmed === '+44' || trimmed === '') {
+										this.value = '';
+									}
+								});
+
+								// Block '+' key from being typed anywhere inside the field
+								inputEl.addEventListener('keydown', function(e) {
+									if (e.key === '+') {
+										e.preventDefault();
+										return;
+									}
+									// Prevent backspacing into the '+44 ' prefix
+									if (e.key === 'Backspace' && this.selectionStart <= 4 && this.selectionEnd <= 4 && this.value.indexOf('+44') === 0) {
+										e.preventDefault();
+									}
+								});
+
+								// Format input live to +44 XXXX XXXXXX (max 10 subscriber digits)
+								inputEl.addEventListener('input', function() {
+									var val = this.value;
+									if (!val || val.trim() === '') {
+										return;
+									}
+									// Remove any '+' characters typed or pasted
+									val = val.replace(/\+/g, '');
+									// Extract all numeric digits
+									var digits = val.replace(/[^0-9]/g, '');
+									// If it starts with UK country code 44, strip it to isolate subscriber digits
+									if (digits.indexOf('44') === 0) {
+										digits = digits.substring(2);
+									}
+									// If domestic leading 0 is typed (e.g. 07123...), strip the leading 0
+									if (digits.indexOf('0') === 0) {
+										digits = digits.substring(1);
+									}
+									// UK subscriber numbers have max 10 digits
+									digits = digits.slice(0, 10);
+
+									if (digits.length > 4) {
+										this.value = '+44 ' + digits.substring(0, 4) + ' ' + digits.substring(4);
+									} else if (digits.length > 0) {
+										this.value = '+44 ' + digits;
+									} else {
+										this.value = isRequired ? '+44 ' : '';
+									}
+								});
+
+								// Format existing value on page load if present
+								if (inputEl.value && inputEl.value.trim() !== '') {
+									var rawVal = inputEl.value.replace(/\+/g, '');
+									var digits = rawVal.replace(/[^0-9]/g, '');
+									if (digits.indexOf('44') === 0) digits = digits.substring(2);
+									if (digits.indexOf('0') === 0) digits = digits.substring(1);
+									digits = digits.slice(0, 10);
+									if (digits.length > 4) {
+										inputEl.value = '+44 ' + digits.substring(0, 4) + ' ' + digits.substring(4);
+									} else if (digits.length > 0) {
+										inputEl.value = '+44 ' + digits;
+									}
+								}
+							}
+
+							// 1. Applicant Contact Phone (Mandatory)
+							setupUKPhoneField(document.getElementById('cwd_v2_phone'), true);
+
+							// 2. Trade Reference 1 Telephone (Mandatory)
+							setupUKPhoneField(document.getElementById('cwd_v2_trade_ref_tel'), true);
+
+							// 3. Trade Reference 2 Telephone (Optional)
+							setupUKPhoneField(document.getElementById('cwd_v2_trade_ref_2_tel'), false);
+
+							// 4. Trade Reference 3 Telephone (Optional)
+							setupUKPhoneField(document.getElementById('cwd_v2_trade_ref_3_tel'), false);
+
+							// 5. Signature Pad Drawing & Touch Handler
+							var sigCanvas = document.getElementById('cwd_v2_signature_canvas');
+							var sigInput  = document.getElementById('cwd_v2_signature_data');
+							var clearBtn  = document.getElementById('cwd_v2_clear_signature_btn');
+							var sigError  = document.getElementById('cwd_v2_sig_error');
+
+							if (sigCanvas) {
+								var ctx = sigCanvas.getContext('2d');
+								var isDrawing = false;
+								var hasDrawn = false;
+
+								function resizeCanvas() {
+									var rect = sigCanvas.getBoundingClientRect();
+									var dpr = window.devicePixelRatio || 1;
+									// Save current drawing if any
+									var prevData = (hasDrawn && sigInput && sigInput.value) ? sigInput.value : null;
+									sigCanvas.width = rect.width * dpr;
+									sigCanvas.height = 160 * dpr;
+									ctx.scale(dpr, dpr);
+									ctx.strokeStyle = '#0f172a';
+									ctx.lineWidth = 2.4;
+									ctx.lineCap = 'round';
+									ctx.lineJoin = 'round';
+
+									if (prevData) {
+										var img = new Image();
+										img.onload = function() {
+											ctx.drawImage(img, 0, 0, rect.width, 160);
+										};
+										img.src = prevData;
+									}
+								}
+								resizeCanvas();
+								window.addEventListener('resize', resizeCanvas);
+
+								function getPos(e) {
+									var rect = sigCanvas.getBoundingClientRect();
+									var clientX = e.clientX;
+									var clientY = e.clientY;
+									if (e.touches && e.touches.length > 0) {
+										clientX = e.touches[0].clientX;
+										clientY = e.touches[0].clientY;
+									}
+									return {
+										x: clientX - rect.left,
+										y: clientY - rect.top
+									};
+								}
+
+								function startDraw(e) {
+									if (e.type === 'touchstart') {
+										e.preventDefault();
+									}
+									isDrawing = true;
+									hasDrawn = true;
+									if (sigError) sigError.style.display = 'none';
+									var pos = getPos(e);
+									ctx.beginPath();
+									ctx.moveTo(pos.x, pos.y);
+								}
+
+								function draw(e) {
+									if (!isDrawing) return;
+									if (e.type === 'touchmove') {
+										e.preventDefault();
+									}
+									var pos = getPos(e);
+									ctx.lineTo(pos.x, pos.y);
+									ctx.stroke();
+								}
+
+								function stopDraw(e) {
+									if (!isDrawing) return;
+									isDrawing = false;
+									if (sigInput) {
+										sigInput.value = sigCanvas.toDataURL('image/png');
+									}
+								}
+
+								// Desktop Mouse
+								sigCanvas.addEventListener('mousedown', startDraw);
+								sigCanvas.addEventListener('mousemove', draw);
+								window.addEventListener('mouseup', stopDraw);
+
+								// Mobile & Tablet Touch
+								sigCanvas.addEventListener('touchstart', startDraw, { passive: false });
+								sigCanvas.addEventListener('touchmove', draw, { passive: false });
+								window.addEventListener('touchend', stopDraw);
+
+								// Clear Signature
+								if (clearBtn) {
+									clearBtn.addEventListener('click', function(e) {
+										e.preventDefault();
+										var rect = sigCanvas.getBoundingClientRect();
+										ctx.clearRect(0, 0, rect.width, rect.height);
+										hasDrawn = false;
+										if (sigInput) sigInput.value = '';
+									});
+								}
+
+								// Validate Signature on Form Submit
+								var form = document.getElementById('cwd_v2_trade_application_form') || sigCanvas.closest('form');
+								if (form) {
+									form.addEventListener('submit', function(e) {
+										if (!hasDrawn || !sigInput.value || sigInput.value.length < 50) {
+											e.preventDefault();
+											if (sigError) {
+												sigError.style.display = 'block';
+												sigError.scrollIntoView({ behavior: 'smooth', block: 'center' });
+											}
+											var btn = form.querySelector('button[type=submit]');
+											if (btn) {
+												btn.disabled = false;
+												btn.style.pointerEvents = 'auto';
+												btn.style.opacity = '1';
+												btn.innerHTML = '<?php esc_html_e( 'Submit Trade Application', 'custom-woo-dashboard' ); ?> &rarr;';
+											}
+											return false;
+										}
+										var btn = form.querySelector('button[type=submit]');
+										if (btn) {
+											btn.disabled = true;
+											btn.style.pointerEvents = 'none';
+											btn.style.opacity = '0.7';
+											btn.textContent = '<?php esc_html_e( 'Submitting Application...', 'custom-woo-dashboard' ); ?>';
+										}
+									});
+								}
+							}
+						});
+						</script>
 					<?php endif; ?>
 				<?php endif; ?>
 			</div>
 		</div>
 
-	</div>
+	<?php if ( $credit_limit > 0 ) : ?>
+	</div><!-- close cwd-v2-action-cards-grid -->
+	<?php endif; ?>
 
 	<!-- Credit Purchase History & Payoff Table -->
 	<div class="cwd-v2-section-box">

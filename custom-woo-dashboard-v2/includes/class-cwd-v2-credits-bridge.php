@@ -87,9 +87,6 @@ class CWD_V2_Credits_Bridge
 
 		// 7. Hook into Forminator submission to create/update credit post immediately
 		add_action('forminator_form_after_save_entry', array(__CLASS__, 'on_forminator_submission'), 20, 2);
-
-		// 8. Sanitize any unapproved users with pending trade applications
-		add_action('init', array(__CLASS__, 'sanitize_unapproved_pending_users'), 30);
 	}
 
 
@@ -2296,40 +2293,27 @@ class CWD_V2_Credits_Bridge
 				$email
 			));
 
+			// If user has legitimate admin approval, do not demote
 			if ($has_legit_approval > 0) {
-				// User has legitimate admin approval, do not demote
 				continue;
 			}
 
-			// Demote user: remove role, zero out limits, set status to pending
-			$wp_user = get_userdata($user_id);
-			if ($wp_user && in_array('credit_account', (array) $wp_user->roles, true)) {
-				$wp_user->remove_role('credit_account');
+			// Safeguard: Never demote or wipe an active credit account holder who has an approved credit limit or role
+			$wp_user        = get_userdata($user_id);
+			$existing_limit = class_exists('CWD_V2_Credit_Logic') ? CWD_V2_Credit_Logic::get_user_credit_limit($user_id) : (float) get_user_meta($user_id, '_credit_limit', true);
+			if ($existing_limit > 0 || ($wp_user && in_array('credit_account', (array) $wp_user->roles, true))) {
+				continue;
 			}
 
-			// Clear user limit meta keys
+			// For truly unapproved, new applicants: set status to pending
+			foreach (self::$credit_status_keys as $sk) {
+				update_user_meta($user_id, $sk, 'pending');
+			}
+
+			// Clear user limit meta keys for unapproved applicant
 			$limit_keys = array('_credit_limit', 'credit_limit', 'wc_cs_credit_limit', 'approved_credits', 'fpc_credit_limit', 'fpc_credits');
 			foreach ($limit_keys as $lk) {
 				update_user_meta($user_id, $lk, 0.0);
-			}
-
-			// Clear user balance / debt keys
-			$debt_keys = array(
-				'_credit_balance', 'total_outstanding', '_total_outstanding',
-				'total_outstanding_amount', '_total_outstanding_amount',
-				'used_credits', '_used_credits', 'used_amount', '_used_amount',
-				'outstanding_credits', 'wc_cs_outstanding_credits',
-				'wc_cs_total_outstanding', '_wc_cs_total_outstanding',
-				'wc_cs_total_outstanding_amount', '_wc_cs_total_outstanding_amount',
-				'wc_cs_used_credits', '_wc_cs_used_credits'
-			);
-			foreach ($debt_keys as $dk) {
-				update_user_meta($user_id, $dk, 0.0);
-			}
-
-			// Set status keys to pending
-			foreach (self::$credit_status_keys as $sk) {
-				update_user_meta($user_id, $sk, 'pending');
 			}
 
 			// Reset 'credits' CPT posts for this user to pending
@@ -2349,27 +2333,12 @@ class CWD_V2_Credits_Bridge
 					update_post_meta((int) $pid, 'credit_limit', 0.0);
 					update_post_meta((int) $pid, '_credit_limit', 0.0);
 					update_post_meta((int) $pid, 'approved_credits', 0.0);
-					update_post_meta((int) $pid, 'total_outstanding', 0.0);
-					update_post_meta((int) $pid, '_total_outstanding', 0.0);
-					update_post_meta((int) $pid, 'total_outstanding_amount', 0.0);
-					update_post_meta((int) $pid, '_total_outstanding_amount', 0.0);
-					update_post_meta((int) $pid, 'used_credits', 0.0);
-					update_post_meta((int) $pid, '_used_credits', 0.0);
-					update_post_meta((int) $pid, 'outstanding_credits', 0.0);
 					clean_post_cache((int) $pid);
 				}
 			}
 
 			// Update external DB tables
 			self::sync_to_external_credits_tables($user_id, 'pending', 0.0, $wp_user ? $wp_user->user_email : $email);
-		}
-
-		// Sanitize phantom balances across all existing users (both old users and new users)
-		$users_with_bal = $wpdb->get_col("SELECT DISTINCT user_id FROM {$wpdb->usermeta} WHERE meta_key = '_credit_balance' AND CAST(meta_value AS DECIMAL(10,2)) > 0");
-		if (! empty($users_with_bal) && class_exists('CWD_V2_Credit_Logic')) {
-			foreach ($users_with_bal as $chk_uid) {
-				CWD_V2_Credit_Logic::get_user_credit_balance((int) $chk_uid);
-			}
 		}
 	}
 }
