@@ -59,6 +59,14 @@ class CWD_V2_Credits_Bridge
 	);
 
 	/**
+	 * Cached external tables to prevent repeated SHOW TABLES / DESCRIBE queries
+	 *
+	 * @var array|null
+	 */
+	private static $cached_external_tables = null;
+	private static $cached_table_columns = array();
+
+	/**
 	 * Initialize event listeners
 	 */
 	public static function init()
@@ -237,12 +245,18 @@ class CWD_V2_Credits_Bridge
 			CWD_V2_Trade_Applications::STATUS_PENDING
 		));
 
-		// Resolve approved credit limit
+		// Resolve approved credit limit - MUST be strictly positive from an explicit approval
 		if ($approved_limit === null || (float) $approved_limit <= 0) {
 			$approved_limit = (float) get_user_meta($user_id, '_credit_limit', true);
 			if ($approved_limit <= 0 && class_exists('CWD_V2_Credit_Logic')) {
 				$approved_limit = CWD_V2_Credit_Logic::get_user_credit_limit($user_id);
 			}
+		}
+
+		if ((float) $approved_limit <= 0) {
+			// Strict safeguard: Credits must NEVER be approved or granted automatically without an explicit positive approved limit!
+			self::$is_syncing = false;
+			return false;
 		}
 
 		$now = current_time('mysql');
@@ -259,7 +273,7 @@ class CWD_V2_Credits_Bridge
 					}
 				}
 
-				$limit_to_set = ($approved_limit > 0) ? $approved_limit : $app->requested_limit;
+				$limit_to_set = (float) $approved_limit;
 				$wpdb->update(
 					$apps_table,
 					array(
@@ -1344,25 +1358,46 @@ class CWD_V2_Credits_Bridge
 	private static function sync_to_external_credits_tables($user_id, $status = 'pending', $limit = 0.0, $email = '', $company = '')
 	{
 		global $wpdb;
-		$tables = $wpdb->get_col("SHOW TABLES LIKE '%credit%'");
-		$fpc_tables = $wpdb->get_col("SHOW TABLES LIKE '%fpc%'");
-		$candidates = array_unique(array_merge($tables, $fpc_tables));
 
-		foreach ($candidates as $table) {
-			// Skip internal tables
-			if (strpos($table, 'cwd_v2') !== false || strpos($table, 'woocommerce') !== false || strpos($table, 'posts') !== false || strpos($table, 'comments') !== false) {
+		if (null === self::$cached_external_tables) {
+			$tables     = (array) $wpdb->get_col("SHOW TABLES LIKE '%credit%'");
+			$fpc_tables = (array) $wpdb->get_col("SHOW TABLES LIKE '%fpc%'");
+			$candidates = array_unique(array_merge($tables, $fpc_tables));
+			self::$cached_external_tables = array();
+
+			foreach ($candidates as $cand_tbl) {
+				if (strpos($cand_tbl, 'cwd_v2') !== false || strpos($cand_tbl, 'woocommerce') !== false || strpos($cand_tbl, 'posts') !== false || strpos($cand_tbl, 'comments') !== false) {
+					continue;
+				}
+
+				$cols = (array) $wpdb->get_col("DESCRIBE {$cand_tbl}");
+				if (empty($cols)) {
+					continue;
+				}
+
+				$user_col = in_array('user_id', $cols, true) ? 'user_id' : (in_array('customer_id', $cols, true) ? 'customer_id' : false);
+				if ($user_col) {
+					self::$cached_external_tables[] = $cand_tbl;
+					self::$cached_table_columns[$cand_tbl] = array(
+						'user_col' => $user_col,
+						'columns'  => $cols,
+					);
+				}
+			}
+		}
+
+		if (empty(self::$cached_external_tables)) {
+			return;
+		}
+
+		foreach (self::$cached_external_tables as $table) {
+			$meta = self::$cached_table_columns[$table] ?? null;
+			if (! $meta) {
 				continue;
 			}
 
-			$columns = $wpdb->get_col("DESCRIBE {$table}");
-			if (empty($columns)) {
-				continue;
-			}
-
-			$has_user_col = in_array('user_id', $columns, true) ? 'user_id' : (in_array('customer_id', $columns, true) ? 'customer_id' : false);
-			if (! $has_user_col) {
-				continue;
-			}
+			$has_user_col = $meta['user_col'];
+			$columns      = $meta['columns'];
 
 			// Check if row exists for user
 			$row_exists = (bool) $wpdb->get_var($wpdb->prepare("SELECT 1 FROM {$table} WHERE {$has_user_col} = %d LIMIT 1", $user_id));
@@ -1423,6 +1458,11 @@ class CWD_V2_Credits_Bridge
 			return;
 		}
 
+		$balance_keys = array('_credit_balance', 'total_outstanding', '_total_outstanding', 'total_outstanding_amount', '_total_outstanding_amount');
+		if (! in_array($meta_key, self::$credit_status_keys, true) && ! in_array($meta_key, self::$credit_limit_keys, true) && ! in_array($meta_key, $balance_keys, true)) {
+			return;
+		}
+
 		$user_id = (int) $object_id;
 		if (! $user_id) {
 			return;
@@ -1454,7 +1494,6 @@ class CWD_V2_Credits_Bridge
 		}
 
 		// Check if the updated key is a credit balance key
-		$balance_keys = array('_credit_balance', 'total_outstanding', '_total_outstanding', 'total_outstanding_amount', '_total_outstanding_amount');
 		if (in_array($meta_key, $balance_keys, true)) {
 			$bal = max(0.0, (float) $_meta_value);
 			if (class_exists('CWD_V2_Credit_Logic')) {
@@ -1490,16 +1529,17 @@ class CWD_V2_Credits_Bridge
 			return;
 		}
 
-		$post = get_post((int) $object_id);
-		if (! $post || ! in_array($post->post_type, array('credits', 'wc_cs_credits', 'fpc_credits'), true)) {
-			return;
-		}
-
 		$status_meta_keys  = array('_credit_status', 'credit_status', '_status', 'status', 'fpc_status', '_fpc_status', '_wc_cs_status', 'wc_cs_status', '_wc_cs_credit_status', 'wc_cs_credit_status');
 		$limit_meta_keys   = array('_credit_limit', 'credit_limit', 'fpc_credit_limit', '_fpc_credit_limit', 'approved_credits', '_approved_credits', 'wc_cs_credit_limit', '_wc_cs_credit_limit', 'wc_cs_approved_credits', '_wc_cs_approved_credits');
 		$balance_meta_keys = array('total_outstanding_amount', '_total_outstanding_amount', 'wc_cs_total_outstanding_amount', '_wc_cs_total_outstanding_amount', 'total_outstanding', '_total_outstanding', 'wc_cs_total_outstanding', '_wc_cs_total_outstanding', 'outstanding_credits', 'wc_cs_outstanding_credits', 'used_credits', '_used_credits');
 
+		// Early bailout before fetching post object - avoids thousands of get_post() queries on regular posts/orders
 		if (! in_array($meta_key, $status_meta_keys, true) && ! in_array($meta_key, $limit_meta_keys, true) && ! in_array($meta_key, $balance_meta_keys, true)) {
+			return;
+		}
+
+		$post = get_post((int) $object_id);
+		if (! $post || ! in_array($post->post_type, array('credits', 'wc_cs_credits', 'fpc_credits'), true)) {
 			return;
 		}
 

@@ -45,8 +45,8 @@ class CWD_V2_Endpoints
 		// Render Wordfence 2FA on the account details page at the bottom
 		add_action('woocommerce_after_edit_account_form', array(__CLASS__, 'render_wordfence_2fa_section'), 99);
 
-		// Ensure endpoints are flushed once after this update
-		if ('yes' !== get_option('cwd_v2_endpoints_flushed_unplaced_v2')) {
+		// Ensure endpoints are flushed once after this update (admin-only check to avoid front-end rule flushes)
+		if (is_admin() && 'yes' !== get_option('cwd_v2_endpoints_flushed_unplaced_v2')) {
 			flush_rewrite_rules(false);
 			update_option('cwd_v2_endpoints_flushed_unplaced_v2', 'yes');
 		}

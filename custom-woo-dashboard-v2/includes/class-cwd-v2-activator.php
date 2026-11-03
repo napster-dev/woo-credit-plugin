@@ -164,6 +164,10 @@ class CWD_V2_Activator
 		if (class_exists('CWD_V2_Trade_Applications')) {
 			CWD_V2_Trade_Applications::create_table();
 		}
+
+		update_option('cwd_v2_trade_applications_table_installed', 'yes', true);
+		update_option('cwd_v2_invoices_table_installed', 'yes', true);
+		update_option('cwd_v2_ledger_table_installed', 'yes', true);
 	}
 
 	/**

@@ -92,11 +92,16 @@ class CWD_V2_Trade_Applications
 		if (self::$table_checked) {
 			return;
 		}
+		if (get_option('cwd_v2_trade_applications_table_installed') === 'yes') {
+			self::$table_checked = true;
+			return;
+		}
 		global $wpdb;
 		$table_name = self::get_table_name();
 		if ($wpdb->get_var("SHOW TABLES LIKE '{$table_name}'") !== $table_name) {
 			self::create_table();
 		}
+		update_option('cwd_v2_trade_applications_table_installed', 'yes', true);
 		self::$table_checked = true;
 	}
 
@@ -166,6 +171,7 @@ class CWD_V2_Trade_Applications
 
 		$wpdb->insert($table, $insert_data, $insert_format);
 		$inserted_id = $wpdb->insert_id;
+		self::invalidate_pending_count_cache();
 
 		if ($inserted_id && class_exists('CWD_V2_Credits_Bridge')) {
 			CWD_V2_Credits_Bridge::forward_application_to_credits_plugin(
@@ -246,6 +252,7 @@ class CWD_V2_Trade_Applications
 		$insert_format = array('%d', '%d', '%s', '%s', '%s', '%s', '%f', '%s', '%s', '%d', '%s', '%s');
 		$wpdb->insert($table, $insert_data, $insert_format);
 		$inserted_id = $wpdb->insert_id;
+		self::invalidate_pending_count_cache();
 
 		if ($inserted_id && class_exists('CWD_V2_Credits_Bridge')) {
 			CWD_V2_Credits_Bridge::forward_application_to_credits_plugin(
@@ -379,6 +386,7 @@ class CWD_V2_Trade_Applications
 
 		$wpdb->insert($table, $insert_data, $insert_format);
 		$app_id = $wpdb->insert_id;
+		self::invalidate_pending_count_cache();
 
 		if ($app_id && class_exists('CWD_V2_Credits_Bridge')) {
 			CWD_V2_Credits_Bridge::forward_application_to_credits_plugin(
@@ -427,14 +435,30 @@ class CWD_V2_Trade_Applications
 	 */
 	public static function get_pending_count()
 	{
+		$cached = wp_cache_get('cwd_v2_pending_apps_count', 'cwd_v2');
+		if (false !== $cached) {
+			return (int) $cached;
+		}
+
 		self::ensure_table_exists();
 
 		global $wpdb;
 		$table = self::get_table_name();
-		return (int) $wpdb->get_var($wpdb->prepare(
+		$count = (int) $wpdb->get_var($wpdb->prepare(
 			"SELECT COUNT(*) FROM {$table} WHERE status = %s",
 			self::STATUS_PENDING
 		));
+
+		wp_cache_set('cwd_v2_pending_apps_count', $count, 'cwd_v2', 300);
+		return $count;
+	}
+
+	/**
+	 * Invalidate cached pending count
+	 */
+	public static function invalidate_pending_count_cache()
+	{
+		wp_cache_delete('cwd_v2_pending_apps_count', 'cwd_v2');
 	}
 
 	/**
@@ -741,6 +765,7 @@ class CWD_V2_Trade_Applications
 			array('%s', '%f', '%s', '%s', '%d', '%s', '%d', '%s'),
 			array('%d')
 		);
+		self::invalidate_pending_count_cache();
 
 		// Sync approval to Credits plugin bridge if present
 		if (class_exists('CWD_V2_Credits_Bridge')) {
@@ -821,6 +846,7 @@ class CWD_V2_Trade_Applications
 			array('%s', '%s', '%s', '%d', '%s', '%s'),
 			array('%d')
 		);
+		self::invalidate_pending_count_cache();
 
 		// Send rejection notification email to applicant (contains ONLY customer message, NEVER internal note)
 		if (! empty($app->applicant_email)) {

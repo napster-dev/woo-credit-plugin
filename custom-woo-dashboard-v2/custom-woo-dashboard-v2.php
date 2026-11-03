@@ -3,7 +3,7 @@
 /**
  * Plugin Name: Custom WooCommerce Dashboard
  * Description: Replaces the default WooCommerce My Account page with a custom dashboard and adds credit account features.
- * Version: 1.0.0
+ * Version: 2.2.19
  * Author: Jules
  */
 
@@ -13,21 +13,30 @@ if (! defined('ABSPATH')) {
 
 define('CWD_V2_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CWD_V2_PLUGIN_URL', plugin_dir_url(__FILE__));
-define('CWD_V2_VERSION', '2.2.18');
+define('CWD_V2_VERSION', '2.2.19');
 
 // Include activator right away for the hook
 require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-activator.php';
 register_activation_hook(__FILE__, array('CWD_V2_Activator', 'activate'));
 
-// Ensure WooCommerce phone field is set to required
+// Ensure WooCommerce phone field is set to required (admin-only check to avoid front-end queries)
 add_action('init', function () {
-	if (get_option('woocommerce_checkout_phone_field') !== 'required') {
+	if (is_admin() && get_option('woocommerce_checkout_phone_field') !== 'required') {
 		update_option('woocommerce_checkout_phone_field', 'required');
 	}
 }, 5);
 
-// Init Plugin when plugins are loaded
-add_action('plugins_loaded', 'cwd_v2_init_plugin');
+// Init Plugin when plugins are loaded (priority 20 guarantees WooCommerce core is loaded first)
+add_action('plugins_loaded', 'cwd_v2_init_plugin', 20);
+
+// Fallback shortcode registration on init to guarantee [custom_woo_dashboard_v2] is NEVER unparsed
+add_action('init', function () {
+	if (! shortcode_exists('custom_woo_dashboard_v2')) {
+		require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-shortcode.php';
+		CWD_V2_Shortcode::init();
+	}
+}, 1);
+
 if (! function_exists('cwd_v2_init_plugin')) {
 	function cwd_v2_init_plugin()
 	{
@@ -39,7 +48,17 @@ if (! function_exists('cwd_v2_init_plugin')) {
 			// Include files only when WooCommerce is confirmed to be loaded
 			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-shortcode.php';
 			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-endpoints.php';
-			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-payment-gateway.php';
+
+			if (class_exists('WC_Payment_Gateway')) {
+				require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-payment-gateway.php';
+			} else {
+				add_action('init', function () {
+					if (class_exists('WC_Payment_Gateway') && ! class_exists('WC_Gateway_Credit_Account_V2')) {
+						require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-payment-gateway.php';
+					}
+				}, 5);
+			}
+
 			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-credit-logic.php';
 			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-invoices.php';
 			require_once CWD_V2_PLUGIN_DIR . 'includes/class-cwd-v2-account-ledger.php';
@@ -77,29 +96,31 @@ if (! function_exists('cwd_v2_init_plugin')) {
 			// Register trade application settings
 			add_action('admin_init', array('CWD_V2_Trade_Applications', 'register_settings'));
 
-			// Refresh rewrite rules after WordPress has initialized its rewrite object.
-			add_action('init', 'cwd_v2_refresh_rewrite_rules', 20);
+			if (is_admin()) {
+				// Refresh rewrite rules after WordPress has initialized its rewrite object (admin only).
+				add_action('init', 'cwd_v2_refresh_rewrite_rules', 20);
 
-			// Create the invoices/ledger/trade application/saved baskets tables for sites where the plugin was
-			// already active before this feature was added.
-			$tables_version = '6';
-			if (get_option('cwd_v2_tables_version') !== $tables_version) {
-				CWD_V2_Activator::activate();
-				update_option('cwd_v2_tables_version', $tables_version);
+				// Create the invoices/ledger/trade application/saved baskets tables for sites where the plugin was
+				// already active before this feature was added.
+				$tables_version = '6';
+				if (get_option('cwd_v2_tables_version') !== $tables_version) {
+					CWD_V2_Activator::activate();
+					update_option('cwd_v2_tables_version', $tables_version);
+				}
+
+				// Ensure payment gateway is enabled by default if not explicitly saved
+				$gateway_settings = get_option('woocommerce_cwd_v2_credit_account_settings');
+				if (! is_array($gateway_settings) || empty($gateway_settings)) {
+					update_option('woocommerce_cwd_v2_credit_account_settings', array(
+						'enabled'     => 'yes',
+						'title'       => 'Pay on Credit Account',
+						'description' => 'Your order will be charged to your trade credit account and settled according to your payment terms.',
+					));
+				}
 			}
 
 			// Add custom payment gateway
 			add_filter('woocommerce_payment_gateways', 'cwd_v2_add_payment_gateway');
-
-			// Ensure payment gateway is enabled by default if not explicitly saved
-			$gateway_settings = get_option('woocommerce_cwd_v2_credit_account_settings');
-			if (! is_array($gateway_settings) || empty($gateway_settings)) {
-				update_option('woocommerce_cwd_v2_credit_account_settings', array(
-					'enabled'     => 'yes',
-					'title'       => 'Pay on Credit Account',
-					'description' => 'Your order will be charged to your trade credit account and settled according to your payment terms.',
-				));
-			}
 
 			// Register WooCommerce Blocks payment method integration
 			add_action('woocommerce_blocks_loaded', 'cwd_v2_register_credit_gateway_blocks_support');

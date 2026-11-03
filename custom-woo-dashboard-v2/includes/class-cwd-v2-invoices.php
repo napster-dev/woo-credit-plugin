@@ -42,6 +42,8 @@ class CWD_V2_Invoices
 		}
 	}
 
+	private static $table_checked = false;
+
 	/**
 	 * @return string The fully-prefixed invoices table name.
 	 */
@@ -49,6 +51,28 @@ class CWD_V2_Invoices
 	{
 		global $wpdb;
 		return $wpdb->prefix . 'cwd_v2_invoices';
+	}
+
+	/**
+	 * Checks if table exists, caching the result in memory/options to avoid SHOW TABLES.
+	 */
+	public static function table_exists()
+	{
+		if (self::$table_checked) {
+			return true;
+		}
+		if (get_option('cwd_v2_invoices_table_installed') === 'yes') {
+			self::$table_checked = true;
+			return true;
+		}
+		global $wpdb;
+		$table = self::table_name();
+		if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $table)) === $table) {
+			update_option('cwd_v2_invoices_table_installed', 'yes', true);
+			self::$table_checked = true;
+			return true;
+		}
+		return false;
 	}
 
 	/**
@@ -266,7 +290,7 @@ class CWD_V2_Invoices
 
 		global $wpdb;
 		$table = self::table_name();
-		if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $table)) !== $table) {
+		if (! self::table_exists()) {
 			return;
 		}
 
@@ -684,7 +708,7 @@ class CWD_V2_Invoices
 
 		global $wpdb;
 		$table = self::table_name();
-		if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $table)) !== $table) {
+		if (! self::table_exists()) {
 			return 0.0;
 		}
 
@@ -934,7 +958,7 @@ class CWD_V2_Invoices
 				return;
 			}
 			$table = self::table_name();
-			if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $table)) !== $table) {
+			if (! self::table_exists()) {
 				return;
 			}
 

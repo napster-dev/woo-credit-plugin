@@ -301,87 +301,93 @@ class CWD_V2_Credit_Logic
 			if ($user_id) {
 				global $wpdb;
 				$wpdb->query('START TRANSACTION');
-				$wpdb->get_var($wpdb->prepare('SELECT ID FROM ' . $wpdb->users . ' WHERE ID = %d FOR UPDATE', (int) $user_id));
-				$current_balance = (float) get_user_meta($user_id, '_credit_balance', true);
-				if ($payment_amount <= 0) {
-					$wpdb->query('ROLLBACK');
-					return;
-				}
-				if (empty($settled_order_ids) && $payment_amount > $current_balance) {
-					$wpdb->query('ROLLBACK');
-					return;
-				}
+				try {
+					$wpdb->get_var($wpdb->prepare('SELECT ID FROM ' . $wpdb->users . ' WHERE ID = %d FOR UPDATE', (int) $user_id));
+					$current_balance = (float) get_user_meta($user_id, '_credit_balance', true);
+					if ($payment_amount <= 0) {
+						$wpdb->query('ROLLBACK');
+						return;
+					}
+					if (empty($settled_order_ids) && $payment_amount > $current_balance) {
+						$wpdb->query('ROLLBACK');
+						return;
+					}
 
-				$payment_applied = true;
-				if ($invoice_id) {
-					$payment_applied = CWD_V2_Invoices::apply_invoice_payment($invoice_id, $user_id, $payment_amount);
-				}
+					$payment_applied = true;
+					if ($invoice_id) {
+						$payment_applied = CWD_V2_Invoices::apply_invoice_payment($invoice_id, $user_id, $payment_amount);
+					}
 
-				if (! $payment_applied) {
-					$wpdb->query('ROLLBACK');
-					return;
-				}
+					if (! $payment_applied) {
+						$wpdb->query('ROLLBACK');
+						return;
+					}
 
-				// If specific orders were settled, mark them and settle any linked invoice
-				if (! empty($settled_order_ids)) {
-					foreach ($settled_order_ids as $soid) {
-						$so = wc_get_order($soid);
-						if ($so) {
-							$so->update_meta_data('_credit_order_settled', 'yes');
-							$so->update_meta_data('_credit_settlement_order_id', $order_id);
-							$so->update_meta_data('_credit_settled_at', current_time('mysql'));
-							$so->add_order_note(sprintf(__('Order credit balance settled via payment order #%d.', 'custom-woo-dashboard'), $order_id));
-							$so->save();
-						}
-						// Settle invoice if exists in CWD_V2_Invoices
-						if (class_exists('CWD_V2_Invoices')) {
-							$inv = CWD_V2_Invoices::get_invoices_for_order($soid);
-							if ($inv && $inv->status !== CWD_V2_Invoices::STATUS_PAID) {
-								$due = max(0, (float) $inv->amount_total - (float) $inv->amount_paid);
-								CWD_V2_Invoices::apply_invoice_payment($inv->id, $user_id, $due);
+					// If specific orders were settled, mark them and settle any linked invoice
+					if (! empty($settled_order_ids)) {
+						foreach ($settled_order_ids as $soid) {
+							$so = wc_get_order($soid);
+							if ($so) {
+								$so->update_meta_data('_credit_order_settled', 'yes');
+								$so->update_meta_data('_credit_settlement_order_id', $order_id);
+								$so->update_meta_data('_credit_settled_at', current_time('mysql'));
+								$so->add_order_note(sprintf(__('Order credit balance settled via payment order #%d.', 'custom-woo-dashboard'), $order_id));
+								$so->save();
+							}
+							// Settle invoice if exists in CWD_V2_Invoices
+							if (class_exists('CWD_V2_Invoices')) {
+								$inv = CWD_V2_Invoices::get_invoices_for_order($soid);
+								if ($inv && $inv->status !== CWD_V2_Invoices::STATUS_PAID) {
+									$due = max(0, (float) $inv->amount_total - (float) $inv->amount_paid);
+									CWD_V2_Invoices::apply_invoice_payment($inv->id, $user_id, $due);
+								}
 							}
 						}
 					}
-				}
 
-				$new_balance = max(0, $current_balance - $payment_amount);
-				self::sync_user_credit_balance($user_id, $new_balance);
+					$new_balance = max(0, $current_balance - $payment_amount);
+					self::sync_user_credit_balance($user_id, $new_balance);
 
-				if ($invoice_id) {
-					$ledger_result = CWD_V2_Account_Ledger::record(
-						$user_id,
-						CWD_V2_Account_Ledger::TYPE_PAYMENT,
-						$payment_amount,
-						'invoice',
-						$invoice_id,
-						sprintf(__('Payment for invoice #%d', 'custom-woo-dashboard'), $invoice_id)
-					);
-				} elseif (! empty($settled_order_ids)) {
-					$order_list_str = '#' . implode(', #', $settled_order_ids);
-					$ledger_result = CWD_V2_Account_Ledger::record(
-						$user_id,
-						CWD_V2_Account_Ledger::TYPE_PAYMENT,
-						$payment_amount,
-						'order',
-						$order_id,
-						sprintf(__('Settlement payoff for credit order(s) %s via payment order #%d', 'custom-woo-dashboard'), $order_list_str, $order_id)
-					);
-				} else {
-					$ledger_result = CWD_V2_Account_Ledger::record(
-						$user_id,
-						CWD_V2_Account_Ledger::TYPE_PAYMENT,
-						$payment_amount,
-						'order',
-						$order_id,
-						sprintf(__('Payment made via order #%d', 'custom-woo-dashboard'), $order_id)
-					);
-				}
+					if ($invoice_id) {
+						$ledger_result = CWD_V2_Account_Ledger::record(
+							$user_id,
+							CWD_V2_Account_Ledger::TYPE_PAYMENT,
+							$payment_amount,
+							'invoice',
+							$invoice_id,
+							sprintf(__('Payment for invoice #%d', 'custom-woo-dashboard'), $invoice_id)
+						);
+					} elseif (! empty($settled_order_ids)) {
+						$order_list_str = '#' . implode(', #', $settled_order_ids);
+						$ledger_result = CWD_V2_Account_Ledger::record(
+							$user_id,
+							CWD_V2_Account_Ledger::TYPE_PAYMENT,
+							$payment_amount,
+							'order',
+							$order_id,
+							sprintf(__('Settlement payoff for credit order(s) %s via payment order #%d', 'custom-woo-dashboard'), $order_list_str, $order_id)
+						);
+					} else {
+						$ledger_result = CWD_V2_Account_Ledger::record(
+							$user_id,
+							CWD_V2_Account_Ledger::TYPE_PAYMENT,
+							$payment_amount,
+							'order',
+							$order_id,
+							sprintf(__('Payment made via order #%d', 'custom-woo-dashboard'), $order_id)
+						);
+					}
 
-				if (false === $ledger_result) {
+					if (false === $ledger_result) {
+						$wpdb->query('ROLLBACK');
+						return;
+					}
+					$wpdb->query('COMMIT');
+				} catch (\Throwable $e) {
 					$wpdb->query('ROLLBACK');
-					return;
+					error_log('CWD Credit Payment Transaction Error: ' . $e->getMessage());
+					throw $e;
 				}
-				$wpdb->query('COMMIT');
 
 				if (class_exists('CWD_V2_Invoices')) {
 					CWD_V2_Invoices::update_user_earliest_due_date($user_id);
@@ -1119,9 +1125,10 @@ class CWD_V2_Credit_Logic
 		// Safeguard for new applicants only: If user has a pending trade application and NO approved limit,
 		// their approved limit is strictly 0.00 until an admin manually approves them.
 		if (class_exists('CWD_V2_Trade_Applications')) {
+			CWD_V2_Trade_Applications::ensure_table_exists();
 			global $wpdb;
 			$apps_table = CWD_V2_Trade_Applications::get_table_name();
-			if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $apps_table)) === $apps_table) {
+			if (get_option('cwd_v2_trade_applications_table_installed') === 'yes' || $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $apps_table)) === $apps_table) {
 				$email = $user_obj ? $user_obj->user_email : '';
 				$has_approved = (int) $wpdb->get_var($wpdb->prepare(
 					"SELECT COUNT(*) FROM {$apps_table}
@@ -1258,9 +1265,10 @@ class CWD_V2_Credit_Logic
 
 		// 1. If user is a brand new applicant with an unapproved pending application and NO active account, they owe 0.0
 		if (class_exists('CWD_V2_Trade_Applications')) {
+			CWD_V2_Trade_Applications::ensure_table_exists();
 			global $wpdb;
 			$apps_table = CWD_V2_Trade_Applications::get_table_name();
-			if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $apps_table)) === $apps_table) {
+			if (get_option('cwd_v2_trade_applications_table_installed') === 'yes' || $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $apps_table)) === $apps_table) {
 				$u             = get_userdata($user_id);
 				$is_active_acc = (float) get_user_meta($user_id, '_credit_limit', true) > 0 || ($u && in_array('credit_account', (array) $u->roles, true));
 				if (! $is_active_acc) {
@@ -1304,19 +1312,17 @@ class CWD_V2_Credit_Logic
 		}
 
 		// Fallback to unpaid invoices in cwd_v2_invoices table if balance is 0
-		if ($balance <= 0 && class_exists('CWD_V2_Invoices')) {
+		if ($balance <= 0 && class_exists('CWD_V2_Invoices') && method_exists('CWD_V2_Invoices', 'table_exists') && CWD_V2_Invoices::table_exists()) {
 			global $wpdb;
 			$invoices_table = CWD_V2_Invoices::table_name();
-			if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $invoices_table)) === $invoices_table) {
-				$unpaid_invoices_total = (float) $wpdb->get_var($wpdb->prepare(
-					"SELECT SUM(GREATEST(0, amount_total - amount_paid)) FROM {$invoices_table}
-					 WHERE user_id = %d AND status NOT IN ('paid', 'void', 'written_off', 'marked_off')",
-					$user_id
-				));
-				if ($unpaid_invoices_total > 0) {
-					$balance = $unpaid_invoices_total;
-					update_user_meta($user_id, '_credit_balance', $balance);
-				}
+			$unpaid_invoices_total = (float) $wpdb->get_var($wpdb->prepare(
+				"SELECT SUM(GREATEST(0, amount_total - amount_paid)) FROM {$invoices_table}
+				 WHERE user_id = %d AND status NOT IN ('paid', 'void', 'written_off', 'marked_off')",
+				$user_id
+			));
+			if ($unpaid_invoices_total > 0) {
+				$balance = $unpaid_invoices_total;
+				update_user_meta($user_id, '_credit_balance', $balance);
 			}
 		}
 
@@ -1415,9 +1421,10 @@ class CWD_V2_Credit_Logic
 
 		// 4. Synchronize trade application rows in wp_cwd_v2_trade_applications
 		if (class_exists('CWD_V2_Trade_Applications')) {
+			CWD_V2_Trade_Applications::ensure_table_exists();
 			global $wpdb;
 			$apps_table = CWD_V2_Trade_Applications::get_table_name();
-			if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $apps_table)) === $apps_table) {
+			if (get_option('cwd_v2_trade_applications_table_installed') === 'yes' || $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $apps_table)) === $apps_table) {
 				$u = get_userdata($user_id);
 				$email = $u ? $u->user_email : '';
 				$wpdb->query($wpdb->prepare(
@@ -1535,16 +1542,14 @@ class CWD_V2_Credit_Logic
 		$total_unpaid = 0.0;
 
 		// 1. Calculate unpaid invoices from invoices table
-		if (class_exists('CWD_V2_Invoices')) {
+		if (class_exists('CWD_V2_Invoices') && method_exists('CWD_V2_Invoices', 'table_exists') && CWD_V2_Invoices::table_exists()) {
 			$invoices_table = CWD_V2_Invoices::table_name();
-			if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $invoices_table)) === $invoices_table) {
-				$inv_total = (float) $wpdb->get_var($wpdb->prepare(
-					"SELECT SUM(GREATEST(0, amount_total - amount_paid)) FROM {$invoices_table}
-					 WHERE user_id = %d AND status NOT IN ('paid', 'void', 'written_off', 'marked_off')",
-					$user_id
-				));
-				$total_unpaid += $inv_total;
-			}
+			$inv_total = (float) $wpdb->get_var($wpdb->prepare(
+				"SELECT SUM(GREATEST(0, amount_total - amount_paid)) FROM {$invoices_table}
+				 WHERE user_id = %d AND status NOT IN ('paid', 'void', 'written_off', 'marked_off')",
+				$user_id
+			));
+			$total_unpaid += $inv_total;
 		}
 
 		// 2. Add unsettled WooCommerce credit orders not yet invoiced
