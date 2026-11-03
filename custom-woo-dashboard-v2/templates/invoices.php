@@ -46,7 +46,6 @@ $all_url  = esc_url(add_query_arg('cwd_status', 'all', wc_get_endpoint_url('invo
 				<thead>
 					<tr>
 						<th><?php esc_html_e('Invoice #', 'custom-woo-dashboard'); ?></th>
-						<th><?php esc_html_e('Source', 'custom-woo-dashboard'); ?></th>
 						<th><?php esc_html_e('Date', 'custom-woo-dashboard'); ?></th>
 						<th><?php esc_html_e('Due Date', 'custom-woo-dashboard'); ?></th>
 						<th class="th-num"><?php esc_html_e('Outstanding', 'custom-woo-dashboard'); ?></th>
@@ -76,13 +75,6 @@ $all_url  = esc_url(add_query_arg('cwd_status', 'all', wc_get_endpoint_url('invo
 									</span>
 								<?php endif; ?>
 							</td>
-							<td data-title="<?php esc_attr_e('Source', 'custom-woo-dashboard'); ?>" style="white-space: nowrap;">
-								<?php if (CWD_V2_Invoices::SOURCE_ODOO === $invoice->source) : ?>
-									<span style="background: #ede9fe; color: #5b21b6; font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 4px; border: 1px solid #ddd6fe;">Odoo</span>
-								<?php else : ?>
-									<span style="background: #f1f5f9; color: #475569; font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 4px; border: 1px solid #e2e8f0;">Website</span>
-								<?php endif; ?>
-							</td>
 							<td data-title="<?php esc_attr_e('Date', 'custom-woo-dashboard'); ?>" style="color: #64748b; white-space: nowrap;">
 								<?php echo esc_html(date_i18n(wc_date_format(), strtotime($invoice->invoice_date))); ?>
 							</td>
@@ -96,6 +88,8 @@ $all_url  = esc_url(add_query_arg('cwd_status', 'all', wc_get_endpoint_url('invo
 								<span class="cwd-v2-status-badge <?php echo $status_class; ?>"><?php echo esc_html($status_label); ?></span>
 							</td>
 							<td data-title="<?php esc_attr_e('Actions', 'woocommerce'); ?>" style="text-align: right; white-space: nowrap;">
+								<?php $download_url = CWD_V2_Invoices::get_invoice_download_url($invoice->id, $invoice->order_id); ?>
+								<a href="<?php echo esc_url($download_url); ?>" class="cwd-v2-btn-view" style="background:#0284c7; color:#fff; border-color:#0284c7; margin-right:6px;" download><?php esc_html_e('Download Invoice', 'custom-woo-dashboard'); ?></a>
 								<a href="<?php echo $view_url; ?>" class="cwd-v2-btn-view"><?php esc_html_e('View', 'woocommerce'); ?></a>
 							</td>
 						</tr>

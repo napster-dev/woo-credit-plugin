@@ -55,15 +55,26 @@ class CWD_V2_Account_Ledger {
 		dbDelta( $sql );
 	}
 
+	private static $table_checked = false;
+
 	/**
 	 * Ensure table exists before queries
 	 */
 	public static function ensure_table_exists() {
+		if ( self::$table_checked ) {
+			return;
+		}
+		if ( get_option( 'cwd_v2_ledger_table_installed' ) === 'yes' ) {
+			self::$table_checked = true;
+			return;
+		}
 		global $wpdb;
 		$table_name = self::table_name();
 		if ( $wpdb->get_var( "SHOW TABLES LIKE '{$table_name}'" ) !== $table_name ) {
 			self::create_table();
 		}
+		update_option( 'cwd_v2_ledger_table_installed', 'yes', true );
+		self::$table_checked = true;
 	}
 
 	/**

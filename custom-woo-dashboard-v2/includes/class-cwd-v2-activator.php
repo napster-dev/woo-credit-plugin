@@ -15,6 +15,7 @@ class CWD_V2_Activator
 	{
 		self::register_roles();
 		self::create_tables();
+		self::secure_directories();
 
 		// Ensure WooCommerce is active. We check for a function that exists if Woo is loaded,
 		// but since activation happens before plugins_loaded in some contexts, we just try our best.
@@ -143,9 +144,55 @@ class CWD_V2_Activator
 		) {$charset_collate};";
 		dbDelta($sql_returns);
 
+		$saved_baskets_table = $wpdb->prefix . 'cwd_v2_saved_baskets';
+		$sql_saved_baskets = "CREATE TABLE {$saved_baskets_table} (
+			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+			user_id BIGINT UNSIGNED NOT NULL,
+			title VARCHAR(255) NOT NULL,
+			items_data LONGTEXT NOT NULL,
+			items_count INT UNSIGNED NOT NULL DEFAULT 0,
+			total_amount DECIMAL(18,2) NOT NULL DEFAULT 0.00,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			PRIMARY KEY  (id),
+			KEY user_id (user_id),
+			KEY created_at (created_at)
+		) {$charset_collate};";
+		dbDelta($sql_saved_baskets);
+
 		// Trade Applications table
 		if (class_exists('CWD_V2_Trade_Applications')) {
 			CWD_V2_Trade_Applications::create_table();
 		}
+
+		update_option('cwd_v2_trade_applications_table_installed', 'yes', true);
+		update_option('cwd_v2_invoices_table_installed', 'yes', true);
+		update_option('cwd_v2_ledger_table_installed', 'yes', true);
+	}
+
+	/**
+	 * Protect sensitive upload directories with .htaccess and index.php
+	 */
+	public static function secure_directories()
+	{
+		$upload_dir = wp_upload_dir();
+		$sig_dir    = $upload_dir['basedir'] . '/trade-signatures';
+		if (! file_exists($sig_dir)) {
+			wp_mkdir_p($sig_dir);
+		}
+
+		$htaccess_file = $sig_dir . '/.htaccess';
+		$htaccess_content = "# Deny all direct public access to sensitive trade signatures\n"
+			. "<IfModule !mod_authz_core.c>\n"
+			. "    Order Deny,Allow\n"
+			. "    Deny from all\n"
+			. "</IfModule>\n"
+			. "<IfModule mod_authz_core.c>\n"
+			. "    Require all denied\n"
+			. "</IfModule>\n";
+		@file_put_contents($htaccess_file, $htaccess_content);
+
+		@file_put_contents($sig_dir . '/index.php', "<?php\nhttp_response_code(403);\nexit('Direct access forbidden.');\n");
+		@file_put_contents($sig_dir . '/index.html', '');
 	}
 }

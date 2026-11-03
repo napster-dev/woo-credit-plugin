@@ -30,6 +30,7 @@ class CWD_V2_Invoices
 		add_action('woocommerce_order_status_refunded', array(__CLASS__, 'void_invoice_for_order'));
 		add_action('cwd_v2_sync_odoo_invoices', array(__CLASS__, 'sync_odoo_invoices'));
 		add_action('add_meta_boxes', array(__CLASS__, 'register_order_invoice_meta_box'), 25);
+		add_action('template_redirect', array(__CLASS__, 'handle_direct_invoice_download'));
 		// Run one-time legacy invoice due-date heal safely
 		if ('yes' !== get_option('cwd_v2_same_day_due_dates_repaired_v2')) {
 			try {
@@ -41,6 +42,8 @@ class CWD_V2_Invoices
 		}
 	}
 
+	private static $table_checked = false;
+
 	/**
 	 * @return string The fully-prefixed invoices table name.
 	 */
@@ -48,6 +51,28 @@ class CWD_V2_Invoices
 	{
 		global $wpdb;
 		return $wpdb->prefix . 'cwd_v2_invoices';
+	}
+
+	/**
+	 * Checks if table exists, caching the result in memory/options to avoid SHOW TABLES.
+	 */
+	public static function table_exists()
+	{
+		if (self::$table_checked) {
+			return true;
+		}
+		if (get_option('cwd_v2_invoices_table_installed') === 'yes') {
+			self::$table_checked = true;
+			return true;
+		}
+		global $wpdb;
+		$table = self::table_name();
+		if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $table)) === $table) {
+			update_option('cwd_v2_invoices_table_installed', 'yes', true);
+			self::$table_checked = true;
+			return true;
+		}
+		return false;
 	}
 
 	/**
@@ -265,7 +290,7 @@ class CWD_V2_Invoices
 
 		global $wpdb;
 		$table = self::table_name();
-		if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $table)) !== $table) {
+		if (! self::table_exists()) {
 			return;
 		}
 
@@ -340,6 +365,8 @@ class CWD_V2_Invoices
 						}
 					}
 				}
+				// Enrich with Odoo metadata from linked WooCommerce order
+				self::enrich_invoice_with_odoo_data($inv);
 			}
 		}
 
@@ -589,6 +616,175 @@ class CWD_V2_Invoices
 	}
 
 	/**
+	 * Enriches an invoice object with Odoo ERP data from linked WooCommerce order metadata
+	 * if it originated as a website invoice or is missing direct Odoo references.
+	 *
+	 * @param object $inv
+	 * @return object
+	 */
+	public static function enrich_invoice_with_odoo_data($inv)
+	{
+		if (! is_object($inv)) {
+			return $inv;
+		}
+
+		$order_id = ! empty($inv->order_id) ? (int) $inv->order_id : 0;
+		if ($order_id > 0) {
+			$order = wc_get_order($order_id);
+			if ($order) {
+				$odoo_inv_num = $order->get_meta('_odoo_invoice_number') ?: $order->get_meta('odoo_invoice_number');
+				$odoo_id      = $order->get_meta('_odoo_invoice_id');
+				$odoo_url     = $order->get_meta('_odoo_invoice_url');
+				$odoo_status  = $order->get_meta('_odoo_invoice_status');
+
+				$needs_db_sync = false;
+
+				if (! empty($odoo_inv_num) && $inv->invoice_number !== $odoo_inv_num) {
+					$inv->invoice_number = sanitize_text_field($odoo_inv_num);
+					$inv->source         = self::SOURCE_ODOO;
+					$needs_db_sync       = true;
+				}
+
+				if (! empty($odoo_id) && empty($inv->odoo_invoice_id)) {
+					$inv->odoo_invoice_id = sanitize_text_field($odoo_id);
+					$inv->source          = self::SOURCE_ODOO;
+					$needs_db_sync        = true;
+				}
+
+				if (! empty($odoo_url) && empty($inv->document_url)) {
+					$inv->document_url = esc_url_raw($odoo_url);
+					$needs_db_sync     = true;
+				}
+
+				if (! empty($odoo_status) && in_array(strtolower($odoo_status), array(self::STATUS_PAID, self::STATUS_UNPAID, self::STATUS_VOID, self::STATUS_WRITTEN_OFF), true)) {
+					if ($inv->status !== strtolower($odoo_status)) {
+						$inv->status   = strtolower($odoo_status);
+						$needs_db_sync = true;
+					}
+				}
+
+				if ($needs_db_sync && ! empty($inv->id)) {
+					global $wpdb;
+					$wpdb->update(
+						self::table_name(),
+						array(
+							'invoice_number'  => $inv->invoice_number,
+							'source'          => $inv->source,
+							'odoo_invoice_id' => $inv->odoo_invoice_id,
+							'document_url'    => $inv->document_url,
+							'status'          => $inv->status,
+							'updated_at'      => current_time('mysql'),
+						),
+						array('id' => (int) $inv->id)
+					);
+				}
+			}
+		}
+
+		// If document_url is still empty but odoo_invoice_id exists, build portal download link
+		if (empty($inv->document_url) && ! empty($inv->odoo_invoice_id)) {
+			$odoo_base = defined('CWD_ODOO_BASE_URL') ? CWD_ODOO_BASE_URL : get_option('cwd_odoo_base_url', '');
+			$odoo_base = apply_filters('cwd_v2_odoo_base_url', $odoo_base);
+			if (! empty($odoo_base)) {
+				$inv->document_url = rtrim($odoo_base, '/') . '/my/invoices/' . rawurlencode($inv->odoo_invoice_id) . '?report_type=pdf&download=true';
+			}
+		}
+
+		return $inv;
+	}
+
+	/**
+	 * Get total due / overdue credit amount for a user.
+	 *
+	 * @param int $user_id
+	 * @return float
+	 */
+	public static function get_user_due_credit_amount($user_id)
+	{
+		$user_id = (int) $user_id;
+		if (! $user_id) {
+			return 0.0;
+		}
+
+		global $wpdb;
+		$table = self::table_name();
+		if (! self::table_exists()) {
+			return 0.0;
+		}
+
+		$now = current_time('mysql');
+
+		// Query unpaid invoices past due date
+		$overdue_sum = $wpdb->get_var($wpdb->prepare(
+			"SELECT SUM(amount_total - amount_paid) FROM {$table}
+			 WHERE user_id = %d AND status = %s AND due_date <= %s",
+			$user_id,
+			self::STATUS_UNPAID,
+			$now
+		));
+
+		if ($overdue_sum && (float) $overdue_sum > 0.01) {
+			return round((float) $overdue_sum, 2);
+		}
+
+		// Fallback: if user has any unpaid invoices at all, check if due date passed
+		$unpaid_sum = $wpdb->get_var($wpdb->prepare(
+			"SELECT SUM(amount_total - amount_paid) FROM {$table}
+			 WHERE user_id = %d AND status = %s",
+			$user_id,
+			self::STATUS_UNPAID
+		));
+
+		if ($unpaid_sum && (float) $unpaid_sum > 0.01) {
+			return round((float) $unpaid_sum, 2);
+		}
+
+		$credit_balance = class_exists('CWD_V2_Credit_Logic') ? CWD_V2_Credit_Logic::get_user_credit_balance($user_id) : (float) get_user_meta($user_id, '_credit_balance', true);
+		return round(max(0.0, (float) $credit_balance), 2);
+	}
+
+	/**
+	 * Apply payment across user's unpaid invoices using FIFO (First In, First Out).
+	 *
+	 * @param int   $user_id
+	 * @param float $amount
+	 * @return int Number of invoices fully or partially settled.
+	 */
+	public static function apply_fifo_payment_to_unpaid_invoices($user_id, $amount)
+	{
+		$user_id   = (int) $user_id;
+		$remaining = round((float) $amount, 2);
+		if ($user_id <= 0 || $remaining <= 0) {
+			return 0;
+		}
+
+		$unpaid_invoices = self::get_outstanding_invoices_for_user($user_id, 100);
+		if (empty($unpaid_invoices)) {
+			return 0;
+		}
+
+		$settled_count = 0;
+		foreach ($unpaid_invoices as $inv) {
+			if ($remaining <= 0) {
+				break;
+			}
+			$outstanding = round(max(0.0, (float) $inv->amount_total - (float) $inv->amount_paid), 2);
+			if ($outstanding <= 0) {
+				continue;
+			}
+
+			$pay_amount = min($remaining, $outstanding);
+			if (self::apply_invoice_payment($inv->id, $user_id, $pay_amount)) {
+				$remaining = round($remaining - $pay_amount, 2);
+				$settled_count++;
+			}
+		}
+
+		self::update_user_earliest_due_date($user_id);
+		return $settled_count;
+	}
+
+	/**
 	 * @param int $invoice_id
 	 * @param int $user_id Optional. If provided, only returns the invoice if it belongs to this user.
 	 * @return object|null
@@ -614,6 +810,10 @@ class CWD_V2_Invoices
 					$wpdb->update($table, array('due_date' => $calc_due), array('id' => (int) $inv->id));
 				}
 			}
+		}
+
+		if ($inv) {
+			self::enrich_invoice_with_odoo_data($inv);
 		}
 
 		return $inv;
@@ -758,7 +958,7 @@ class CWD_V2_Invoices
 				return;
 			}
 			$table = self::table_name();
-			if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $table)) !== $table) {
+			if (! self::table_exists()) {
 				return;
 			}
 
@@ -778,5 +978,210 @@ class CWD_V2_Invoices
 		} catch (\Throwable $e) {
 			error_log('CWD repair_same_day_due_dates error: ' . $e->getMessage());
 		}
+	}
+
+	/**
+	 * Generate a secure direct PDF download URL for an invoice.
+	 *
+	 * @param int $invoice_id
+	 * @param int $order_id
+	 * @return string
+	 */
+	public static function get_invoice_download_url($invoice_id = 0, $order_id = 0)
+	{
+		$invoice_id = (int) $invoice_id;
+		$order_id   = (int) $order_id;
+		$nonce      = wp_create_nonce('cwd_download_invoice_' . $invoice_id . '_' . $order_id);
+
+		$base = wc_get_endpoint_url('invoices');
+		if (empty($base)) {
+			$base = wc_get_page_permalink('myaccount');
+		}
+
+		return add_query_arg(
+			array(
+				'cwd_action' => 'download_invoice',
+				'invoice_id' => $invoice_id,
+				'order_id'   => $order_id,
+				'_cwd_nonce' => $nonce,
+			),
+			$base
+		);
+	}
+
+	/**
+	 * Handle direct invoice download request.
+	 * Fetches the official PDF directly from Odoo and streams it to the user as a file download.
+	 */
+	public static function handle_direct_invoice_download()
+	{
+		if (! isset($_GET['cwd_action']) || 'download_invoice' !== $_GET['cwd_action']) {
+			return;
+		}
+
+		if (! is_user_logged_in()) {
+			auth_redirect();
+			exit;
+		}
+
+		$current_user_id = (int) get_current_user_id();
+		$invoice_id      = isset($_GET['invoice_id']) ? absint($_GET['invoice_id']) : 0;
+		$order_id        = isset($_GET['order_id']) ? absint($_GET['order_id']) : 0;
+		$nonce           = isset($_GET['_cwd_nonce']) ? sanitize_text_field(wp_unslash($_GET['_cwd_nonce'])) : '';
+
+		if (! wp_verify_nonce($nonce, 'cwd_download_invoice_' . $invoice_id . '_' . $order_id)) {
+			wp_die(esc_html__('Invalid or expired download link.', 'custom-woo-dashboard'));
+		}
+
+		$invoice = null;
+		$order   = null;
+
+		if ($invoice_id > 0) {
+			$invoice = self::get_invoice($invoice_id, current_user_can('manage_woocommerce') ? 0 : $current_user_id);
+			if ($invoice && ! empty($invoice->order_id)) {
+				$order = wc_get_order($invoice->order_id);
+			}
+		}
+
+		if (! $invoice && $order_id > 0) {
+			$order = wc_get_order($order_id);
+			if ($order) {
+				if (! current_user_can('manage_woocommerce') && (int) $order->get_customer_id() !== $current_user_id) {
+					wp_die(esc_html__('You do not have permission to view this invoice.', 'custom-woo-dashboard'), '', array('response' => 403));
+				}
+				$inv_row = self::get_invoices_for_order($order_id);
+				if ($inv_row) {
+					$invoice = $inv_row;
+				}
+			}
+		}
+
+		if (! $invoice && ! $order) {
+			wp_die(esc_html__('Invoice not found.', 'custom-woo-dashboard'), '', array('response' => 404));
+		}
+
+		// Resolve Odoo Invoice ID & Document URL
+		$odoo_id        = '';
+		$document_url   = '';
+		$invoice_number = '';
+
+		if ($invoice) {
+			$odoo_id        = (string) ($invoice->odoo_invoice_id ?? '');
+			$document_url   = (string) ($invoice->document_url ?? '');
+			$invoice_number = (string) ($invoice->invoice_number ?? '');
+		}
+
+		if ($order) {
+			if (empty($odoo_id)) {
+				$odoo_id = (string) $order->get_meta('_odoo_invoice_id');
+			}
+			if (empty($document_url)) {
+				$document_url = (string) $order->get_meta('_odoo_invoice_url');
+			}
+			if (empty($invoice_number)) {
+				$invoice_number = (string) ($order->get_meta('_odoo_invoice_number') ?: $order->get_meta('odoo_invoice_number'));
+			}
+		}
+
+		if (empty($invoice_number)) {
+			$invoice_number = 'Invoice-' . ($invoice_id ?: $order_id);
+		}
+
+		// Suppress broken third-party Xero or localhost URLs
+		if (! empty($document_url) && (stripos($document_url, 'xero') !== false || stripos($document_url, 'localhost') !== false)) {
+			$document_url = '';
+		}
+
+		$odoo_base = defined('CWD_ODOO_BASE_URL') ? CWD_ODOO_BASE_URL : get_option('cwd_odoo_base_url', '');
+		$odoo_base = apply_filters('cwd_v2_odoo_base_url', $odoo_base);
+		if (empty($odoo_base)) {
+			$odoo_base = 'https://lahoreanalytica-ewsupplies-uk-uat-38561474.dev.odoo.com';
+		}
+		$odoo_base = rtrim($odoo_base, '/');
+
+		$secret = defined('CWD_ODOO_SECRET_KEY') ? CWD_ODOO_SECRET_KEY : get_option('cwd_odoo_secret_key', '');
+
+		// Candidate URLs to fetch Odoo PDF
+		$candidates = array();
+
+		// Priority 1: Direct authenticated Odoo API endpoint from la_woocommerce module
+		if (! empty($odoo_id) || ! empty($order_id)) {
+			$api_args = array();
+			if (! empty($odoo_id)) {
+				$api_args['invoice_id'] = $odoo_id;
+			}
+			if (! empty($order_id)) {
+				$api_args['order_id'] = $order_id;
+			}
+			if (! empty($secret)) {
+				$api_args['secret'] = $secret;
+			}
+			$candidates[] = add_query_arg($api_args, $odoo_base . '/la_woocommerce/dashboard/v1/invoice-pdf');
+		}
+
+		if (! empty($document_url)) {
+			$candidates[] = add_query_arg(array('report_type' => 'pdf', 'download' => 'true'), $document_url);
+		}
+		if (! empty($odoo_id)) {
+			// 2. Direct custom template report endpoint
+			$candidates[] = $odoo_base . '/report/pdf/ews_invoice.report_ews_invoice/' . rawurlencode($odoo_id);
+			// 3. Portal download endpoint
+			$candidates[] = $odoo_base . '/my/invoices/' . rawurlencode($odoo_id) . '?report_type=pdf&download=true';
+			// 4. Standard account report endpoint
+			$candidates[] = $odoo_base . '/report/pdf/account.report_invoice/' . rawurlencode($odoo_id);
+		}
+
+		$clean_filename = sanitize_file_name(str_replace('/', '-', $invoice_number)) . '.pdf';
+
+		// Attempt to fetch PDF binary directly from Odoo
+		foreach ($candidates as $cand_url) {
+			$headers = array(
+				'Accept' => 'application/pdf',
+			);
+			if (! empty($secret)) {
+				$headers['X-Odoo-Secret'] = $secret;
+			}
+
+			$response = wp_remote_get($cand_url, array(
+				'timeout'     => 15,
+				'sslverify'   => false,
+				'redirection' => 5,
+				'headers'     => $headers,
+			));
+
+			if (! is_wp_error($response)) {
+				$code = wp_remote_retrieve_response_code($response);
+				$body = wp_remote_retrieve_body($response);
+				$content_type = wp_remote_retrieve_header($response, 'content-type');
+
+				// Check if response is valid PDF binary
+				if (200 === $code && (strpos($body, '%PDF') === 0 || stripos((string) $content_type, 'application/pdf') !== false)) {
+					// Serve as direct file download
+					nocache_headers();
+					header('Content-Type: application/pdf');
+					header('Content-Disposition: attachment; filename="' . $clean_filename . '"');
+					header('Content-Length: ' . strlen($body));
+					header('Cache-Control: private, max-age=0, must-revalidate');
+					header('Pragma: public');
+					echo $body;
+					exit;
+				}
+			}
+		}
+
+		// Fallback: If portal URL has a valid access token, the browser can open it directly without login
+		if (! empty($document_url) && stripos($document_url, 'access_token=') !== false) {
+			wp_redirect($document_url);
+			exit;
+		}
+
+		// Fallback: If no direct PDF stream could be retrieved, do NOT redirect to Odoo login page!
+		// Keep the customer securely on the website and view the invoice details.
+		if ($invoice && ! empty($invoice->id)) {
+			wp_safe_redirect(wc_get_endpoint_url('view-invoice', $invoice->id, wc_get_endpoint_url('invoices')));
+			exit;
+		}
+
+		wp_die(esc_html__('Unable to retrieve invoice PDF at this time. Please contact support.', 'custom-woo-dashboard'));
 	}
 }

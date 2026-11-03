@@ -158,6 +158,26 @@ class CWD_V2_Admin_Profile
 						<p class="description"><?php esc_html_e('Odoo trade partner account reference (e.g. EWS-000001).', 'custom-woo-dashboard'); ?></p>
 					</td>
 				</tr>
+
+				<?php
+				$profile_sig = get_user_meta($user_id, '_trade_signature_url', true);
+				if (! empty($profile_sig) && class_exists('CWD_V2_Credit_Logic')) {
+					$profile_sig = CWD_V2_Credit_Logic::get_secure_signature_url($profile_sig, $user_id);
+				}
+				if (! empty($profile_sig)) :
+				?>
+				<tr>
+					<th scope="row">
+						<label><?php esc_html_e('Signed Trade Agreement', 'custom-woo-dashboard'); ?></label>
+					</th>
+					<td>
+						<div style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 10px 14px; display: inline-block; max-width: 320px;">
+							<img src="<?php echo esc_url($profile_sig); ?>" alt="<?php esc_attr_e('Trade Signature', 'custom-woo-dashboard'); ?>" style="max-height: 70px; max-width: 100%; display: block;" />
+						</div>
+						<p class="description"><?php esc_html_e('Authenticated digital signature recorded on official trade credit application.', 'custom-woo-dashboard'); ?></p>
+					</td>
+				</tr>
+				<?php endif; ?>
 			</table>
 		</div>
 		<?php

@@ -22,6 +22,12 @@ class CWD_V2_Credit_Logic
 		// Handle new trade account application submission
 		add_action('template_redirect', array(__CLASS__, 'handle_trade_application_submission'));
 
+		// Handle authenticated secure signature streaming
+		add_action('template_redirect', array(__CLASS__, 'handle_serve_signature'));
+
+		// Ensure trade signatures directory is locked against direct public HTTP access
+		self::ensure_trade_signatures_dir_security();
+
 		// Set price of credit payment product in cart
 		add_action('woocommerce_before_calculate_totals', array(__CLASS__, 'set_credit_payment_price'), 10, 1);
 		add_filter( 'woocommerce_available_payment_gateways', array( __CLASS__, 'filter_account_payment_gateways' ), 9999 );
@@ -92,6 +98,24 @@ class CWD_V2_Credit_Logic
 		// Completely remove Direct Bank Transfer (BACS) across checkout
 		unset( $gateways['bacs'] );
 
+		// Strictly remove all duplicate third-party credit gateways across checkout
+		// so that only the official "Pay on Credit Account" gateway (cwd_v2_credit_account) remains available.
+		$duplicate_credit_gateways = array(
+			'credits',
+			'wc_cs',
+			'wc_cs_credits',
+			'fpc_credits',
+			'wc_credit_gateway',
+			'credits_gateway',
+			'woocommerce_credits',
+			'trade_credit',
+		);
+		foreach ( $duplicate_credit_gateways as $dup_id ) {
+			if ( isset( $gateways[ $dup_id ] ) ) {
+				unset( $gateways[ $dup_id ] );
+			}
+		}
+
 		$product_id = (int) self::get_credit_payment_product_id();
 		$is_account_payment = false;
 		if ( isset( WC()->cart ) && WC()->cart ) {
@@ -120,9 +144,6 @@ class CWD_V2_Credit_Logic
 		if ( $is_account_payment || ( isset( WC()->session ) && WC()->session->get( 'cwd_payoff_credit_balance', false ) ) ) {
 			// Customers cannot pay their credit account using credit account itself
 			unset( $gateways['cwd_v2_credit_account'] );
-			unset( $gateways['credits'] );
-			unset( $gateways['trade_credit'] );
-			unset( $gateways['fpc_credits'] );
 		}
 
 		return $gateways;
@@ -280,87 +301,93 @@ class CWD_V2_Credit_Logic
 			if ($user_id) {
 				global $wpdb;
 				$wpdb->query('START TRANSACTION');
-				$wpdb->get_var($wpdb->prepare('SELECT ID FROM ' . $wpdb->users . ' WHERE ID = %d FOR UPDATE', (int) $user_id));
-				$current_balance = (float) get_user_meta($user_id, '_credit_balance', true);
-				if ($payment_amount <= 0) {
-					$wpdb->query('ROLLBACK');
-					return;
-				}
-				if (empty($settled_order_ids) && $payment_amount > $current_balance) {
-					$wpdb->query('ROLLBACK');
-					return;
-				}
+				try {
+					$wpdb->get_var($wpdb->prepare('SELECT ID FROM ' . $wpdb->users . ' WHERE ID = %d FOR UPDATE', (int) $user_id));
+					$current_balance = (float) get_user_meta($user_id, '_credit_balance', true);
+					if ($payment_amount <= 0) {
+						$wpdb->query('ROLLBACK');
+						return;
+					}
+					if (empty($settled_order_ids) && $payment_amount > $current_balance) {
+						$wpdb->query('ROLLBACK');
+						return;
+					}
 
-				$payment_applied = true;
-				if ($invoice_id) {
-					$payment_applied = CWD_V2_Invoices::apply_invoice_payment($invoice_id, $user_id, $payment_amount);
-				}
+					$payment_applied = true;
+					if ($invoice_id) {
+						$payment_applied = CWD_V2_Invoices::apply_invoice_payment($invoice_id, $user_id, $payment_amount);
+					}
 
-				if (! $payment_applied) {
-					$wpdb->query('ROLLBACK');
-					return;
-				}
+					if (! $payment_applied) {
+						$wpdb->query('ROLLBACK');
+						return;
+					}
 
-				// If specific orders were settled, mark them and settle any linked invoice
-				if (! empty($settled_order_ids)) {
-					foreach ($settled_order_ids as $soid) {
-						$so = wc_get_order($soid);
-						if ($so) {
-							$so->update_meta_data('_credit_order_settled', 'yes');
-							$so->update_meta_data('_credit_settlement_order_id', $order_id);
-							$so->update_meta_data('_credit_settled_at', current_time('mysql'));
-							$so->add_order_note(sprintf(__('Order credit balance settled via payment order #%d.', 'custom-woo-dashboard'), $order_id));
-							$so->save();
-						}
-						// Settle invoice if exists in CWD_V2_Invoices
-						if (class_exists('CWD_V2_Invoices')) {
-							$inv = CWD_V2_Invoices::get_invoices_for_order($soid);
-							if ($inv && $inv->status !== CWD_V2_Invoices::STATUS_PAID) {
-								$due = max(0, (float) $inv->amount_total - (float) $inv->amount_paid);
-								CWD_V2_Invoices::apply_invoice_payment($inv->id, $user_id, $due);
+					// If specific orders were settled, mark them and settle any linked invoice
+					if (! empty($settled_order_ids)) {
+						foreach ($settled_order_ids as $soid) {
+							$so = wc_get_order($soid);
+							if ($so) {
+								$so->update_meta_data('_credit_order_settled', 'yes');
+								$so->update_meta_data('_credit_settlement_order_id', $order_id);
+								$so->update_meta_data('_credit_settled_at', current_time('mysql'));
+								$so->add_order_note(sprintf(__('Order credit balance settled via payment order #%d.', 'custom-woo-dashboard'), $order_id));
+								$so->save();
+							}
+							// Settle invoice if exists in CWD_V2_Invoices
+							if (class_exists('CWD_V2_Invoices')) {
+								$inv = CWD_V2_Invoices::get_invoices_for_order($soid);
+								if ($inv && $inv->status !== CWD_V2_Invoices::STATUS_PAID) {
+									$due = max(0, (float) $inv->amount_total - (float) $inv->amount_paid);
+									CWD_V2_Invoices::apply_invoice_payment($inv->id, $user_id, $due);
+								}
 							}
 						}
 					}
-				}
 
-				$new_balance = max(0, $current_balance - $payment_amount);
-				self::sync_user_credit_balance($user_id, $new_balance);
+					$new_balance = max(0, $current_balance - $payment_amount);
+					self::sync_user_credit_balance($user_id, $new_balance);
 
-				if ($invoice_id) {
-					$ledger_result = CWD_V2_Account_Ledger::record(
-						$user_id,
-						CWD_V2_Account_Ledger::TYPE_PAYMENT,
-						$payment_amount,
-						'invoice',
-						$invoice_id,
-						sprintf(__('Payment for invoice #%d', 'custom-woo-dashboard'), $invoice_id)
-					);
-				} elseif (! empty($settled_order_ids)) {
-					$order_list_str = '#' . implode(', #', $settled_order_ids);
-					$ledger_result = CWD_V2_Account_Ledger::record(
-						$user_id,
-						CWD_V2_Account_Ledger::TYPE_PAYMENT,
-						$payment_amount,
-						'order',
-						$order_id,
-						sprintf(__('Settlement payoff for credit order(s) %s via payment order #%d', 'custom-woo-dashboard'), $order_list_str, $order_id)
-					);
-				} else {
-					$ledger_result = CWD_V2_Account_Ledger::record(
-						$user_id,
-						CWD_V2_Account_Ledger::TYPE_PAYMENT,
-						$payment_amount,
-						'order',
-						$order_id,
-						sprintf(__('Payment made via order #%d', 'custom-woo-dashboard'), $order_id)
-					);
-				}
+					if ($invoice_id) {
+						$ledger_result = CWD_V2_Account_Ledger::record(
+							$user_id,
+							CWD_V2_Account_Ledger::TYPE_PAYMENT,
+							$payment_amount,
+							'invoice',
+							$invoice_id,
+							sprintf(__('Payment for invoice #%d', 'custom-woo-dashboard'), $invoice_id)
+						);
+					} elseif (! empty($settled_order_ids)) {
+						$order_list_str = '#' . implode(', #', $settled_order_ids);
+						$ledger_result = CWD_V2_Account_Ledger::record(
+							$user_id,
+							CWD_V2_Account_Ledger::TYPE_PAYMENT,
+							$payment_amount,
+							'order',
+							$order_id,
+							sprintf(__('Settlement payoff for credit order(s) %s via payment order #%d', 'custom-woo-dashboard'), $order_list_str, $order_id)
+						);
+					} else {
+						$ledger_result = CWD_V2_Account_Ledger::record(
+							$user_id,
+							CWD_V2_Account_Ledger::TYPE_PAYMENT,
+							$payment_amount,
+							'order',
+							$order_id,
+							sprintf(__('Payment made via order #%d', 'custom-woo-dashboard'), $order_id)
+						);
+					}
 
-				if (false === $ledger_result) {
+					if (false === $ledger_result) {
+						$wpdb->query('ROLLBACK');
+						return;
+					}
+					$wpdb->query('COMMIT');
+				} catch (\Throwable $e) {
 					$wpdb->query('ROLLBACK');
-					return;
+					error_log('CWD Credit Payment Transaction Error: ' . $e->getMessage());
+					throw $e;
 				}
-				$wpdb->query('COMMIT');
 
 				if (class_exists('CWD_V2_Invoices')) {
 					CWD_V2_Invoices::update_user_earliest_due_date($user_id);
@@ -387,14 +414,15 @@ class CWD_V2_Credit_Logic
 						$payoff_amount,
 						'order',
 						$order->get_id(),
-						sprintf(__('Checkout payoff of outstanding balance via order #%d', 'custom-woo-dashboard'), $order->get_id())
+						sprintf(__('Checkout payoff of due credit balance via order #%d', 'custom-woo-dashboard'), $order->get_id())
 					);
 				}
 				if (class_exists('CWD_V2_Invoices')) {
+					CWD_V2_Invoices::apply_fifo_payment_to_unpaid_invoices($user_id, $payoff_amount);
 					CWD_V2_Invoices::update_user_earliest_due_date($user_id);
 				}
 				$order->update_meta_data('_cwd_payoff_balance_processed', 'yes');
-				$order->add_order_note(sprintf(__('Settled outstanding credit balance of %s via checkout payoff on this order.', 'custom-woo-dashboard'), wc_price($payoff_amount)));
+				$order->add_order_note(sprintf(__('Settled due credit balance of %s via checkout payoff on this order.', 'custom-woo-dashboard'), wc_price($payoff_amount)));
 				$order->save();
 			}
 		}
@@ -426,7 +454,10 @@ class CWD_V2_Credit_Logic
 		}
 
 		$credit_balance = self::get_user_credit_balance($user_id);
-		if ($credit_balance <= 0.01) {
+		$due_credit     = class_exists('CWD_V2_Invoices') ? CWD_V2_Invoices::get_user_due_credit_amount($user_id) : 0.0;
+		$payoff_amount  = ($due_credit > 0.01) ? $due_credit : $credit_balance;
+
+		if ($payoff_amount <= 0.01) {
 			return;
 		}
 
@@ -435,12 +466,12 @@ class CWD_V2_Credit_Logic
 		?>
 		<div class="cwd-credit-payoff-checkout-box" style="margin: 16px 0; padding: 14px 16px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px;">
 			<label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer; margin: 0; font-size: 14px; color: #0f172a;">
-				<input type="checkbox" name="cwd_payoff_credit_balance" id="cwd_payoff_credit_balance" value="1" <?php checked($is_checked, true); ?> style="margin-top: 3px;" onchange="jQuery('body').trigger('update_checkout');" />
+				<input type="checkbox" name="cwd_payoff_credit_balance" id="cwd_payoff_credit_balance" value="1" <?php checked($is_checked, true); ?> style="margin-top: 3px;" onchange="jQuery('input[name=\'cwd_payoff_credit_balance\']').prop('checked', this.checked); jQuery('body').trigger('update_checkout');" />
 				<span>
-					<strong><?php printf(esc_html__('Also pay off my outstanding credit balance (%s) with this order', 'custom-woo-dashboard'), wp_strip_all_tags(wc_price($credit_balance))); ?></strong>
+					<strong><?php printf(esc_html__('Pay due credit balance (%s) with this order', 'custom-woo-dashboard'), wp_strip_all_tags(wc_price($payoff_amount))); ?></strong>
 					<?php if (! empty($due_date)) : ?>
 						<span style="display: block; font-size: 12px; color: #64748b; margin-top: 2px;">
-							<?php printf(esc_html__('Payment due date: %s. Leave unchecked if you prefer to settle this on your due date.', 'custom-woo-dashboard'), esc_html($due_date)); ?>
+							<?php printf(esc_html__('Payment due date: %s. Tick this box to clear your due balance now via card or direct payment.', 'custom-woo-dashboard'), esc_html($due_date)); ?>
 						</span>
 					<?php else : ?>
 						<span style="display: block; font-size: 12px; color: #64748b; margin-top: 2px;">
@@ -493,10 +524,13 @@ class CWD_V2_Credit_Logic
 			}
 		}
 
-		$user_id = get_current_user_id();
+		$user_id        = get_current_user_id();
 		$credit_balance = self::get_user_credit_balance($user_id);
-		if ($credit_balance > 0.01) {
-			$cart->add_fee(__('Outstanding Credit Balance Payoff', 'custom-woo-dashboard'), $credit_balance, false);
+		$due_credit     = class_exists('CWD_V2_Invoices') ? CWD_V2_Invoices::get_user_due_credit_amount($user_id) : 0.0;
+		$payoff_amount  = ($due_credit > 0.01) ? $due_credit : $credit_balance;
+
+		if ($payoff_amount > 0.01) {
+			$cart->add_fee(__('Due Credit Balance Payoff', 'custom-woo-dashboard'), $payoff_amount, false);
 		}
 	}
 
@@ -509,8 +543,11 @@ class CWD_V2_Credit_Logic
 			$user_id = $order->get_user_id();
 			if ($user_id) {
 				$credit_balance = self::get_user_credit_balance($user_id);
-				if ($credit_balance > 0.01) {
-					$order->update_meta_data('_cwd_payoff_credit_balance_amount', $credit_balance);
+				$due_credit     = class_exists('CWD_V2_Invoices') ? CWD_V2_Invoices::get_user_due_credit_amount($user_id) : 0.0;
+				$payoff_amount  = ($due_credit > 0.01) ? $due_credit : $credit_balance;
+
+				if ($payoff_amount > 0.01) {
+					$order->update_meta_data('_cwd_payoff_credit_balance_amount', $payoff_amount);
 				}
 			}
 			WC()->session->set('cwd_payoff_credit_balance', false);
@@ -579,6 +616,47 @@ class CWD_V2_Credit_Logic
 	}
 
 	/**
+	 * Get standard UK counties grouped by nation.
+	 *
+	 * @return array
+	 */
+	public static function get_uk_counties()
+	{
+		return array(
+			'England' => array(
+				'Bedfordshire', 'Berkshire', 'Bristol', 'Buckinghamshire', 'Cambridgeshire',
+				'Cheshire', 'City of London', 'Cornwall', 'Cumbria', 'Derbyshire',
+				'Devon', 'Dorset', 'Durham', 'East Riding of Yorkshire', 'East Sussex',
+				'Essex', 'Gloucestershire', 'Greater London', 'Greater Manchester', 'Hampshire',
+				'Herefordshire', 'Hertfordshire', 'Isle of Wight', 'Kent', 'Lancashire',
+				'Leicestershire', 'Lincolnshire', 'Merseyside', 'Norfolk', 'North Somerset',
+				'North Yorkshire', 'Northamptonshire', 'Northumberland', 'Nottinghamshire', 'Oxfordshire',
+				'Rutland', 'Shropshire', 'Somerset', 'South Yorkshire', 'Staffordshire',
+				'Suffolk', 'Surrey', 'Tyne and Wear', 'Warwickshire', 'West Midlands',
+				'West Sussex', 'West Yorkshire', 'Wiltshire', 'Worcestershire',
+			),
+			'Scotland' => array(
+				'Aberdeenshire', 'Angus', 'Argyll and Bute', 'Ayrshire', 'Banffshire',
+				'Berwickshire', 'Caithness', 'Clackmannanshire', 'Dumfries and Galloway', 'Dunbartonshire',
+				'East Lothian', 'Falkirk', 'Fife', 'Highland', 'Inverclyde',
+				'Midlothian', 'Moray', 'North Ayrshire', 'North Lanarkshire', 'Orkney',
+				'Perth and Kinross', 'Renfrewshire', 'Scottish Borders', 'Shetland', 'South Ayrshire',
+				'South Lanarkshire', 'Stirling', 'West Dunbartonshire', 'West Lothian', 'Western Isles',
+			),
+			'Wales' => array(
+				'Anglesey', 'Blaenau Gwent', 'Bridgend', 'Caerphilly', 'Cardiff',
+				'Carmarthenshire', 'Ceredigion', 'Conwy', 'Denbighshire', 'Flintshire',
+				'Glamorgan', 'Gwynedd', 'Merthyr Tydfil', 'Monmouthshire', 'Neath Port Talbot',
+				'Newport', 'Pembrokeshire', 'Powys', 'Rhondda Cynon Taf', 'Swansea',
+				'Torfaen', 'Vale of Glamorgan', 'Wrexham',
+			),
+			'Northern Ireland' => array(
+				'County Antrim', 'County Armagh', 'County Down', 'County Fermanagh', 'County Londonderry', 'County Tyrone',
+			),
+		);
+	}
+
+	/**
 	 * Handle new trade account application submission from customer credit dashboard.
 	 */
 	public static function handle_trade_application_submission()
@@ -590,21 +668,243 @@ class CWD_V2_Credit_Logic
 				return;
 			}
 
-			$current_user     = wp_get_current_user();
-			$user_id          = (int) $current_user->ID;
-			$company_name     = sanitize_text_field(wp_unslash($_POST['cwd_v2_company_name'] ?? ''));
-			$phone            = sanitize_text_field(wp_unslash($_POST['cwd_v2_phone'] ?? ''));
-			$requested_amount = sanitize_text_field(wp_unslash($_POST['cwd_v2_requested_limit'] ?? ''));
-			$trading_details  = sanitize_textarea_field(wp_unslash($_POST['cwd_v2_trading_details'] ?? ''));
+			$current_user = wp_get_current_user();
+			$user_id      = (int) $current_user->ID;
 
+			// Extract all form fields
+			$company_name            = sanitize_text_field(wp_unslash($_POST['cwd_v2_company_name'] ?? ''));
+			$company_reg_number      = sanitize_text_field(wp_unslash($_POST['cwd_v2_company_reg_number'] ?? ''));
+			$vat_number              = sanitize_text_field(wp_unslash($_POST['cwd_v2_vat_number'] ?? '')); // optional
+			$parent_company          = sanitize_text_field(wp_unslash($_POST['cwd_v2_parent_company'] ?? '')); // optional
+			$business_sector         = sanitize_text_field(wp_unslash($_POST['cwd_v2_business_sector'] ?? ''));
+			$trading_duration        = sanitize_text_field(wp_unslash($_POST['cwd_v2_trading_duration'] ?? ''));
+			$requested_amount        = sanitize_text_field(wp_unslash($_POST['cwd_v2_requested_limit'] ?? ''));
+			$monthly_spend_raw       = sanitize_text_field(wp_unslash($_POST['cwd_v2_estimated_monthly_spend'] ?? ''));
+			$street_address          = sanitize_text_field(wp_unslash($_POST['cwd_v2_street_address'] ?? ''));
+			$city                    = sanitize_text_field(wp_unslash($_POST['cwd_v2_city'] ?? ''));
+			$county                  = sanitize_text_field(wp_unslash($_POST['cwd_v2_county'] ?? ''));
+			$postcode                = sanitize_text_field(wp_unslash($_POST['cwd_v2_postcode'] ?? ''));
+			$phone                   = sanitize_text_field(wp_unslash($_POST['cwd_v2_phone'] ?? ''));
+			$email                   = sanitize_email(wp_unslash($_POST['cwd_v2_email'] ?? $current_user->user_email));
+			$trade_ref_name          = sanitize_text_field(wp_unslash($_POST['cwd_v2_trade_ref_name'] ?? ''));
+			$trade_ref_address       = sanitize_textarea_field(wp_unslash($_POST['cwd_v2_trade_ref_address'] ?? ''));
+			$trade_ref_tel           = sanitize_text_field(wp_unslash($_POST['cwd_v2_trade_ref_tel'] ?? ''));
+			$trade_ref_2_name        = sanitize_text_field(wp_unslash($_POST['cwd_v2_trade_ref_2_name'] ?? ''));
+			$trade_ref_2_address     = sanitize_textarea_field(wp_unslash($_POST['cwd_v2_trade_ref_2_address'] ?? ''));
+			$trade_ref_2_tel         = sanitize_text_field(wp_unslash($_POST['cwd_v2_trade_ref_2_tel'] ?? ''));
+			$trade_ref_3_name        = sanitize_text_field(wp_unslash($_POST['cwd_v2_trade_ref_3_name'] ?? ''));
+			$trade_ref_3_address     = sanitize_textarea_field(wp_unslash($_POST['cwd_v2_trade_ref_3_address'] ?? ''));
+			$trade_ref_3_tel         = sanitize_text_field(wp_unslash($_POST['cwd_v2_trade_ref_3_tel'] ?? ''));
+			$signatory_name          = sanitize_text_field(wp_unslash($_POST['cwd_v2_signatory_name'] ?? ''));
+			$signatory_title         = sanitize_text_field(wp_unslash($_POST['cwd_v2_signatory_title'] ?? ''));
+			$terms_accepted          = ! empty($_POST['cwd_v2_terms_accepted']);
+			$signature_data          = trim((string) wp_unslash($_POST['cwd_v2_signature_data'] ?? ''));
+
+			// Validation: Mandatory and format checks
+			$errors = array();
+
+			// 1. Company Name
 			if (empty($company_name)) {
-				wc_add_notice(__('Please enter your company or business name.', 'custom-woo-dashboard'), 'error');
-				return;
+				$errors[] = __('Company name is required.', 'custom-woo-dashboard');
 			}
 
+			// 2. UK Companies House Company Registration Number (CRN)
+			$clean_crn = strtoupper(trim(preg_replace('/[\s\-]/', '', $company_reg_number)));
+			if (empty($clean_crn)) {
+				$errors[] = __('Company registration number is required.', 'custom-woo-dashboard');
+			} else {
+				// If 6 or 7 digits entered, Companies House standard is to zero-pad on left to 8 digits
+				if (ctype_digit($clean_crn) && strlen($clean_crn) >= 6 && strlen($clean_crn) < 8) {
+					$clean_crn = str_pad($clean_crn, 8, '0', STR_PAD_LEFT);
+				}
+				// Standard: 8 digits, or 2 letters followed by 6 digits/characters (e.g. SC123456, NI123456, OC123456)
+				if (! preg_match('/^(?:[0-9]{8}|[A-Z]{2}[0-9]{6}|[A-Z][0-9]{7})$/', $clean_crn)) {
+					$errors[] = __('Company Registration Number must be a valid 8-character Companies House number (e.g. 12345678, 01234567, or SC123456).', 'custom-woo-dashboard');
+				} else {
+					$company_reg_number = $clean_crn;
+				}
+			}
+
+			// 3. UK VAT Number (HMRC standard format, optional)
+			if (! empty($vat_number)) {
+				$clean_vat = strtoupper(trim(preg_replace('/[\s\-]/', '', $vat_number)));
+				// Standard: 9 digits, 12 digits (branch traders), or GD/HA prefix + 3 digits, with optional GB prefix
+				if (! preg_match('/^(?:GB)?(?:[0-9]{9}|[0-9]{12}|(?:GD|HA)[0-9]{3})$/', $clean_vat)) {
+					$errors[] = __('Please enter a valid UK VAT number (e.g. GB123456789 or 9 digits), or leave blank if not VAT registered.', 'custom-woo-dashboard');
+				} else {
+					// Normalize to include standard GB prefix
+					if (strpos($clean_vat, 'GB') !== 0 && ! in_array(substr($clean_vat, 0, 2), array('GD', 'HA'), true)) {
+						$clean_vat = 'GB' . $clean_vat;
+					}
+					$vat_number = $clean_vat;
+				}
+			}
+
+			// 4. Contact Phone (Must always begin with UK country code +44)
+			$phone = trim($phone);
+			if (empty($phone)) {
+				$errors[] = __('Contact phone number is required.', 'custom-woo-dashboard');
+			} elseif (strpos($phone, '+44') !== 0) {
+				$errors[] = __('Contact phone number must begin with the UK country code (+44), e.g. +44 7123 456789 or +44 20 7123 4567.', 'custom-woo-dashboard');
+			} else {
+				// Strip +44, spaces, hyphens, and optional (0)
+				$sub_phone = preg_replace('/[^0-9]/', '', substr($phone, 3));
+				if (strpos($sub_phone, '0') === 0) {
+					$sub_phone = substr($sub_phone, 1);
+				}
+				// Valid UK landline/mobile subscriber numbers are 9 or 10 digits
+				if (strlen($sub_phone) < 9 || strlen($sub_phone) > 10) {
+					$errors[] = __('Please enter a valid UK telephone number following +44 (9 or 10 digits, e.g. +44 7123 456789 or +44 20 7123 4567).', 'custom-woo-dashboard');
+				} else {
+					// Normalize format: +44 XXXXXXXXXX
+					$phone = '+44 ' . $sub_phone;
+				}
+			}
+
+			// 5. Business Sector & Duration
+			if (empty($business_sector)) {
+				$errors[] = __('Business sector / industry is required.', 'custom-woo-dashboard');
+			}
+			if (empty($trading_duration)) {
+				$errors[] = __('Company trading duration is required.', 'custom-woo-dashboard');
+			}
+
+			// 6. Registered Address
+			if (empty($street_address)) {
+				$errors[] = __('Street address is required.', 'custom-woo-dashboard');
+			}
+			if (empty($city)) {
+				$errors[] = __('Town / City is required.', 'custom-woo-dashboard');
+			}
+
+			// 7. County (Must be from official UK counties list)
+			$all_counties_flat = array();
+			foreach (self::get_uk_counties() as $c_list) {
+				$all_counties_flat = array_merge($all_counties_flat, $c_list);
+			}
+			$all_counties_lower = array_map('strtolower', $all_counties_flat);
+			if (empty($county)) {
+				$errors[] = __('County is required. Please select a valid UK county.', 'custom-woo-dashboard');
+			} elseif (! in_array(strtolower($county), $all_counties_lower, true) && ! in_array(strtolower('County ' . $county), $all_counties_lower, true)) {
+				$errors[] = __('Please select a valid UK county from the list.', 'custom-woo-dashboard');
+			}
+
+			// 8. UK Postcode (Royal Mail / BS 7666 standard format)
+			$clean_postcode = strtoupper(trim(preg_replace('/\s+/', ' ', $postcode)));
+			if (empty($clean_postcode)) {
+				$errors[] = __('UK Postcode is required.', 'custom-woo-dashboard');
+			} else {
+				$postcode_regex = '/^([Gg][Ii][Rr]\s?0[Aa]{2})|((([A-Za-z][0-9]{1,2})|(([A-Za-z][A-Ha-hJ-Yj-y][0-9]{1,2})|(([A-Za-z][0-9][A-Za-z])|([A-Za-z][A-Ha-hJ-Yj-y][0-9][A-Za-z]?))))\s?[0-9][A-Za-z]{2})$/';
+				if (! preg_match($postcode_regex, $clean_postcode)) {
+					$errors[] = __('Please enter a valid UK postcode (e.g. SW1A 1AA, EC1A 1BB, M1 1AE).', 'custom-woo-dashboard');
+				} else {
+					// Normalize with standard space between outward and inward code
+					$no_space = str_replace(' ', '', $clean_postcode);
+					$inward   = substr($no_space, -3);
+					$outward  = substr($no_space, 0, -3);
+					$postcode = $outward . ' ' . $inward;
+				}
+			}
+
+			// 9. Contact Email
+			if (empty($email) || ! is_email($email)) {
+				$errors[] = __('A valid contact email address is required.', 'custom-woo-dashboard');
+			}
+
+			// 10. Trade References
+			if (empty($trade_ref_name)) {
+				$errors[] = __('Trade Reference 1 Name is required.', 'custom-woo-dashboard');
+			}
+			if (empty($trade_ref_address)) {
+				$errors[] = __('Trade Reference 1 Address is required.', 'custom-woo-dashboard');
+			}
+			$trade_ref_tel = trim($trade_ref_tel);
+			if (empty($trade_ref_tel)) {
+				$errors[] = __('Trade Reference 1 Telephone is required.', 'custom-woo-dashboard');
+			} elseif (strpos($trade_ref_tel, '+44') !== 0) {
+				$errors[] = __('Trade Reference 1 Telephone must begin with the UK country code (+44), e.g. +44 7123 456789 or +44 20 7123 4567.', 'custom-woo-dashboard');
+			} else {
+				$sub_ref1 = preg_replace('/[^0-9]/', '', substr($trade_ref_tel, 3));
+				if (strpos($sub_ref1, '0') === 0) {
+					$sub_ref1 = substr($sub_ref1, 1);
+				}
+				if (strlen($sub_ref1) < 9 || strlen($sub_ref1) > 10) {
+					$errors[] = __('Please enter a valid UK telephone number following +44 for Trade Reference 1 (9 or 10 digits, e.g. +44 7123 456789).', 'custom-woo-dashboard');
+				} else {
+					$trade_ref_tel = '+44 ' . $sub_ref1;
+				}
+			}
+
+			// Trade Reference 2 (if entered)
+			$trade_ref_2_tel = trim($trade_ref_2_tel);
+			if (! empty($trade_ref_2_name) || ! empty($trade_ref_2_address) || ! empty($trade_ref_2_tel)) {
+				if (empty($trade_ref_2_tel)) {
+					$errors[] = __('Trade Reference 2 Telephone is required if Reference 2 details are provided.', 'custom-woo-dashboard');
+				} elseif (strpos($trade_ref_2_tel, '+44') !== 0) {
+					$errors[] = __('Trade Reference 2 Telephone must begin with the UK country code (+44), e.g. +44 7123 456789.', 'custom-woo-dashboard');
+				} else {
+					$sub_ref2 = preg_replace('/[^0-9]/', '', substr($trade_ref_2_tel, 3));
+					if (strpos($sub_ref2, '0') === 0) {
+						$sub_ref2 = substr($sub_ref2, 1);
+					}
+					if (strlen($sub_ref2) < 9 || strlen($sub_ref2) > 10) {
+						$errors[] = __('Please enter a valid UK telephone number following +44 for Trade Reference 2 (9 or 10 digits).', 'custom-woo-dashboard');
+					} else {
+						$trade_ref_2_tel = '+44 ' . $sub_ref2;
+					}
+				}
+			}
+
+			// Trade Reference 3 (if entered)
+			$trade_ref_3_tel = trim($trade_ref_3_tel);
+			if (! empty($trade_ref_3_name) || ! empty($trade_ref_3_address) || ! empty($trade_ref_3_tel)) {
+				if (empty($trade_ref_3_tel)) {
+					$errors[] = __('Trade Reference 3 Telephone is required if Reference 3 details are provided.', 'custom-woo-dashboard');
+				} elseif (strpos($trade_ref_3_tel, '+44') !== 0) {
+					$errors[] = __('Trade Reference 3 Telephone must begin with the UK country code (+44), e.g. +44 7123 456789.', 'custom-woo-dashboard');
+				} else {
+					$sub_ref3 = preg_replace('/[^0-9]/', '', substr($trade_ref_3_tel, 3));
+					if (strpos($sub_ref3, '0') === 0) {
+						$sub_ref3 = substr($sub_ref3, 1);
+					}
+					if (strlen($sub_ref3) < 9 || strlen($sub_ref3) > 10) {
+						$errors[] = __('Please enter a valid UK telephone number following +44 for Trade Reference 3 (9 or 10 digits).', 'custom-woo-dashboard');
+					} else {
+						$trade_ref_3_tel = '+44 ' . $sub_ref3;
+					}
+				}
+			}
+
+			// 11. Credit Limit & Spend
 			$requested_limit_val = (float) preg_replace('/[^0-9.]/', '', (string) $requested_amount);
 			if ($requested_limit_val <= 0) {
-				$requested_limit_val = 500.0;
+				$errors[] = __('Requested credit limit must be greater than zero.', 'custom-woo-dashboard');
+			}
+
+			$monthly_spend_val = (float) preg_replace('/[^0-9.]/', '', (string) $monthly_spend_raw);
+			if ($monthly_spend_val <= 0) {
+				$errors[] = __('Estimated monthly spend must be greater than zero.', 'custom-woo-dashboard');
+			}
+
+			// 12. Trade Credit Agreement & Authorised Signature
+			if (empty($terms_accepted)) {
+				$errors[] = __('You must read and agree to the Trade Credit Terms & Declaration.', 'custom-woo-dashboard');
+			}
+			if (empty($signatory_name)) {
+				$errors[] = __('Authorised signatory full name is required.', 'custom-woo-dashboard');
+			}
+			if (empty($signatory_title)) {
+				$errors[] = __('Authorised signatory job title / position is required.', 'custom-woo-dashboard');
+			}
+			if (empty($signature_data) || strpos($signature_data, 'data:image/png;base64,') !== 0) {
+				$errors[] = __('Please draw your signature in the signature pad box before submitting.', 'custom-woo-dashboard');
+			}
+
+			if (! empty($errors)) {
+				foreach ($errors as $err) {
+					wc_add_notice($err, 'error');
+				}
+				return;
 			}
 
 			if (class_exists('CWD_V2_Trade_Applications')) {
@@ -616,7 +916,7 @@ class CWD_V2_Credit_Logic
 				$existing_pending = $wpdb->get_var($wpdb->prepare(
 					"SELECT id FROM {$apps_table} WHERE (user_id = %d OR applicant_email = %s) AND status = %s LIMIT 1",
 					$user_id,
-					$current_user->user_email,
+					$email,
 					'pending'
 				));
 
@@ -627,18 +927,60 @@ class CWD_V2_Credit_Logic
 					exit;
 				}
 
+				// Process signature image: decode Base64 and write PNG file to wp-content/uploads/trade-signatures/
+				$signature_url = '';
+				if (strpos($signature_data, 'data:image/png;base64,') === 0) {
+					$b64 = substr($signature_data, strlen('data:image/png;base64,'));
+					$img_bytes = base64_decode($b64);
+					if ($img_bytes !== false) {
+						$sig_dir  = self::ensure_trade_signatures_dir_security();
+						$filename = 'sig_' . $user_id . '_' . time() . '_' . wp_generate_password(8, false) . '.png';
+						$filepath = $sig_dir . '/' . $filename;
+						if (@file_put_contents($filepath, $img_bytes)) {
+							$signature_url = self::get_secure_signature_url($filename, $user_id);
+						}
+					}
+				}
+
 				$now       = current_time('mysql');
 				$form_data = array(
-					'company_name'    => $company_name,
-					'phone'           => $phone,
-					'trading_details' => $trading_details,
-					'source'          => 'customer_credit_dashboard',
+					'company_name'            => $company_name,
+					'company_reg_number'      => $company_reg_number,
+					'vat_number'              => $vat_number,
+					'parent_company'          => $parent_company,
+					'business_sector'         => $business_sector,
+					'trading_duration'        => $trading_duration,
+					'requested_limit'         => $requested_limit_val,
+					'estimated_monthly_spend' => $monthly_spend_val,
+					'street_address'          => $street_address,
+					'city'                    => $city,
+					'county'                  => $county,
+					'postcode'                => $postcode,
+					'phone'                   => $phone,
+					'applicant_email'         => $email,
+					'trade_ref_name'          => $trade_ref_name,
+					'trade_ref_address'       => $trade_ref_address,
+					'trade_ref_tel'           => $trade_ref_tel,
+					'trade_ref_2_name'        => $trade_ref_2_name,
+					'trade_ref_2_address'     => $trade_ref_2_address,
+					'trade_ref_2_tel'         => $trade_ref_2_tel,
+					'trade_ref_3_name'        => $trade_ref_3_name,
+					'trade_ref_3_address'     => $trade_ref_3_address,
+					'trade_ref_3_tel'         => $trade_ref_3_tel,
+					'signatory_name'          => $signatory_name,
+					'signatory_title'         => $signatory_title,
+					'signature_url'           => $signature_url,
+					'signature_data'          => ! empty($signature_url) ? '' : $signature_data,
+					'signed_at'               => $now,
+					'signer_ip'               => sanitize_text_field($_SERVER['REMOTE_ADDR'] ?? ''),
+					'terms_accepted'          => true,
+					'source'                  => 'customer_credit_dashboard',
 				);
 
 				$insert_data = array(
 					'forminator_form_id'  => 0,
 					'forminator_entry_id' => 0,
-					'applicant_email'     => sanitize_email($current_user->user_email),
+					'applicant_email'     => sanitize_email($email),
 					'applicant_name'      => sanitize_text_field($current_user->display_name),
 					'company_name'        => $company_name,
 					'phone'               => $phone,
@@ -653,12 +995,51 @@ class CWD_V2_Credit_Logic
 				$wpdb->insert($apps_table, $insert_data, array('%d', '%d', '%s', '%s', '%s', '%s', '%f', '%s', '%s', '%d', '%s', '%s'));
 				$app_id = $wpdb->insert_id;
 
-				// Forward to Credits plugin
+				// Permanently store submitted information into user meta
+				update_user_meta($user_id, 'billing_company', $company_name);
+				update_user_meta($user_id, 'billing_phone', $phone);
+				update_user_meta($user_id, 'billing_address_1', $street_address);
+				update_user_meta($user_id, 'billing_city', $city);
+				update_user_meta($user_id, 'billing_state', $county);
+				update_user_meta($user_id, 'billing_postcode', $postcode);
+				update_user_meta($user_id, '_company_reg_number', $company_reg_number);
+				update_user_meta($user_id, '_vat_number', $vat_number);
+				update_user_meta($user_id, '_parent_company', $parent_company);
+				update_user_meta($user_id, '_business_sector', $business_sector);
+				update_user_meta($user_id, '_trading_duration', $trading_duration);
+				update_user_meta($user_id, '_estimated_monthly_spend', $monthly_spend_val);
+				update_user_meta($user_id, '_trade_ref_name', $trade_ref_name);
+				update_user_meta($user_id, '_trade_ref_address', $trade_ref_address);
+				update_user_meta($user_id, '_trade_ref_tel', $trade_ref_tel);
+				if (! empty($trade_ref_2_name)) {
+					update_user_meta($user_id, '_trade_ref_2_name', $trade_ref_2_name);
+					update_user_meta($user_id, '_trade_ref_2_address', $trade_ref_2_address);
+					update_user_meta($user_id, '_trade_ref_2_tel', $trade_ref_2_tel);
+				}
+				if (! empty($trade_ref_3_name)) {
+					update_user_meta($user_id, '_trade_ref_3_name', $trade_ref_3_name);
+					update_user_meta($user_id, '_trade_ref_3_address', $trade_ref_3_address);
+					update_user_meta($user_id, '_trade_ref_3_tel', $trade_ref_3_tel);
+				}
+				update_user_meta($user_id, '_trade_signatory_name', $signatory_name);
+				update_user_meta($user_id, '_trade_signatory_title', $signatory_title);
+				update_user_meta($user_id, '_trade_signature_url', $signature_url ?: $signature_data);
+				update_user_meta($user_id, '_trade_signed_at', $now);
+
+				// Only set credit limit/status to pending if this is a brand new applicant without active credit
+				$is_active_existing = (float) get_user_meta($user_id, '_credit_limit', true) > 0 || in_array('credit_account', (array) $current_user->roles, true);
+				if (! $is_active_existing) {
+					update_user_meta($user_id, '_requested_credit_limit', $requested_limit_val);
+					update_user_meta($user_id, '_credit_status', 'pending');
+					update_user_meta($user_id, 'credit_status', 'pending');
+				}
+
+				// Forward to Credits plugin strictly with pending status (NO auto-approval)
 				if ($app_id && class_exists('CWD_V2_Credits_Bridge')) {
 					CWD_V2_Credits_Bridge::forward_application_to_credits_plugin(
 						$app_id,
 						$user_id,
-						$current_user->user_email,
+						$email,
 						$current_user->display_name,
 						$company_name,
 						$phone,
@@ -670,17 +1051,47 @@ class CWD_V2_Credit_Logic
 				// Email notification to admin
 				$admin_email = get_option('admin_email');
 				$subject     = sprintf(__('New Trade Credit Application from %s (%s)', 'custom-woo-dashboard'), $company_name, $current_user->display_name);
-				$body        = sprintf(__("A new trade account application has been submitted:\n\nApplicant: %s\nEmail: %s\nCompany: %s\nPhone: %s\nRequested Credit Facility: %s\nDetails: %s\n\nReview this in WooCommerce > Trade Applications or Credits > Credits.\n", 'custom-woo-dashboard'),
+				$body        = sprintf(
+					__("A new comprehensive trade account application has been submitted:\n\n" .
+					"Applicant: %s\n" .
+					"Email: %s\n" .
+					"Phone: %s\n" .
+					"Company Name: %s\n" .
+					"Company Reg No: %s\n" .
+					"VAT No: %s\n" .
+					"Parent Company: %s\n" .
+					"Sector: %s\n" .
+					"Trading Duration: %s\n" .
+					"Registered Address: %s, %s, %s, %s\n" .
+					"Requested Credit Limit: %s\n" .
+					"Estimated Monthly Spend: %s\n\n" .
+					"Trade Reference 1:\n" .
+					"  Name: %s\n" .
+					"  Address: %s\n" .
+					"  Tel: %s\n\n" .
+					"Review and approve/reject in WooCommerce > Trade & Credit Management > Applications Queue.\n", 'custom-woo-dashboard'),
 					$current_user->display_name,
-					$current_user->user_email,
-					$company_name,
+					$email,
 					$phone,
+					$company_name,
+					$company_reg_number,
+					$vat_number ?: 'N/A',
+					$parent_company ?: 'N/A',
+					$business_sector,
+					$trading_duration,
+					$street_address,
+					$city,
+					$county,
+					$postcode,
 					wc_price($requested_limit_val),
-					$trading_details
+					wc_price($monthly_spend_val),
+					$trade_ref_name,
+					$trade_ref_address,
+					$trade_ref_tel
 				);
 				wp_mail($admin_email, $subject, $body);
 
-				wc_add_notice(__('Your trade credit application has been submitted and is currently under review.', 'custom-woo-dashboard'), 'success');
+				wc_add_notice(__('Your trade credit application has been submitted and is currently pending review by our trade finance team.', 'custom-woo-dashboard'), 'success');
 
 				$redirect_url = wp_get_referer() ?: wc_get_endpoint_url('credit', '', wc_get_page_permalink('myaccount'));
 				wp_safe_redirect($redirect_url);
@@ -702,13 +1113,50 @@ class CWD_V2_Credit_Logic
 			return 0.0;
 		}
 
-		// 1. Authoritative check: If _credit_limit is set in usermeta, it is the absolute source of truth.
-		// Never override an explicitly set admin limit with older legacy values.
-		if (metadata_exists('user', $user_id, '_credit_limit')) {
-			return max(0.0, (float) get_user_meta($user_id, '_credit_limit', true));
+		// 1. Authoritative check: If user already has an active credit limit or credit_account role, preserve it!
+		$existing_limit = (float) get_user_meta($user_id, '_credit_limit', true);
+		$user_obj       = get_userdata($user_id);
+		$is_credit_user = ($user_obj && in_array('credit_account', (array) $user_obj->roles, true));
+
+		if ($existing_limit > 0 || $is_credit_user) {
+			return max(0.0, $existing_limit);
 		}
 
-		// 2. Initial discovery: Only when _credit_limit has never been initialized for this user
+		// Safeguard for new applicants only: If user has a pending trade application and NO approved limit,
+		// their approved limit is strictly 0.00 until an admin manually approves them.
+		if (class_exists('CWD_V2_Trade_Applications')) {
+			CWD_V2_Trade_Applications::ensure_table_exists();
+			global $wpdb;
+			$apps_table = CWD_V2_Trade_Applications::get_table_name();
+			if (get_option('cwd_v2_trade_applications_table_installed') === 'yes' || $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $apps_table)) === $apps_table) {
+				$email = $user_obj ? $user_obj->user_email : '';
+				$has_approved = (int) $wpdb->get_var($wpdb->prepare(
+					"SELECT COUNT(*) FROM {$apps_table}
+					 WHERE (user_id = %d OR (applicant_email = %s AND applicant_email != '')) AND status = 'approved' AND approved_limit > 0",
+					$user_id,
+					$email
+				));
+				$has_pending = (int) $wpdb->get_var($wpdb->prepare(
+					"SELECT COUNT(*) FROM {$apps_table}
+					 WHERE (user_id = %d OR (applicant_email = %s AND applicant_email != '')) AND status = 'pending'",
+					$user_id,
+					$email
+				));
+				if ($has_pending > 0 && $has_approved === 0) {
+					return 0.0;
+				}
+			}
+		}
+
+		// 2. Authoritative check: If positive _credit_limit is set in usermeta, return it immediately.
+		if (metadata_exists('user', $user_id, '_credit_limit')) {
+			$raw_limit = (float) get_user_meta($user_id, '_credit_limit', true);
+			if ($raw_limit > 0) {
+				return $raw_limit;
+			}
+		}
+
+		// 3. Initial discovery: If _credit_limit is not set or zero, discover from other plugins/CPTs/applications
 		$discovered_limit = 0.0;
 
 		// Check all known credit plugin meta keys to discover existing limits
@@ -761,11 +1209,11 @@ class CWD_V2_Credit_Logic
 			"SELECT pm.meta_value FROM {$wpdb->postmeta} pm
 			 INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
 			 WHERE p.post_type IN ('wc_cs_credits', 'credits', 'fpc_credits')
-			   AND p.post_status != 'trash'
+			   AND p.post_status = 'publish'
 			   AND pm.meta_key IN (
 			       'approved_credits', '_approved_credits', 'wc_cs_approved_credits',
 			       'credit_limit', '_credit_limit', 'wc_cs_credit_limit', '_wc_cs_credit_limit',
-			       'fpc_credit_limit', '_fpc_credit_limit', '31596', '41978'
+			       'fpc_credit_limit', '_fpc_credit_limit'
 			   )
 			   AND CAST(pm.meta_value AS DECIMAL(10,2)) > 0
 			   AND (
@@ -815,16 +1263,44 @@ class CWD_V2_Credit_Logic
 			return 0.0;
 		}
 
+		// 1. If user is a brand new applicant with an unapproved pending application and NO active account, they owe 0.0
+		if (class_exists('CWD_V2_Trade_Applications')) {
+			CWD_V2_Trade_Applications::ensure_table_exists();
+			global $wpdb;
+			$apps_table = CWD_V2_Trade_Applications::get_table_name();
+			if (get_option('cwd_v2_trade_applications_table_installed') === 'yes' || $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $apps_table)) === $apps_table) {
+				$u             = get_userdata($user_id);
+				$is_active_acc = (float) get_user_meta($user_id, '_credit_limit', true) > 0 || ($u && in_array('credit_account', (array) $u->roles, true));
+				if (! $is_active_acc) {
+					$has_pending = (int) $wpdb->get_var($wpdb->prepare(
+						"SELECT COUNT(*) FROM {$apps_table} WHERE (user_id = %d OR applicant_email = %s) AND status = 'pending'",
+						$user_id,
+						$u ? $u->user_email : ''
+					));
+					$has_approved = (int) $wpdb->get_var($wpdb->prepare(
+						"SELECT COUNT(*) FROM {$apps_table} WHERE (user_id = %d OR applicant_email = %s) AND status = 'approved' AND reviewed_by > 0",
+						$user_id,
+						$u ? $u->user_email : ''
+					));
+					if ($has_pending > 0 && $has_approved === 0) {
+						return 0.0;
+					}
+				}
+			}
+		}
+
 		if (metadata_exists('user', $user_id, '_credit_balance')) {
 			return max(0.0, (float) get_user_meta($user_id, '_credit_balance', true));
 		}
 
 		$balance = 0.0;
+		// Outstanding / owed keys ONLY (never credit_balance or _user_credit_balance which mean available credit!)
 		$keys = array(
 			'total_outstanding_amount', '_total_outstanding_amount',
 			'wc_cs_total_outstanding_amount', '_wc_cs_total_outstanding_amount',
-			'_fp_used_credit', '_user_credit_balance', 'credit_balance',
-			'total_outstanding', '_total_outstanding'
+			'total_outstanding', '_total_outstanding',
+			'outstanding_credits', 'wc_cs_outstanding_credits',
+			'used_credits', '_used_credits', '_fp_used_credit'
 		);
 		foreach ($keys as $k) {
 			$val = (float) get_user_meta($user_id, $k, true);
@@ -836,19 +1312,17 @@ class CWD_V2_Credit_Logic
 		}
 
 		// Fallback to unpaid invoices in cwd_v2_invoices table if balance is 0
-		if ($balance <= 0 && class_exists('CWD_V2_Invoices')) {
+		if ($balance <= 0 && class_exists('CWD_V2_Invoices') && method_exists('CWD_V2_Invoices', 'table_exists') && CWD_V2_Invoices::table_exists()) {
 			global $wpdb;
 			$invoices_table = CWD_V2_Invoices::table_name();
-			if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $invoices_table)) === $invoices_table) {
-				$unpaid_invoices_total = (float) $wpdb->get_var($wpdb->prepare(
-					"SELECT SUM(GREATEST(0, amount_total - amount_paid)) FROM {$invoices_table}
-					 WHERE user_id = %d AND status NOT IN ('paid', 'void', 'written_off', 'marked_off')",
-					$user_id
-				));
-				if ($unpaid_invoices_total > 0) {
-					$balance = $unpaid_invoices_total;
-					update_user_meta($user_id, '_credit_balance', $balance);
-				}
+			$unpaid_invoices_total = (float) $wpdb->get_var($wpdb->prepare(
+				"SELECT SUM(GREATEST(0, amount_total - amount_paid)) FROM {$invoices_table}
+				 WHERE user_id = %d AND status NOT IN ('paid', 'void', 'written_off', 'marked_off')",
+				$user_id
+			));
+			if ($unpaid_invoices_total > 0) {
+				$balance = $unpaid_invoices_total;
+				update_user_meta($user_id, '_credit_balance', $balance);
 			}
 		}
 
@@ -947,15 +1421,16 @@ class CWD_V2_Credit_Logic
 
 		// 4. Synchronize trade application rows in wp_cwd_v2_trade_applications
 		if (class_exists('CWD_V2_Trade_Applications')) {
+			CWD_V2_Trade_Applications::ensure_table_exists();
 			global $wpdb;
 			$apps_table = CWD_V2_Trade_Applications::get_table_name();
-			if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $apps_table)) === $apps_table) {
+			if (get_option('cwd_v2_trade_applications_table_installed') === 'yes' || $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $apps_table)) === $apps_table) {
 				$u = get_userdata($user_id);
 				$email = $u ? $u->user_email : '';
 				$wpdb->query($wpdb->prepare(
 					"UPDATE {$apps_table} 
 					 SET approved_limit = %f, user_id = %d, updated_at = %s 
-					 WHERE (user_id = %d OR (applicant_email = %s AND applicant_email != ''))",
+					 WHERE (user_id = %d OR (applicant_email = %s AND applicant_email != '')) AND status = 'approved'",
 					$limit,
 					$user_id,
 					current_time('mysql'),
@@ -986,13 +1461,13 @@ class CWD_V2_Credit_Logic
 		}
 
 		update_user_meta($user_id, '_credit_balance', $balance);
+		// Outstanding / owed keys ONLY (never credit_balance or _user_credit_balance which mean available credit in third-party plugins!)
 		$keys = array(
-			'_fp_used_credit', '_user_credit_balance', 'credit_balance',
+			'_fp_used_credit', 'used_credits', '_used_credits', '_credit_used',
 			'total_outstanding', '_total_outstanding', 'wc_cs_total_outstanding',
 			'_wc_cs_total_outstanding', 'outstanding_credits', 'wc_cs_outstanding_credits',
 			'total_outstanding_amount', '_total_outstanding_amount',
-			'wc_cs_total_outstanding_amount', '_wc_cs_total_outstanding_amount',
-			'used_credits', '_used_credits', '_credit_used'
+			'wc_cs_total_outstanding_amount', '_wc_cs_total_outstanding_amount'
 		);
 		foreach ($keys as $k) {
 			update_user_meta($user_id, $k, $balance);
@@ -1003,7 +1478,8 @@ class CWD_V2_Credit_Logic
 		$avail_keys = array(
 			'_available_credits', 'available_credits',
 			'_wc_cs_available_credits', 'wc_cs_available_credits',
-			'fpc_available_credits', 'available_credit'
+			'fpc_available_credits', 'available_credit',
+			'credit_balance', '_user_credit_balance'
 		);
 		foreach ($avail_keys as $ak) {
 			update_user_meta($user_id, $ak, $avail);
@@ -1066,21 +1542,39 @@ class CWD_V2_Credit_Logic
 		$total_unpaid = 0.0;
 
 		// 1. Calculate unpaid invoices from invoices table
-		if (class_exists('CWD_V2_Invoices')) {
+		if (class_exists('CWD_V2_Invoices') && method_exists('CWD_V2_Invoices', 'table_exists') && CWD_V2_Invoices::table_exists()) {
 			$invoices_table = CWD_V2_Invoices::table_name();
-			if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $invoices_table)) === $invoices_table) {
-				$inv_total = (float) $wpdb->get_var($wpdb->prepare(
-					"SELECT SUM(GREATEST(0, amount_total - amount_paid)) FROM {$invoices_table}
-					 WHERE user_id = %d AND status NOT IN ('paid', 'void', 'written_off', 'marked_off')",
-					$user_id
-				));
-				$total_unpaid += $inv_total;
+			$inv_total = (float) $wpdb->get_var($wpdb->prepare(
+				"SELECT SUM(GREATEST(0, amount_total - amount_paid)) FROM {$invoices_table}
+				 WHERE user_id = %d AND status NOT IN ('paid', 'void', 'written_off', 'marked_off')",
+				$user_id
+			));
+			$total_unpaid += $inv_total;
+		}
+
+		// 2. Add unsettled WooCommerce credit orders not yet invoiced
+		$credit_orders = wc_get_orders(array(
+			'customer_id' => $user_id,
+			'limit'       => 100,
+			'status'      => array('processing', 'completed', 'on-hold', 'pending'),
+		));
+		$has_credit_order = false;
+		foreach ($credit_orders as $ord) {
+			$pm = strtolower((string) $ord->get_payment_method());
+			$is_credit_ord = in_array($pm, array('cwd_v2_credit_account', 'credits', 'wc_cs', 'wc_cs_credits', 'fpc_credits', 'trade_credit'), true)
+				|| ('yes' === $ord->get_meta('_paid_with_credit'))
+				|| ((float) $ord->get_meta('_credit_charged_amount') > 0);
+			if ($is_credit_ord) {
+				$has_credit_order = true;
+				if ($ord->get_meta('_credit_order_settled') !== 'yes' && ! $ord->get_meta('_invoiced')) {
+					$total_unpaid += (float) $ord->get_total();
+				}
 			}
 		}
 
-		// 2. If no invoices, use stored balance or fallback
-		if ($total_unpaid <= 0) {
-			$total_unpaid = (float) get_user_meta($user_id, '_credit_balance', true);
+		// 3. If user has no orders and no invoices, balance is strictly 0.0
+		if ($total_unpaid <= 0 && ! $has_credit_order) {
+			$total_unpaid = 0.0;
 		}
 
 		self::sync_user_credit_balance($user_id, $total_unpaid);
@@ -1296,5 +1790,193 @@ class CWD_V2_Credit_Logic
 
 		$refund->update_meta_data('_cwd_v2_credit_refund_processed', 'yes');
 		$refund->save();
+	}
+
+	/**
+	 * Ensure the trade-signatures directory exists and is strictly protected
+	 * against direct public HTTP access across Apache, LiteSpeed, and other web servers.
+	 *
+	 * @return string Protected directory path.
+	 */
+	public static function ensure_trade_signatures_dir_security()
+	{
+		$upload_dir = wp_upload_dir();
+		$sig_dir    = $upload_dir['basedir'] . '/trade-signatures';
+
+		if (! file_exists($sig_dir)) {
+			wp_mkdir_p($sig_dir);
+		}
+
+		// 1. .htaccess protection (Apache / LiteSpeed)
+		$htaccess_file    = $sig_dir . '/.htaccess';
+		$htaccess_content = "# Deny all direct public access to sensitive trade signatures\n"
+			. "<IfModule !mod_authz_core.c>\n"
+			. "    Order Deny,Allow\n"
+			. "    Deny from all\n"
+			. "</IfModule>\n"
+			. "<IfModule mod_authz_core.c>\n"
+			. "    Require all denied\n"
+			. "</IfModule>\n";
+
+		if (! file_exists($htaccess_file) || file_get_contents($htaccess_file) !== $htaccess_content) {
+			@file_put_contents($htaccess_file, $htaccess_content);
+		}
+
+		// 2. index.php protection against directory listing or execution
+		$index_file = $sig_dir . '/index.php';
+		if (! file_exists($index_file)) {
+			@file_put_contents($index_file, "<?php\n// Silence is golden.\nhttp_response_code(403);\nexit('Direct access forbidden.');\n");
+		}
+
+		// 3. index.html protection
+		$html_file = $sig_dir . '/index.html';
+		if (! file_exists($html_file)) {
+			@file_put_contents($html_file, '');
+		}
+
+		return $sig_dir;
+	}
+
+	/**
+	 * Generate an authenticated, nonce-protected streaming URL for a trade signature.
+	 * Converts direct static URLs or filenames into secure streaming endpoints.
+	 *
+	 * @param string $sig_src  File name, static URL, or Data URL.
+	 * @param int    $user_id  Optional user ID.
+	 * @return string Secure URL or original Base64 string.
+	 */
+	public static function get_secure_signature_url($sig_src, $user_id = 0)
+	{
+		if (empty($sig_src) || ! is_string($sig_src)) {
+			return '';
+		}
+
+		// Keep raw Base64 data intact
+		if (strpos($sig_src, 'data:image/') === 0) {
+			return $sig_src;
+		}
+
+		// If it's already a secure endpoint URL, refresh nonce if needed or return
+		if (strpos($sig_src, 'cwd_action=view_signature') !== false) {
+			$parts = parse_url($sig_src);
+			if (! empty($parts['query'])) {
+				parse_str($parts['query'], $query_args);
+				if (! empty($query_args['sig_file'])) {
+					$filename = sanitize_file_name($query_args['sig_file']);
+					$nonce    = wp_create_nonce('cwd_sig_view_' . $filename);
+					return add_query_arg(array(
+						'cwd_action' => 'view_signature',
+						'sig_file'   => $filename,
+						'_cwd_nonce' => $nonce,
+					), home_url('/'));
+				}
+			}
+			return $sig_src;
+		}
+
+		// Extract filename from URL or path
+		$filename = basename(parse_url($sig_src, PHP_URL_PATH));
+		if (empty($filename) || ! preg_match('/^sig_[a-zA-Z0-9_\-]+\.png$/i', $filename)) {
+			return '';
+		}
+
+		$nonce = wp_create_nonce('cwd_sig_view_' . $filename);
+
+		return add_query_arg(array(
+			'cwd_action' => 'view_signature',
+			'sig_file'   => $filename,
+			'_cwd_nonce' => $nonce,
+		), home_url('/'));
+	}
+
+	/**
+	 * Serve protected signature image to authenticated, authorized users only.
+	 * Strictly denies all public, unauthenticated, or unauthorized access.
+	 */
+	public static function handle_serve_signature()
+	{
+		if (! isset($_GET['cwd_action']) || 'view_signature' !== $_GET['cwd_action']) {
+			return;
+		}
+
+		// 1. Authentication check: Guest / unauthenticated access is immediately blocked
+		if (! is_user_logged_in()) {
+			wp_die(
+				esc_html__('Access Denied: You must be logged in to view signature files.', 'custom-woo-dashboard'),
+				esc_html__('Unauthorized', 'custom-woo-dashboard'),
+				array('response' => 401)
+			);
+		}
+
+		$raw_file = isset($_GET['sig_file']) ? sanitize_file_name(wp_unslash($_GET['sig_file'])) : '';
+		$nonce    = isset($_GET['_cwd_nonce']) ? sanitize_text_field(wp_unslash($_GET['_cwd_nonce'])) : '';
+
+		// 2. Filename structure validation: must match sig_{user_id}_{timestamp}_{random}.png
+		if (empty($raw_file) || ! preg_match('/^sig_(\d+)_[a-zA-Z0-9_\-]+\.png$/i', $raw_file, $matches)) {
+			wp_die(
+				esc_html__('Invalid signature file request.', 'custom-woo-dashboard'),
+				esc_html__('Bad Request', 'custom-woo-dashboard'),
+				array('response' => 400)
+			);
+		}
+
+		$owner_user_id   = (int) $matches[1];
+		$current_user_id = (int) get_current_user_id();
+
+		// 3. Authorization check (RBAC):
+		// Permitted: Administrator, Shop Manager, or the Customer who signed the agreement.
+		$is_admin = current_user_can('manage_woocommerce') || current_user_can('manage_options') || current_user_can('edit_users');
+		$is_owner = ($current_user_id > 0 && $current_user_id === $owner_user_id);
+
+		if (! $is_admin && ! $is_owner) {
+			wp_die(
+				esc_html__('Access Denied: You do not have permission to view this signature.', 'custom-woo-dashboard'),
+				esc_html__('Forbidden', 'custom-woo-dashboard'),
+				array('response' => 403)
+			);
+		}
+
+		// 4. Nonce security check (Required for non-admin users; validated for admins)
+		if (! $is_admin && ! wp_verify_nonce($nonce, 'cwd_sig_view_' . $raw_file)) {
+			wp_die(
+				esc_html__('Access Denied: Signature security token has expired or is invalid.', 'custom-woo-dashboard'),
+				esc_html__('Forbidden', 'custom-woo-dashboard'),
+				array('response' => 403)
+			);
+		}
+
+		// 5. Locate file & prevent path traversal
+		$upload_dir   = wp_upload_dir();
+		$sig_dir      = $upload_dir['basedir'] . '/trade-signatures';
+		$filepath     = $sig_dir . '/' . $raw_file;
+
+		$real_sig_dir = realpath($sig_dir);
+		$real_file    = file_exists($filepath) ? realpath($filepath) : false;
+
+		if (! $real_file || ! $real_sig_dir || strpos($real_file, $real_sig_dir) !== 0 || ! is_readable($real_file)) {
+			wp_die(
+				esc_html__('Signature file not found or unreadable.', 'custom-woo-dashboard'),
+				esc_html__('Not Found', 'custom-woo-dashboard'),
+				array('response' => 404)
+			);
+		}
+
+		// 6. Clean all previous output buffers before streaming binary PNG
+		while (ob_get_level() > 0) {
+			ob_end_clean();
+		}
+
+		// 7. Stream PNG with strict security and anti-sniffing headers
+		header('Content-Type: image/png');
+		header('Content-Length: ' . filesize($real_file));
+		header('Content-Disposition: inline; filename="' . esc_attr($raw_file) . '"');
+		header('Cache-Control: private, no-cache, no-store, must-revalidate');
+		header('Pragma: no-cache');
+		header('Expires: 0');
+		header('X-Content-Type-Options: nosniff');
+		header('X-Frame-Options: SAMEORIGIN');
+
+		readfile($real_file);
+		exit;
 	}
 }

@@ -121,6 +121,36 @@ $initial = strtoupper(substr($display_name, 0, 1));
 	</div>
 
 
+	<!-- Saved Baskets Card -->
+	<?php
+	$baskets_count = class_exists('CWD_V2_Saved_Baskets') ? CWD_V2_Saved_Baskets::get_user_baskets_count($current_user->ID) : 0;
+	?>
+	<div class="cwd-v2-card cwd-v2-saved-baskets-card">
+		<div class="cwd-v2-card-content">
+			<div class="cwd-v2-icon cwd-v2-icon-saved-baskets" style="background: #e0f2fe; color: #0284c7;">
+				<svg viewBox="0 0 24 24" aria-hidden="true" style="stroke: #0284c7;">
+					<path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"></path>
+					<path d="M3 6h18"></path>
+					<path d="M16 10a4 4 0 0 1-8 0"></path>
+				</svg>
+			</div>
+			<div class="cwd-v2-card-text">
+				<div style="display: flex; align-items: center; gap: 8px;">
+					<h3 style="margin: 0;"><?php _e('Saved Baskets', 'custom-woo-dashboard'); ?></h3>
+					<?php if ($baskets_count > 0) : ?>
+						<span style="background: #0284c7; color: #fff; font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 10px;">
+							<?php echo (int) $baskets_count; ?>
+						</span>
+					<?php endif; ?>
+				</div>
+				<p><?php _e('Save, organize, and reorder standard project materials and recurring stock.', 'custom-woo-dashboard'); ?></p>
+			</div>
+		</div>
+		<div class="cwd-v2-card-footer">
+			<a href="<?php echo esc_url(wc_get_endpoint_url('saved-baskets')); ?>"><?php _e('View Saved Baskets', 'custom-woo-dashboard'); ?></a>
+		</div>
+	</div>
+
 	<!-- Credit Dashboard Card -->
 	<div class="cwd-v2-card cwd-v2-credit-card">
 		<div class="cwd-v2-card-content">

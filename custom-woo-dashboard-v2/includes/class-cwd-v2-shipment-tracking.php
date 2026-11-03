@@ -268,9 +268,20 @@ class CWD_V2_Shipment_Tracking
 
 		$items     = self::get_tracking_items($order);
 		$providers = self::get_providers();
+		$current_estimate = $order->get_meta('_delivery_estimate');
 		wp_nonce_field('cwd_v2_save_tracking', 'cwd_v2_tracking_nonce');
 		?>
 		<div class="cwd-admin-tracking-box">
+			<div class="cwd-admin-estimate-field" style="margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid #e2e8f0;">
+				<label for="cwd_delivery_estimate" style="display:block; font-size: 12px; font-weight: 700; color: #0284c7; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px;">
+					<?php esc_html_e('Delivery Estimate (Customer Portal)', 'custom-woo-dashboard'); ?>
+				</label>
+				<input type="text" name="cwd_delivery_estimate" id="cwd_delivery_estimate" value="<?php echo esc_attr($current_estimate); ?>" placeholder="e.g. Next Working Day, 28 Oct 2026, or Tomorrow by 1pm" style="width: 100%; font-size: 12.5px; padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 4px; box-sizing: border-box;" />
+				<span style="font-size: 11px; color: #64748b; display: block; margin-top: 3px; line-height: 1.4;">
+					<?php esc_html_e('Displayed directly to the customer on Live Orders and Order History cards. Can also be pushed automatically from Odoo ERP.', 'custom-woo-dashboard'); ?>
+				</span>
+			</div>
+
 			<?php if (! empty($items)) : ?>
 				<div class="cwd-admin-tracking-list" style="margin-bottom: 15px;">
 					<?php foreach ($items as $item) : ?>
@@ -388,12 +399,18 @@ class CWD_V2_Shipment_Tracking
 			return;
 		}
 
-		if (empty($_POST['cwd_tracking_number'])) {
+		$order = wc_get_order($order_id);
+		if (! $order) {
 			return;
 		}
 
-		$order = wc_get_order($order_id);
-		if (! $order) {
+		// Save Delivery Estimate
+		if (isset($_POST['cwd_delivery_estimate'])) {
+			$order->update_meta_data('_delivery_estimate', sanitize_text_field(wp_unslash($_POST['cwd_delivery_estimate'])));
+			$order->save();
+		}
+
+		if (empty($_POST['cwd_tracking_number'])) {
 			return;
 		}
 
@@ -639,6 +656,17 @@ class CWD_V2_Shipment_Tracking
 			'date_shipped'         => $date,
 			'custom_tracking_link' => $link,
 		);
+
+		$estimate = sanitize_text_field(
+			$request->get_param('delivery_estimate') 
+			?: $request->get_param('estimated_delivery') 
+			?: $request->get_param('commitment_date') 
+			?: ''
+		);
+		if (! empty($estimate)) {
+			$order->update_meta_data('_delivery_estimate', $estimate);
+			$order->save();
+		}
 
 		$notify = $request->get_param('notify_customer') !== null ? (bool) $request->get_param('notify_customer') : true;
 		$result = self::add_tracking_item($order, $tracking_data, $notify);

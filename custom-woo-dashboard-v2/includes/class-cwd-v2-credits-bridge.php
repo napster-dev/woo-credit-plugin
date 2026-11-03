@@ -59,6 +59,14 @@ class CWD_V2_Credits_Bridge
 	);
 
 	/**
+	 * Cached external tables to prevent repeated SHOW TABLES / DESCRIBE queries
+	 *
+	 * @var array|null
+	 */
+	private static $cached_external_tables = null;
+	private static $cached_table_columns = array();
+
+	/**
 	 * Initialize event listeners
 	 */
 	public static function init()
@@ -173,6 +181,7 @@ class CWD_V2_Credits_Bridge
 				foreach (self::$credit_status_keys as $status_key) {
 					update_user_meta($user_id, $status_key, 'pending');
 				}
+				update_user_meta($user_id, '_credit_limit', 0.0);
 			}
 
 			// Set requested limit & trace metadata
@@ -180,8 +189,8 @@ class CWD_V2_Credits_Bridge
 			update_user_meta($user_id, '_fpc_requested_limit', (float) $requested_limit);
 			update_user_meta($user_id, '_trade_application_id', (int) $app_id);
 
-			$target_status = ($is_existing_active_account || $is_increase_request) ? 'active' : 'pending';
-			$target_limit  = ($is_existing_active_account || $is_increase_request) ? $existing_limit : (float) $requested_limit;
+			$target_status = $is_existing_active_account ? 'active' : 'pending';
+			$target_limit  = $is_existing_active_account ? $existing_limit : 0.0;
 
 			// Dynamically forward to external Credits database tables if present
 			self::sync_to_external_credits_tables($user_id, $target_status, $target_limit, $applicant_email, $company_name);
@@ -236,12 +245,18 @@ class CWD_V2_Credits_Bridge
 			CWD_V2_Trade_Applications::STATUS_PENDING
 		));
 
-		// Resolve approved credit limit
+		// Resolve approved credit limit - MUST be strictly positive from an explicit approval
 		if ($approved_limit === null || (float) $approved_limit <= 0) {
 			$approved_limit = (float) get_user_meta($user_id, '_credit_limit', true);
 			if ($approved_limit <= 0 && class_exists('CWD_V2_Credit_Logic')) {
 				$approved_limit = CWD_V2_Credit_Logic::get_user_credit_limit($user_id);
 			}
+		}
+
+		if ((float) $approved_limit <= 0) {
+			// Strict safeguard: Credits must NEVER be approved or granted automatically without an explicit positive approved limit!
+			self::$is_syncing = false;
+			return false;
 		}
 
 		$now = current_time('mysql');
@@ -258,7 +273,7 @@ class CWD_V2_Credits_Bridge
 					}
 				}
 
-				$limit_to_set = ($approved_limit > 0) ? $approved_limit : $app->requested_limit;
+				$limit_to_set = (float) $approved_limit;
 				$wpdb->update(
 					$apps_table,
 					array(
@@ -279,13 +294,14 @@ class CWD_V2_Credits_Bridge
 			$wpdb->query($wpdb->prepare(
 				"UPDATE {$apps_table} 
 				 SET status = %s, approved_limit = %f, user_id = %d, updated_at = %s 
-				 WHERE (user_id = %d OR (applicant_email = %s AND applicant_email != ''))",
+				 WHERE (user_id = %d OR (applicant_email = %s AND applicant_email != '')) AND status = %s",
 				CWD_V2_Trade_Applications::STATUS_APPROVED,
 				$approved_limit,
 				$user_id,
 				$now,
 				$user_id,
-				$user->user_email
+				$user->user_email,
+				CWD_V2_Trade_Applications::STATUS_APPROVED
 			));
 
 			// If no trade application record exists at all, create an approved record so customer dashboard sees it
@@ -442,10 +458,11 @@ class CWD_V2_Credits_Bridge
 				?: get_post_meta($post_id, 'company', true)
 				?: get_user_meta($user_id, 'billing_company', true);
 
+			$is_active_post = ('publish' === $post->post_status);
 			self::sync_to_external_credits_cpt(
 				$user_id,
-				('publish' === $post->post_status || $limit > 0) ? 'active' : 'pending',
-				$limit,
+				$is_active_post ? 'active' : 'pending',
+				$is_active_post ? $limit : 0.0,
 				$u ? $u->display_name : '',
 				$u ? $u->user_email : '',
 				$company,
@@ -678,13 +695,15 @@ class CWD_V2_Credits_Bridge
 		$username = $user ? $user->user_login : ($name ?: 'customer');
 
 		// Resolve credit limit
-		if ($limit <= 0) {
+		if ($limit <= 0 && 'active' === $status) {
 			$limit = class_exists('CWD_V2_Credit_Logic')
 				? CWD_V2_Credit_Logic::get_user_credit_limit($user_id)
 				: (float) get_user_meta($user_id, '_credit_limit', true);
+		} elseif ('active' !== $status) {
+			$limit = 0.0;
 		}
 
-		$post_status = ('active' === $status || (float) $limit > 0) ? 'publish' : 'pending';
+		$post_status = ('active' === $status) ? 'publish' : 'pending';
 
 		$matching_cpts = array('credits');
 
@@ -874,6 +893,15 @@ class CWD_V2_Credits_Bridge
 
 			$avail_credit = max(0.0, (float) $limit - $user_balance);
 
+			$is_active         = ('active' === $status && 'publish' === $post_status);
+			$credit_status_val = $is_active ? 'active' : 'pending';
+			$effective_limit   = $is_active ? (float) $limit : 0.0;
+
+			$req_limit_val = (float) ($form_data['requested_limit'] ?? ($form_data['requested_amount'] ?? get_user_meta($user_id, '_requested_credit_limit', true)));
+			if ($req_limit_val <= 0) {
+				$req_limit_val = (float) $limit;
+			}
+
 			// Populate comprehensive meta keys covering all FantasticPlugins / WooCommerce Credits standards
 			$meta_map = array(
 				// User & Identity (crucial: sets all user identifiers so the "Register Credits to New User" modal never appears)
@@ -908,27 +936,34 @@ class CWD_V2_Credits_Bridge
 				// Status & Limits
 				'_status'                                => $post_status,
 				'status'                                 => $post_status,
-				'_credit_status'                         => ('publish' === $post_status) ? 'active' : 'pending',
-				'credit_status'                          => ('publish' === $post_status) ? 'active' : 'pending',
-				'fpc_status'                             => ('publish' === $post_status) ? 'active' : 'pending',
-				'_credit_limit'                          => (float) $limit,
-				'credit_limit'                           => (float) $limit,
-				'fpc_credit_limit'                       => (float) $limit,
-				'_fpc_credit_limit'                      => (float) $limit,
-				'credit_amount'                          => (float) $limit,
-				'_credit_amount'                         => (float) $limit,
-				'fpc_credit_amount'                      => (float) $limit,
-				'available_credits'                      => $avail_credit,
-				'_available_credits'                     => $avail_credit,
-				'fpc_available_credits'                  => $avail_credit,
-				'available_credit'                       => $avail_credit,
+				'_credit_status'                         => $credit_status_val,
+				'credit_status'                          => $credit_status_val,
+				'fpc_status'                             => $credit_status_val,
+				'_credit_limit'                          => $effective_limit,
+				'credit_limit'                           => $effective_limit,
+				'fpc_credit_limit'                       => $effective_limit,
+				'_fpc_credit_limit'                      => $effective_limit,
+				'credit_amount'                          => $effective_limit,
+				'_credit_amount'                         => $effective_limit,
+				'fpc_credit_amount'                      => $effective_limit,
+				'available_credits'                      => $is_active ? $avail_credit : 0.0,
+				'_available_credits'                     => $is_active ? $avail_credit : 0.0,
+				'fpc_available_credits'                  => $is_active ? $avail_credit : 0.0,
+				'available_credit'                       => $is_active ? $avail_credit : 0.0,
 				'total_outstanding'                      => $user_balance,
 				'_total_outstanding'                     => $user_balance,
+				'total_outstanding_amount'               => $user_balance,
+				'_total_outstanding_amount'              => $user_balance,
 				'outstanding_credits'                    => $user_balance,
-				'approved_credits'                       => (float) $limit,
-				'_approved_credits'                      => (float) $limit,
-				'approved_credit'                        => (float) $limit,
-				'_approved_credit'                       => (float) $limit,
+				'_outstanding_credits'                   => $user_balance,
+				'used_credits'                           => $user_balance,
+				'_used_credits'                          => $user_balance,
+				'used_amount'                            => $user_balance,
+				'_used_amount'                           => $user_balance,
+				'approved_credits'                       => $effective_limit,
+				'_approved_credits'                      => $effective_limit,
+				'approved_credit'                        => $effective_limit,
+				'_approved_credit'                       => $effective_limit,
 
 				// wc_cs direct keys
 				'wc_cs_user_id'                          => $user_id,
@@ -939,34 +974,40 @@ class CWD_V2_Credits_Bridge
 				'_wc_cs_customer_id'                     => $user_id,
 				'wc_cs_user_email'                       => $email,
 				'_wc_cs_user_email'                      => $email,
-				'wc_cs_approved_credits'                 => (float) $limit,
-				'_wc_cs_approved_credits'                => (float) $limit,
-				'wc_cs_approved_credit'                  => (float) $limit,
-				'_wc_cs_approved_credit'                 => (float) $limit,
-				'wc_cs_credit_limit'                     => (float) $limit,
-				'_wc_cs_credit_limit'                    => (float) $limit,
-				'wc_cs_available_credits'                => $avail_credit,
-				'_wc_cs_available_credits'               => $avail_credit,
+				'wc_cs_approved_credits'                 => $effective_limit,
+				'_wc_cs_approved_credits'                => $effective_limit,
+				'wc_cs_approved_credit'                  => $effective_limit,
+				'_wc_cs_approved_credit'                 => $effective_limit,
+				'wc_cs_credit_limit'                     => $effective_limit,
+				'_wc_cs_credit_limit'                    => $effective_limit,
+				'wc_cs_available_credits'                => $is_active ? $avail_credit : 0.0,
+				'_wc_cs_available_credits'               => $is_active ? $avail_credit : 0.0,
 				'wc_cs_total_outstanding'                => $user_balance,
 				'_wc_cs_total_outstanding'               => $user_balance,
+				'wc_cs_total_outstanding_amount'         => $user_balance,
+				'_wc_cs_total_outstanding_amount'        => $user_balance,
 				'wc_cs_outstanding_credits'              => $user_balance,
 				'_wc_cs_outstanding_credits'             => $user_balance,
-				'wc_cs_status'                           => ('publish' === $post_status) ? 'active' : 'pending',
-				'_wc_cs_status'                          => ('publish' === $post_status) ? 'active' : 'pending',
-				'wc_cs_credit_status'                    => ('publish' === $post_status) ? 'active' : 'pending',
-				'_wc_cs_credit_status'                   => ('publish' === $post_status) ? 'active' : 'pending',
+				'wc_cs_used_credits'                     => $user_balance,
+				'_wc_cs_used_credits'                    => $user_balance,
+				'wc_cs_status'                           => $credit_status_val,
+				'_wc_cs_status'                          => $credit_status_val,
+				'wc_cs_credit_status'                    => $credit_status_val,
+				'_wc_cs_credit_status'                   => $credit_status_val,
 
-				// 1. Credit Limit £ (ID 31596 / alias 41978)
-				'31596'                                  => (float) $limit,
-				'_31596'                                 => (float) $limit,
-				'field_31596'                            => (float) $limit,
-				'wc_cs_field_31596'                      => (float) $limit,
-				'wc_cs_form_field_31596'                 => (float) $limit,
-				'fpc_field_31596'                        => (float) $limit,
-				'41978'                                  => (float) $limit,
-				'_41978'                                 => (float) $limit,
-				'field_41978'                            => (float) $limit,
-				'wc_cs_field_41978'                      => (float) $limit,
+				// 1. Credit Limit £ (ID 31596 / alias 41978) - contains the requested credit limit amount
+				'requested_credit_limit'                 => $req_limit_val,
+				'_requested_credit_limit'                => $req_limit_val,
+				'31596'                                  => $req_limit_val,
+				'_31596'                                 => $req_limit_val,
+				'field_31596'                            => $req_limit_val,
+				'wc_cs_field_31596'                      => $req_limit_val,
+				'wc_cs_form_field_31596'                 => $req_limit_val,
+				'fpc_field_31596'                        => $req_limit_val,
+				'41978'                                  => $req_limit_val,
+				'_41978'                                 => $req_limit_val,
+				'field_41978'                            => $req_limit_val,
+				'wc_cs_field_41978'                      => $req_limit_val,
 
 				// 2. Estimated monthly spend £ (ID 31595 / alias 41979)
 				'estimated_monthly_spend'                => $monthly_spend,
@@ -1212,7 +1253,9 @@ class CWD_V2_Credits_Bridge
 							update_post_meta($target_post_id, $k, $email);
 						} elseif (preg_match('/user/i', $k)) {
 							update_post_meta($target_post_id, $k, $user_id);
-						} elseif (preg_match('/(limit|amount)/i', $k)) {
+						} elseif (preg_match('/(outstanding|used|balance|due)/i', $k)) {
+							update_post_meta($target_post_id, $k, (float) $user_balance);
+						} elseif (preg_match('/(credit_limit|_limit|approved_credit)/i', $k)) {
 							update_post_meta($target_post_id, $k, (float) $limit);
 						} elseif (preg_match('/company/i', $k)) {
 							update_post_meta($target_post_id, $k, $company_name);
@@ -1315,30 +1358,52 @@ class CWD_V2_Credits_Bridge
 	private static function sync_to_external_credits_tables($user_id, $status = 'pending', $limit = 0.0, $email = '', $company = '')
 	{
 		global $wpdb;
-		$tables = $wpdb->get_col("SHOW TABLES LIKE '%credit%'");
-		$fpc_tables = $wpdb->get_col("SHOW TABLES LIKE '%fpc%'");
-		$candidates = array_unique(array_merge($tables, $fpc_tables));
 
-		foreach ($candidates as $table) {
-			// Skip internal tables
-			if (strpos($table, 'cwd_v2') !== false || strpos($table, 'woocommerce') !== false || strpos($table, 'posts') !== false || strpos($table, 'comments') !== false) {
+		if (null === self::$cached_external_tables) {
+			$tables     = (array) $wpdb->get_col("SHOW TABLES LIKE '%credit%'");
+			$fpc_tables = (array) $wpdb->get_col("SHOW TABLES LIKE '%fpc%'");
+			$candidates = array_unique(array_merge($tables, $fpc_tables));
+			self::$cached_external_tables = array();
+
+			foreach ($candidates as $cand_tbl) {
+				if (strpos($cand_tbl, 'cwd_v2') !== false || strpos($cand_tbl, 'woocommerce') !== false || strpos($cand_tbl, 'posts') !== false || strpos($cand_tbl, 'comments') !== false) {
+					continue;
+				}
+
+				$cols = (array) $wpdb->get_col("DESCRIBE {$cand_tbl}");
+				if (empty($cols)) {
+					continue;
+				}
+
+				$user_col = in_array('user_id', $cols, true) ? 'user_id' : (in_array('customer_id', $cols, true) ? 'customer_id' : false);
+				if ($user_col) {
+					self::$cached_external_tables[] = $cand_tbl;
+					self::$cached_table_columns[$cand_tbl] = array(
+						'user_col' => $user_col,
+						'columns'  => $cols,
+					);
+				}
+			}
+		}
+
+		if (empty(self::$cached_external_tables)) {
+			return;
+		}
+
+		foreach (self::$cached_external_tables as $table) {
+			$meta = self::$cached_table_columns[$table] ?? null;
+			if (! $meta) {
 				continue;
 			}
 
-			$columns = $wpdb->get_col("DESCRIBE {$table}");
-			if (empty($columns)) {
-				continue;
-			}
-
-			$has_user_col = in_array('user_id', $columns, true) ? 'user_id' : (in_array('customer_id', $columns, true) ? 'customer_id' : false);
-			if (! $has_user_col) {
-				continue;
-			}
+			$has_user_col = $meta['user_col'];
+			$columns      = $meta['columns'];
 
 			// Check if row exists for user
 			$row_exists = (bool) $wpdb->get_var($wpdb->prepare("SELECT 1 FROM {$table} WHERE {$has_user_col} = %d LIMIT 1", $user_id));
 
 			$status_val = ('active' === $status) ? (in_array('status', $columns, true) ? 'active' : 1) : (in_array('status', $columns, true) ? 'pending' : 0);
+			$effective_limit = ('active' === $status) ? (float) $limit : 0.0;
 
 			if ($row_exists) {
 				$update_data = array();
@@ -1347,13 +1412,11 @@ class CWD_V2_Credits_Bridge
 					$update_data['status'] = $status_val;
 					$update_format[] = is_numeric($status_val) ? '%d' : '%s';
 				}
-				if ($limit > 0) {
-					foreach (array('credit_limit', 'limit', 'credit_amount', 'amount') as $lcol) {
-						if (in_array($lcol, $columns, true)) {
-							$update_data[$lcol] = (float) $limit;
-							$update_format[] = '%f';
-							break;
-						}
+				foreach (array('credit_limit', 'limit', 'credit_amount', 'amount') as $lcol) {
+					if (in_array($lcol, $columns, true)) {
+						$update_data[$lcol] = $effective_limit;
+						$update_format[] = '%f';
+						break;
 					}
 				}
 				if (! empty($update_data)) {
@@ -1366,13 +1429,11 @@ class CWD_V2_Credits_Bridge
 					$insert_data['status'] = $status_val;
 					$insert_format[] = is_numeric($status_val) ? '%d' : '%s';
 				}
-				if ($limit > 0) {
-					foreach (array('credit_limit', 'limit', 'credit_amount', 'amount') as $lcol) {
-						if (in_array($lcol, $columns, true)) {
-							$insert_data[$lcol] = (float) $limit;
-							$insert_format[] = '%f';
-							break;
-						}
+				foreach (array('credit_limit', 'limit', 'credit_amount', 'amount') as $lcol) {
+					if (in_array($lcol, $columns, true)) {
+						$insert_data[$lcol] = $effective_limit;
+						$insert_format[] = '%f';
+						break;
 					}
 				}
 				if (in_array('email', $columns, true) && $email) {
@@ -1397,6 +1458,11 @@ class CWD_V2_Credits_Bridge
 			return;
 		}
 
+		$balance_keys = array('_credit_balance', 'total_outstanding', '_total_outstanding', 'total_outstanding_amount', '_total_outstanding_amount');
+		if (! in_array($meta_key, self::$credit_status_keys, true) && ! in_array($meta_key, self::$credit_limit_keys, true) && ! in_array($meta_key, $balance_keys, true)) {
+			return;
+		}
+
 		$user_id = (int) $object_id;
 		if (! $user_id) {
 			return;
@@ -1417,13 +1483,17 @@ class CWD_V2_Credits_Bridge
 		if (in_array($meta_key, self::$credit_limit_keys, true)) {
 			$limit = (float) $_meta_value;
 			if ($limit > 0) {
-				self::sync_trade_application_from_credits_approval($user_id, $limit, 'Credits plugin (' . $meta_key . ' limit updated)');
+				$u_status = get_user_meta($user_id, '_credit_status', true) ?: get_user_meta($user_id, 'credit_status', true);
+				$u_obj    = get_userdata($user_id);
+				$has_role = $u_obj && in_array('credit_account', (array) $u_obj->roles, true);
+				if ($has_role || in_array(strtolower((string) $u_status), array('active', 'approved'), true)) {
+					self::sync_trade_application_from_credits_approval($user_id, $limit, 'Credits plugin (' . $meta_key . ' limit updated)');
+				}
 			}
 			return;
 		}
 
 		// Check if the updated key is a credit balance key
-		$balance_keys = array('_credit_balance', 'credit_balance', 'total_outstanding', '_total_outstanding', 'total_outstanding_amount', '_total_outstanding_amount');
 		if (in_array($meta_key, $balance_keys, true)) {
 			$bal = max(0.0, (float) $_meta_value);
 			if (class_exists('CWD_V2_Credit_Logic')) {
@@ -1459,16 +1529,17 @@ class CWD_V2_Credits_Bridge
 			return;
 		}
 
-		$post = get_post((int) $object_id);
-		if (! $post || ! in_array($post->post_type, array('credits', 'wc_cs_credits', 'fpc_credits'), true)) {
-			return;
-		}
-
 		$status_meta_keys  = array('_credit_status', 'credit_status', '_status', 'status', 'fpc_status', '_fpc_status', '_wc_cs_status', 'wc_cs_status', '_wc_cs_credit_status', 'wc_cs_credit_status');
 		$limit_meta_keys   = array('_credit_limit', 'credit_limit', 'fpc_credit_limit', '_fpc_credit_limit', 'approved_credits', '_approved_credits', 'wc_cs_credit_limit', '_wc_cs_credit_limit', 'wc_cs_approved_credits', '_wc_cs_approved_credits');
 		$balance_meta_keys = array('total_outstanding_amount', '_total_outstanding_amount', 'wc_cs_total_outstanding_amount', '_wc_cs_total_outstanding_amount', 'total_outstanding', '_total_outstanding', 'wc_cs_total_outstanding', '_wc_cs_total_outstanding', 'outstanding_credits', 'wc_cs_outstanding_credits', 'used_credits', '_used_credits');
 
+		// Early bailout before fetching post object - avoids thousands of get_post() queries on regular posts/orders
 		if (! in_array($meta_key, $status_meta_keys, true) && ! in_array($meta_key, $limit_meta_keys, true) && ! in_array($meta_key, $balance_meta_keys, true)) {
+			return;
+		}
+
+		$post = get_post((int) $object_id);
+		if (! $post || ! in_array($post->post_type, array('credits', 'wc_cs_credits', 'fpc_credits'), true)) {
 			return;
 		}
 
@@ -1489,7 +1560,11 @@ class CWD_V2_Credits_Bridge
 		if (in_array($meta_key, $limit_meta_keys, true)) {
 			$limit = (float) $_meta_value;
 			if ($limit > 0) {
-				self::sync_trade_application_from_credits_approval($user_id, $limit, 'Credits post meta (' . $meta_key . ' = ' . $limit . ')');
+				$current_post_status   = get_post_status($post->ID);
+				$current_credit_status = get_post_meta($post->ID, 'credit_status', true) ?: get_post_meta($post->ID, '_credit_status', true);
+				if ('publish' === $current_post_status && in_array(strtolower((string) $current_credit_status), array('active', 'approved', 'publish'), true)) {
+					self::sync_trade_application_from_credits_approval($user_id, $limit, 'Credits post meta (' . $meta_key . ' = ' . $limit . ')');
+				}
 			}
 		}
 
@@ -1498,6 +1573,31 @@ class CWD_V2_Credits_Bridge
 			if (class_exists('CWD_V2_Credit_Logic')) {
 				self::$is_syncing = true;
 				try {
+					if ($bal > 0) {
+						$has_activity = false;
+						if (class_exists('CWD_V2_Invoices')) {
+							global $wpdb;
+							$inv_table = CWD_V2_Invoices::table_name();
+							if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $inv_table)) === $inv_table) {
+								$has_unpaid = (int) $wpdb->get_var($wpdb->prepare(
+									"SELECT COUNT(*) FROM {$inv_table} WHERE user_id = %d AND status NOT IN ('paid', 'void', 'written_off', 'marked_off')",
+									$user_id
+								));
+								if ($has_unpaid > 0) {
+									$has_activity = true;
+								}
+							}
+						}
+						if (! $has_activity) {
+							$orders = wc_get_orders(array('customer_id' => $user_id, 'limit' => 5));
+							if (! empty($orders)) {
+								$has_activity = true;
+							}
+						}
+						if (! $has_activity) {
+							$bal = 0.0;
+						}
+					}
 					CWD_V2_Credit_Logic::sync_user_credit_balance($user_id, $bal);
 				} finally {
 					self::$is_syncing = false;
@@ -1574,8 +1674,8 @@ class CWD_V2_Credits_Bridge
 
 			if (in_array($status_val, array('rejected', 'declined'), true)) {
 				self::mark_trade_application_rejected($user_id, 'Rejected in Credits post');
-			} elseif (in_array($status_val, array('publish', 'active', 'approved'), true) || $limit > 0) {
-				self::sync_trade_application_from_credits_approval($user_id, ($limit > 0 ? $limit : null), 'Credits post save');
+			} elseif (in_array($status_val, array('publish', 'active', 'approved'), true) && $limit > 0) {
+				self::sync_trade_application_from_credits_approval($user_id, $limit, 'Credits post save');
 			}
 		}
 	}
@@ -1624,6 +1724,9 @@ class CWD_V2_Credits_Bridge
 
 		try {
 			global $wpdb;
+
+			// Sanitize unapproved pending users first
+			self::sanitize_unapproved_pending_users();
 
 			// 1. Discover and synchronize ALL existing posts in CPT 'credits' / 'wc_cs_credits' / 'fpc_credits'
 			$all_credit_posts = $wpdb->get_results(
@@ -1769,6 +1872,23 @@ class CWD_V2_Credits_Bridge
 						|| ('publish' === $cp->post_status && ! in_array($status_meta, array('pending', 'draft', 'rejected', 'declined'), true))
 						|| $app_limit > 0
 					);
+
+					if (class_exists('CWD_V2_Trade_Applications')) {
+						$apps_table = CWD_V2_Trade_Applications::get_table_name();
+						$has_pending_app = (int) $wpdb->get_var($wpdb->prepare(
+							"SELECT COUNT(*) FROM {$apps_table} WHERE (user_id = %d OR applicant_email = %s) AND status = 'pending'",
+							$uid,
+							$u->user_email
+						));
+						$has_approved_app = (int) $wpdb->get_var($wpdb->prepare(
+							"SELECT COUNT(*) FROM {$apps_table} WHERE (user_id = %d OR applicant_email = %s) AND status = 'approved' AND reviewed_by > 0",
+							$uid,
+							$u->user_email
+						));
+						if ($has_pending_app > 0 && $has_approved_app === 0) {
+							$is_approved_credit_user = false;
+						}
+					}
 
 					if (! $is_approved_credit_user) {
 						// User is NOT an approved credit account: DO NOT assign credit_account role
@@ -2021,7 +2141,8 @@ class CWD_V2_Credits_Bridge
 
 			if ($cpt_post) {
 				$detected_limit = (float) get_post_meta($cpt_post->ID, 'credit_limit', true) ?: (float) get_post_meta($cpt_post->ID, '_credit_limit', true);
-				if ($detected_limit > 0) {
+				$post_credit_status = strtolower((string) (get_post_meta($cpt_post->ID, 'credit_status', true) ?: get_post_meta($cpt_post->ID, 'status', true)));
+				if ($detected_limit > 0 && in_array($post_credit_status, array('active', 'approved'), true)) {
 					self::sync_trade_application_from_credits_approval(
 						$uid,
 						$detected_limit,
@@ -2051,6 +2172,30 @@ class CWD_V2_Credits_Bridge
 		}
 
 		$status = ($limit > 0 || in_array('credit_account', (array) $user->roles, true)) ? 'active' : 'pending';
+
+		// If user has a pending trade application and no approved application, status must remain pending
+		if (class_exists('CWD_V2_Trade_Applications')) {
+			global $wpdb;
+			$apps_table = CWD_V2_Trade_Applications::get_table_name();
+			if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $apps_table)) === $apps_table) {
+				$has_pending = (int) $wpdb->get_var($wpdb->prepare(
+					"SELECT COUNT(*) FROM {$apps_table} WHERE (user_id = %d OR applicant_email = %s) AND status = %s",
+					$user_id,
+					$user->user_email,
+					CWD_V2_Trade_Applications::STATUS_PENDING
+				));
+				$has_approved = (int) $wpdb->get_var($wpdb->prepare(
+					"SELECT COUNT(*) FROM {$apps_table} WHERE (user_id = %d OR applicant_email = %s) AND status = %s",
+					$user_id,
+					$user->user_email,
+					CWD_V2_Trade_Applications::STATUS_APPROVED
+				));
+				if ($has_pending > 0 && $has_approved === 0) {
+					$status = 'pending';
+					$limit  = 0.0;
+				}
+			}
+		}
 
 		self::sync_to_external_credits_cpt(
 			$user_id,
@@ -2114,4 +2259,127 @@ class CWD_V2_Credits_Bridge
 			$flat
 		);
 	}
+
+	/**
+	 * Sanitize unapproved pending applications and ensure no customer receives credit without manual admin approval.
+	 *
+	 * 1. Finds applications in wp_cwd_v2_trade_applications that were auto-approved without an admin review
+	 *    (reviewed_by is 0 or null and note indicates auto-approval) and reverts them back to STATUS_PENDING with approved_limit = 0.0.
+	 * 2. Finds all users with a STATUS_PENDING application who have no STATUS_APPROVED application with reviewed_by > 0.
+	 *    For these users:
+	 *    - Revokes 'credit_account' role.
+	 *    - Zeroes out all credit limit user meta keys.
+	 *    - Sets credit status meta keys to 'pending'.
+	 *    - Sets any corresponding 'credits' CPT post status to 'pending' and its credit status to 'pending'.
+	 *    - Zeroes out external credits database table rows.
+	 */
+	public static function sanitize_unapproved_pending_users()
+	{
+		if (! class_exists('CWD_V2_Trade_Applications')) {
+			return;
+		}
+
+		global $wpdb;
+		$apps_table = CWD_V2_Trade_Applications::get_table_name();
+		if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $apps_table)) !== $apps_table) {
+			return;
+		}
+
+		// 1. Revert any trade applications that were auto-approved by the bridge without manual admin review
+		$wpdb->query(
+			"UPDATE {$apps_table}
+			 SET status = 'pending', approved_limit = 0.00, reviewed_at = NULL, reviewed_by = NULL,
+			     admin_note = 'Pending administrator review'
+			 WHERE status = 'approved'
+			   AND (reviewed_by IS NULL OR reviewed_by = 0)
+			   AND (admin_note LIKE '%Credits post save%'
+			        OR admin_note LIKE '%Credits post status%'
+			        OR admin_note LIKE '%Credits Plugin Admin Approval%'
+			        OR admin_note LIKE '%direct_registration%')"
+		);
+
+		// 2. Query all users who have an active pending trade application
+		$pending_rows = $wpdb->get_results(
+			"SELECT DISTINCT user_id, applicant_email FROM {$apps_table} WHERE status = 'pending'"
+		);
+
+		if (empty($pending_rows)) {
+			return;
+		}
+
+		foreach ($pending_rows as $row) {
+			$user_id = (int) $row->user_id;
+			$email   = sanitize_email($row->applicant_email);
+
+			if (! $user_id && ! empty($email)) {
+				$u = get_user_by('email', $email);
+				if ($u) {
+					$user_id = $u->ID;
+				}
+			}
+
+			if (! $user_id) {
+				continue;
+			}
+
+			// Verify whether user has any legitimately approved trade application (where reviewed_by > 0)
+			$has_legit_approval = (int) $wpdb->get_var($wpdb->prepare(
+				"SELECT COUNT(*) FROM {$apps_table}
+				 WHERE (user_id = %d OR applicant_email = %s)
+				   AND status = 'approved'
+				   AND reviewed_by IS NOT NULL
+				   AND reviewed_by > 0",
+				$user_id,
+				$email
+			));
+
+			// If user has legitimate admin approval, do not demote
+			if ($has_legit_approval > 0) {
+				continue;
+			}
+
+			// Safeguard: Never demote or wipe an active credit account holder who has an approved credit limit or role
+			$wp_user        = get_userdata($user_id);
+			$existing_limit = class_exists('CWD_V2_Credit_Logic') ? CWD_V2_Credit_Logic::get_user_credit_limit($user_id) : (float) get_user_meta($user_id, '_credit_limit', true);
+			if ($existing_limit > 0 || ($wp_user && in_array('credit_account', (array) $wp_user->roles, true))) {
+				continue;
+			}
+
+			// For truly unapproved, new applicants: set status to pending
+			foreach (self::$credit_status_keys as $sk) {
+				update_user_meta($user_id, $sk, 'pending');
+			}
+
+			// Clear user limit meta keys for unapproved applicant
+			$limit_keys = array('_credit_limit', 'credit_limit', 'wc_cs_credit_limit', 'approved_credits', 'fpc_credit_limit', 'fpc_credits');
+			foreach ($limit_keys as $lk) {
+				update_user_meta($user_id, $lk, 0.0);
+			}
+
+			// Reset 'credits' CPT posts for this user to pending
+			$cpt_posts = $wpdb->get_col($wpdb->prepare(
+				"SELECT ID FROM {$wpdb->posts}
+				 WHERE post_type = 'credits'
+				   AND (post_author = %d OR ID IN (SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key IN ('_user_id', 'user_id', 'customer_id') AND meta_value = %s))",
+				$user_id,
+				(string) $user_id
+			));
+
+			if (! empty($cpt_posts)) {
+				foreach ($cpt_posts as $pid) {
+					$wpdb->update($wpdb->posts, array('post_status' => 'pending'), array('ID' => (int) $pid), array('%s'), array('%d'));
+					update_post_meta((int) $pid, 'credit_status', 'pending');
+					update_post_meta((int) $pid, 'status', 'pending');
+					update_post_meta((int) $pid, 'credit_limit', 0.0);
+					update_post_meta((int) $pid, '_credit_limit', 0.0);
+					update_post_meta((int) $pid, 'approved_credits', 0.0);
+					clean_post_cache((int) $pid);
+				}
+			}
+
+			// Update external DB tables
+			self::sync_to_external_credits_tables($user_id, 'pending', 0.0, $wp_user ? $wp_user->user_email : $email);
+		}
+	}
 }
+

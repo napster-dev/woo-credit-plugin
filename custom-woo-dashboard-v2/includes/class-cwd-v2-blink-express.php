@@ -660,6 +660,8 @@ class CWD_V2_Blink_Express
 
 		$display_provider = ($provider === 'applepay') ? 'Apple Pay' : 'Google Pay';
 		$order->set_payment_method_title('Blink (' . $display_provider . ')');
+		$order->update_meta_data('_blink_provider', $provider);
+		$order->update_meta_data('_payment_label', $display_provider);
 		$order->add_order_note(sprintf(__('Payment confirmed via Blink %1$s. Transaction Ref: %2$s', 'custom-woo-dashboard'), $display_provider, $transaction_ref));
 		$order->payment_complete($transaction_ref);
 
